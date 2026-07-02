@@ -1,0 +1,115 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import {
+  AlarmClock,
+  Briefcase,
+  CirclePlus,
+  Document,
+  Menu,
+  OfficeBuilding,
+  Setting,
+  User,
+} from '@element-plus/icons-vue'
+
+const route = useRoute()
+const isSidebarOpen = ref(false)
+
+const activeMenu = computed(() => route.path)
+
+const closeSidebar = () => {
+  isSidebarOpen.value = false
+}
+</script>
+
+<template>
+  <div class="admin-layout">
+    <aside class="sidebar" :class="{ 'is-open': isSidebarOpen }">
+      <div class="sidebar-brand">
+        <div class="brand-mark">S</div>
+        <div>
+          <div class="brand-name">SUNRISE</div>
+        </div>
+      </div>
+
+      <el-menu
+        class="sidebar-menu"
+        :default-active="activeMenu"
+        router
+        @select="closeSidebar"
+      >
+        <el-sub-menu index="cases">
+          <template #title>
+            <el-icon><Briefcase /></el-icon>
+            <span>案件業務</span>
+          </template>
+          <el-menu-item index="/dashboard">ダッシュボード</el-menu-item>
+          <el-menu-item index="/reception/new">
+            <el-icon><CirclePlus /></el-icon>
+            <span>新規受付</span>
+          </el-menu-item>
+          <el-menu-item index="/cases">案件一覧</el-menu-item>
+          <el-menu-item index="/customers">
+            <el-icon><User /></el-icon>
+            <span>顧客管理</span>
+          </el-menu-item>
+          <el-menu-item index="/companies">
+            <el-icon><OfficeBuilding /></el-icon>
+            <span>会社管理</span>
+          </el-menu-item>
+          <el-menu-item index="/reminders">
+            <el-icon><AlarmClock /></el-icon>
+            <span>期限リマインダー</span>
+          </el-menu-item>
+          <el-menu-item index="/timelines">
+            <span>タイムライン</span>
+          </el-menu-item>
+          <el-menu-item index="/documents">
+            <el-icon><Document /></el-icon>
+            <span>書類管理</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu index="accounting">
+          <template #title>
+            <span>会計管理</span>
+          </template>
+          <el-menu-item index="/accounting">準備中</el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu index="reports">
+          <template #title>
+            <span>帳票管理</span>
+          </template>
+          <el-menu-item index="/reports">準備中</el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu index="system">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>システム</span>
+          </template>
+          <el-menu-item index="/settings">設定</el-menu-item>
+        </el-sub-menu>
+      </el-menu>
+    </aside>
+
+    <div class="mobile-mask" :class="{ 'is-open': isSidebarOpen }" @click="closeSidebar" />
+
+    <section class="workspace">
+      <header class="topbar">
+        <button class="menu-button" type="button" aria-label="メニュー" @click="isSidebarOpen = true">
+          <el-icon><Menu /></el-icon>
+        </button>
+        <div>
+          <div class="topbar-title">バックオフィス</div>
+          <div class="topbar-subtitle">案件を中心に日々の業務を管理します</div>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <router-view />
+      </main>
+    </section>
+  </div>
+</template>
