@@ -20,15 +20,23 @@ import CustomerDetailPage from '../pages/CustomerDetailPage.vue'
 import CustomersPage from '../pages/CustomersPage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
 import DocumentsPage from '../pages/DocumentsPage.vue'
+import LoginPage from '../pages/LoginPage.vue'
 import PlaceholderPage from '../pages/PlaceholderPage.vue'
 import ReceptionNewPage from '../pages/ReceptionNewPage.vue'
 import RemindersPage from '../pages/RemindersPage.vue'
 import TasksPage from '../pages/TasksPage.vue'
 import TimelinesPage from '../pages/TimelinesPage.vue'
+import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      path: '/login',
+      name: 'login',
+      component: LoginPage,
+      meta: { public: true },
+    },
     {
       path: '/',
       component: AdminLayout,
@@ -194,6 +202,31 @@ const router = createRouter({
       ],
     },
   ],
+})
+
+router.beforeEach(async (to) => {
+  const auth = useAuthStore()
+
+  if (!auth.user && !auth.loading) {
+    await auth.fetchMe().catch(() => null)
+  }
+
+  if (to.meta.public) {
+    if (to.path === '/login' && auth.isAuthenticated) {
+      return { path: '/dashboard' }
+    }
+
+    return true
+  }
+
+  if (!auth.isAuthenticated) {
+    return {
+      path: '/login',
+      query: { redirect: to.fullPath },
+    }
+  }
+
+  return true
 })
 
 export default router

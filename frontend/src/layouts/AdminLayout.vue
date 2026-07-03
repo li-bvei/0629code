@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import {
   AlarmClock,
   Briefcase,
@@ -11,14 +12,26 @@ import {
   Setting,
   User,
 } from '@element-plus/icons-vue'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
 const isSidebarOpen = ref(false)
 
 const activeMenu = computed(() => route.path)
 
 const closeSidebar = () => {
   isSidebarOpen.value = false
+}
+
+const handleLogout = async () => {
+  try {
+    await auth.logout()
+    router.push('/login')
+  } catch {
+    ElMessage.error('ログアウトに失敗しました')
+  }
 }
 </script>
 
@@ -109,6 +122,11 @@ const closeSidebar = () => {
         <div>
           <div class="topbar-title">バックオフィス</div>
           <div class="topbar-subtitle">案件を中心に日々の業務を管理します</div>
+        </div>
+        <div class="topbar-spacer" />
+        <div class="topbar-user">
+          <span>{{ auth.user?.last_name || auth.user?.username }}</span>
+          <el-button text type="primary" @click="handleLogout">ログアウト</el-button>
         </div>
       </header>
 

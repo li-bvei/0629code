@@ -24,6 +24,7 @@ router.register('timelines', TimelineViewSet, basename='timeline')
 router.register('documents', DocumentViewSet, basename='document')
 
 urlpatterns = [
+    path('auth/', include('apps.authentication.urls')),
     *router.urls,
     path('accounting/', include('apps.accounting.urls')),
     path('dashboard/deadlines/', DashboardDeadlinesView.as_view(), name='dashboard-deadlines'),

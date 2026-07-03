@@ -191,6 +191,19 @@ button {
   font-size: 12px;
 }
 
+.topbar-spacer {
+  flex: 1;
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  color: var(--sunrise-muted);
+  font-size: 13px;
+}
+
 .main-content {
   flex: 1;
   padding: 24px;
@@ -525,6 +538,16 @@ button {
 @media (max-width: 560px) {
   .topbar {
     align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .topbar-spacer {
+    display: none;
+  }
+
+  .topbar-user {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .main-content {
