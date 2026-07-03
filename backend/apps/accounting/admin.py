@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import Expense, ExpenseCategory, IncomeSource, VehicleUsage
+from .models import (
+    AccountingProject,
+    AccountingProjectExpense,
+    AccountingProjectIncome,
+    Expense,
+    ExpenseCategory,
+    IncomeSource,
+    VehicleUsage,
+)
 
 
 @admin.register(ExpenseCategory)
@@ -49,3 +57,35 @@ class VehicleUsageAdmin(admin.ModelAdmin):
     list_filter = ('purpose', 'is_exported', 'usage_date')
     search_fields = ('place', 'usage_target', 'purpose', 'note')
     date_hierarchy = 'usage_date'
+
+
+@admin.register(AccountingProject)
+class AccountingProjectAdmin(admin.ModelAdmin):
+    list_display = ('name', 'start_date', 'end_date', 'is_active', 'created_at')
+    list_filter = ('is_active', 'start_date', 'end_date')
+    search_fields = ('name', 'description', 'note')
+
+
+@admin.register(AccountingProjectIncome)
+class AccountingProjectIncomeAdmin(admin.ModelAdmin):
+    list_display = ('project', 'income_date', 'income_target', 'amount', 'created_at')
+    list_filter = ('project', 'income_date')
+    search_fields = ('income_target', 'note', 'project__name')
+    date_hierarchy = 'income_date'
+
+
+@admin.register(AccountingProjectExpense)
+class AccountingProjectExpenseAdmin(admin.ModelAdmin):
+    list_display = (
+        'project',
+        'expense_date',
+        'place',
+        'category_name',
+        'amount',
+        'expense_target',
+        'source_expense',
+        'created_at',
+    )
+    list_filter = ('project', 'category_name', 'payment_method', 'expense_date')
+    search_fields = ('place', 'category_name', 'payment_method', 'expense_target', 'note', 'project__name')
+    date_hierarchy = 'expense_date'

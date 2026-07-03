@@ -79,6 +79,7 @@ const closeSidebar = () => {
           <el-menu-item index="/accounting/expense-categories">支出カテゴリ</el-menu-item>
           <el-menu-item index="/accounting/income-sources">収入来源</el-menu-item>
           <el-menu-item index="/accounting/vehicle-usages">用車記録</el-menu-item>
+          <el-menu-item index="/accounting/projects">プロジェクト収支表</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="reports">

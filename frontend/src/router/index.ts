@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue'
 import AccountingDashboardPage from '../pages/accounting/AccountingDashboardPage.vue'
+import AccountingProjectDetailPage from '../pages/accounting/AccountingProjectDetailPage.vue'
+import AccountingProjectFormPage from '../pages/accounting/AccountingProjectFormPage.vue'
+import AccountingProjectListPage from '../pages/accounting/AccountingProjectListPage.vue'
 import ExpenseCategoryFormPage from '../pages/accounting/ExpenseCategoryFormPage.vue'
 import ExpenseCategoryListPage from '../pages/accounting/ExpenseCategoryListPage.vue'
 import ExpenseFormPage from '../pages/accounting/ExpenseFormPage.vue'
@@ -155,6 +158,26 @@ const router = createRouter({
           path: 'accounting/vehicle-usages/:id/edit',
           name: 'accounting-vehicle-usage-edit',
           component: VehicleUsageFormPage,
+        },
+        {
+          path: 'accounting/projects',
+          name: 'accounting-projects',
+          component: AccountingProjectListPage,
+        },
+        {
+          path: 'accounting/projects/new',
+          name: 'accounting-project-new',
+          component: AccountingProjectFormPage,
+        },
+        {
+          path: 'accounting/projects/:id',
+          name: 'accounting-project-detail',
+          component: AccountingProjectDetailPage,
+        },
+        {
+          path: 'accounting/projects/:id/edit',
+          name: 'accounting-project-edit',
+          component: AccountingProjectFormPage,
         },
         {
           path: 'reports',

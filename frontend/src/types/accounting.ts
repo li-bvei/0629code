@@ -5,6 +5,7 @@ export interface AccountingListParams {
   search?: string
   start_date?: string | null
   end_date?: string | null
+  project?: number | string
   category?: string
   payment_method?: string
   purpose?: string
@@ -115,6 +116,81 @@ export interface AccountingDashboard {
   recent_expenses: Expense[]
   recent_income_sources: IncomeSource[]
   recent_vehicle_usages: VehicleUsage[]
+}
+
+export interface AccountingProject {
+  id: number
+  name: string
+  description?: string
+  start_date?: string | null
+  end_date?: string | null
+  is_active: boolean
+  note?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AccountingProjectPayload {
+  name: string
+  description?: string
+  start_date?: string | null
+  end_date?: string | null
+  is_active: boolean
+  note?: string
+}
+
+export interface AccountingProjectDetail extends AccountingProject {
+  income_total: number | string
+  expense_total: number | string
+  balance: number | string
+  income_count: number
+  expense_count: number
+}
+
+export interface AccountingProjectIncome {
+  id: number
+  project: number
+  income_date: string
+  income_target?: string
+  amount: number | string
+  note?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AccountingProjectIncomePayload {
+  project: number
+  income_date: string
+  income_target?: string
+  amount: number | string
+  note?: string
+}
+
+export interface AccountingProjectExpense {
+  id: number
+  project: number
+  expense_date: string
+  place?: string
+  category_name?: string
+  amount: number | string
+  payment_method?: string
+  expense_target?: string
+  note?: string
+  source_expense?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AccountingProjectExpensePayload {
+  project: number
+  expense_date: string
+  place?: string
+  category_name?: string
+  amount: number | string
+  payment_method?: string
+  expense_target?: string
+  note?: string
+  source_expense?: number | null
 }
 
 export type AccountingPaginatedResponse<T> = PaginatedResponse<T>

@@ -206,6 +206,36 @@
   margin-left: auto;
 }
 
+.accounting-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.accounting-summary-pill {
+  min-width: 180px;
+  padding: 12px 16px;
+  border: 1px solid rgba(170, 212, 244, 0.52);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(238, 248, 255, 0.96), rgba(251, 243, 250, 0.8));
+}
+
+.accounting-summary-pill span {
+  display: block;
+  color: var(--sunrise-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.accounting-summary-pill strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--sunrise-text);
+  font-size: 18px;
+  font-weight: 800;
+}
+
 .accounting-dialog-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -274,6 +304,14 @@
 
   .accounting-filter-actions .el-button {
     flex: 1;
+  }
+
+  .accounting-summary-strip {
+    flex-direction: column;
+  }
+
+  .accounting-summary-pill {
+    width: 100%;
   }
 
   .accounting-expense-dialog.el-dialog,

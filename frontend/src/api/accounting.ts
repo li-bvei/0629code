@@ -3,6 +3,13 @@ import type {
   AccountingDashboard,
   AccountingListParams,
   AccountingPaginatedResponse,
+  AccountingProject,
+  AccountingProjectDetail,
+  AccountingProjectExpense,
+  AccountingProjectExpensePayload,
+  AccountingProjectIncome,
+  AccountingProjectIncomePayload,
+  AccountingProjectPayload,
   Expense,
   ExpenseCategory,
   ExpenseCategoryPayload,
@@ -130,4 +137,91 @@ export const updateAccountingVehicleUsage = async (id: number | string, payload:
 
 export const deleteAccountingVehicleUsage = async (id: number) => {
   await http.delete(`/accounting/vehicle-usages/${id}/`)
+}
+
+export const listAccountingProjects = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<AccountingProject>>('/accounting/projects/', {
+    params: cleanParams(params),
+  })
+  return response.data
+}
+
+export const getAccountingProjects = listAccountingProjects
+
+export const getAccountingProject = async (id: number | string) => {
+  const response = await http.get<AccountingProjectDetail>(`/accounting/projects/${id}/`)
+  return response.data
+}
+
+export const createAccountingProject = async (payload: AccountingProjectPayload) => {
+  const response = await http.post<AccountingProject>('/accounting/projects/', payload)
+  return response.data
+}
+
+export const updateAccountingProject = async (id: number | string, payload: Partial<AccountingProjectPayload>) => {
+  const response = await http.patch<AccountingProject>(`/accounting/projects/${id}/`, payload)
+  return response.data
+}
+
+export const deleteAccountingProject = async (id: number) => {
+  await http.delete(`/accounting/projects/${id}/`)
+}
+
+export const listAccountingProjectIncomes = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<AccountingProjectIncome>>('/accounting/project-incomes/', {
+    params: cleanParams(params),
+  })
+  return response.data
+}
+
+export const getAccountingProjectIncomes = listAccountingProjectIncomes
+
+export const createAccountingProjectIncome = async (payload: AccountingProjectIncomePayload) => {
+  const response = await http.post<AccountingProjectIncome>('/accounting/project-incomes/', payload)
+  return response.data
+}
+
+export const updateAccountingProjectIncome = async (
+  id: number | string,
+  payload: Partial<AccountingProjectIncomePayload>,
+) => {
+  const response = await http.patch<AccountingProjectIncome>(`/accounting/project-incomes/${id}/`, payload)
+  return response.data
+}
+
+export const deleteAccountingProjectIncome = async (id: number) => {
+  await http.delete(`/accounting/project-incomes/${id}/`)
+}
+
+export const listAccountingProjectExpenses = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<AccountingProjectExpense>>('/accounting/project-expenses/', {
+    params: cleanParams(params),
+  })
+  return response.data
+}
+
+export const getAccountingProjectExpenses = listAccountingProjectExpenses
+
+export const createAccountingProjectExpense = async (payload: AccountingProjectExpensePayload) => {
+  const response = await http.post<AccountingProjectExpense>('/accounting/project-expenses/', payload)
+  return response.data
+}
+
+export const updateAccountingProjectExpense = async (
+  id: number | string,
+  payload: Partial<AccountingProjectExpensePayload>,
+) => {
+  const response = await http.patch<AccountingProjectExpense>(`/accounting/project-expenses/${id}/`, payload)
+  return response.data
+}
+
+export const deleteAccountingProjectExpense = async (id: number) => {
+  await http.delete(`/accounting/project-expenses/${id}/`)
+}
+
+export const copyExpensesToProject = async (projectId: number | string, expenseIds: number[]) => {
+  const response = await http.post<{ created: number }>(`/accounting/projects/${projectId}/copy-expenses/`, {
+    expense_ids: expenseIds,
+  })
+  return response.data
 }

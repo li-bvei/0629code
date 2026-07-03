@@ -11,6 +11,7 @@ import {
 } from '../../api/accounting'
 import type { AccountingListParams, Expense, ExpenseCategory, ExpensePayload } from '../../types/accounting'
 import { formatDate } from '../../utils/date'
+import { createTimestamp, exportRowsToExcel } from '../../utils/exportExcel'
 import './accounting.css'
 
 interface BatchExpenseRow {
@@ -61,6 +62,12 @@ const batchDialogVisible = ref(false)
 const batchText = ref('')
 const batchRows = ref<BatchExpenseRow[]>([])
 const batchSubmitting = ref(false)
+const exporting = ref(false)
+const summary = ref({
+  count: 0,
+  totalAmount: 0,
+  unreimbursedAmount: 0,
+})
 
 const paymentMethodOptions = ['现金', '信用卡', '银行转账', 'PayPay', 'ICOCA', '公司账户', '个人垫付', '其他']
 const boolOptions = [
@@ -78,7 +85,9 @@ const validBatchRows = computed(() => batchRows.value.filter((row) => !row.error
 const invalidBatchRows = computed(() => batchRows.value.filter((row) => row.errors.length))
 
 const formatCurrency = (value: number | string) => `¥ ${Number(value || 0).toLocaleString()}`
+const formatYen = (value: number | string) => `${Number(value || 0).toLocaleString()}円`
 const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ')
+const formatExportBoolean = (value: boolean) => (value ? '済' : '未')
 
 const createEmptyExpenseForm = (): ExpensePayload => ({
   expense_date: '',
@@ -125,6 +134,7 @@ const fetchCategories = async () => {
 
 const searchExpenses = () => {
   fetchExpenses(1)
+  refreshExpenseSummary()
 }
 
 const clearFilters = () => {
@@ -137,6 +147,70 @@ const clearFilters = () => {
     is_reimbursed: '',
   }
   fetchExpenses(1)
+  refreshExpenseSummary()
+}
+
+const fetchAllExpensesForExport = async () => {
+  const rows: Expense[] = []
+  let page = 1
+
+  while (true) {
+    const data = await listAccountingExpenses({ ...filters.value, page })
+    rows.push(...data.results)
+    if (rows.length >= data.count || !data.results.length) break
+    page += 1
+  }
+
+  return rows
+}
+
+const refreshExpenseSummary = async () => {
+  try {
+    const rows = await fetchAllExpensesForExport()
+    summary.value = {
+      count: rows.length,
+      totalAmount: rows.reduce((total, row) => total + Number(row.amount || 0), 0),
+      unreimbursedAmount: rows
+        .filter((row) => !row.is_reimbursed)
+        .reduce((total, row) => total + Number(row.amount || 0), 0),
+    }
+  } catch {
+    summary.value = {
+      count: 0,
+      totalAmount: 0,
+      unreimbursedAmount: 0,
+    }
+  }
+}
+
+const exportExpenses = async () => {
+  exporting.value = true
+  try {
+    const rows = await fetchAllExpensesForExport()
+    if (!rows.length) {
+      ElMessage.warning('出力対象のデータがありません')
+      return
+    }
+
+    exportRowsToExcel(
+      rows.map((row) => ({
+        日付: row.expense_date,
+        場所: row.place,
+        カテゴリ: row.category,
+        金額: Number(row.amount || 0),
+        支払方法: row.payment_method,
+        費用対象: row.expense_target,
+        備考: row.note,
+        精算済み: formatExportBoolean(row.is_reimbursed),
+      })),
+      '支出記録',
+      `支出記録_${createTimestamp()}.xlsx`,
+    )
+  } catch {
+    ElMessage.error('Excel出力に失敗しました。')
+  } finally {
+    exporting.value = false
+  }
 }
 
 const openAddDialog = () => {
@@ -156,6 +230,7 @@ const submitAddExpense = async () => {
     ElMessage.success('支出記録を作成しました。')
     addDialogVisible.value = false
     await fetchExpenses(1)
+    await refreshExpenseSummary()
   } catch {
     ElMessage.error('支出記録の作成に失敗しました。')
   } finally {
@@ -261,6 +336,7 @@ const submitBatch = async () => {
 
   batchSubmitting.value = false
   await fetchExpenses(1)
+  await refreshExpenseSummary()
   ElMessage.success(`追加完了：成功 ${successCount} 件、失敗 ${failedCount} 件`)
   if (failedCount === 0) {
     batchDialogVisible.value = false
@@ -277,6 +353,7 @@ const confirmDelete = async (expense: Expense) => {
     await deleteAccountingExpense(expense.id)
     ElMessage.success('支出記録を削除しました。')
     await fetchExpenses(currentPage.value)
+    await refreshExpenseSummary()
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('支出記録の削除に失敗しました。')
@@ -286,6 +363,7 @@ const confirmDelete = async (expense: Expense) => {
 
 onMounted(() => {
   fetchExpenses()
+  refreshExpenseSummary()
   fetchCategories()
 })
 </script>
@@ -299,6 +377,7 @@ onMounted(() => {
           <p>日々の支出を確認し、必要な記録を追加できます</p>
         </div>
         <div class="accounting-toolbar">
+          <el-button :loading="exporting" @click="exportExpenses">Excel出力</el-button>
           <el-button @click="openBatchDialog">批量追加</el-button>
           <el-button type="primary" @click="openAddDialog">新規支出</el-button>
         </div>
@@ -345,6 +424,21 @@ onMounted(() => {
             <el-button type="primary" @click="searchExpenses">検索</el-button>
             <el-button @click="clearFilters">クリア</el-button>
           </div>
+        </div>
+      </div>
+
+      <div class="accounting-summary-strip">
+        <div class="accounting-summary-pill">
+          <span>対象件数</span>
+          <strong>{{ summary.count.toLocaleString() }}件</strong>
+        </div>
+        <div class="accounting-summary-pill">
+          <span>支出合計</span>
+          <strong>{{ formatYen(summary.totalAmount) }}</strong>
+        </div>
+        <div class="accounting-summary-pill">
+          <span>未精算合計</span>
+          <strong>{{ formatYen(summary.unreimbursedAmount) }}</strong>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -10,7 +10,17 @@ import {
 } from '../../api/accounting'
 import type { AccountingListParams, IncomeSource, IncomeSourcePayload } from '../../types/accounting'
 import { formatDate } from '../../utils/date'
+import { createTimestamp, exportRowsToExcel } from '../../utils/exportExcel'
 import './accounting.css'
+
+interface BatchIncomeSourceRow {
+  lineNumber: number
+  source_date: string
+  source_target: string
+  amount: string
+  note: string
+  errors: string[]
+}
 
 const router = useRouter()
 const loading = ref(false)
@@ -34,6 +44,15 @@ const addForm = ref<IncomeSourcePayload>({
   note: '',
   is_exported: false,
 })
+const batchDialogVisible = ref(false)
+const batchText = ref('')
+const batchRows = ref<BatchIncomeSourceRow[]>([])
+const batchSubmitting = ref(false)
+const exporting = ref(false)
+const summary = ref({
+  count: 0,
+  totalAmount: 0,
+})
 
 const rules: FormRules<IncomeSourcePayload> = {
   source_date: [{ required: true, message: '日付を入力してください。', trigger: 'change' }],
@@ -41,6 +60,16 @@ const rules: FormRules<IncomeSourcePayload> = {
 }
 
 const formatCurrency = (value: number | string) => `¥ ${Number(value || 0).toLocaleString()}`
+const formatYen = (value: number | string) => `${Number(value || 0).toLocaleString()}円`
+const validBatchRows = computed(() => batchRows.value.filter((row) => !row.errors.length))
+const invalidBatchRows = computed(() => batchRows.value.filter((row) => row.errors.length))
+
+const isValidDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+}
 
 const fetchIncomeSources = async (page = currentPage.value) => {
   loading.value = true
@@ -64,6 +93,67 @@ const clearFilters = () => {
     end_date: null,
   }
   fetchIncomeSources(1)
+  refreshIncomeSourceSummary()
+}
+
+const fetchAllIncomeSourcesForExport = async () => {
+  const rows: IncomeSource[] = []
+  let page = 1
+
+  while (true) {
+    const data = await listAccountingIncomeSources({ ...filters.value, page })
+    rows.push(...data.results)
+    if (rows.length >= data.count || !data.results.length) break
+    page += 1
+  }
+
+  return rows
+}
+
+const refreshIncomeSourceSummary = async () => {
+  try {
+    const rows = await fetchAllIncomeSourcesForExport()
+    summary.value = {
+      count: rows.length,
+      totalAmount: rows.reduce((total, row) => total + Number(row.amount || 0), 0),
+    }
+  } catch {
+    summary.value = {
+      count: 0,
+      totalAmount: 0,
+    }
+  }
+}
+
+const searchIncomeSources = () => {
+  fetchIncomeSources(1)
+  refreshIncomeSourceSummary()
+}
+
+const exportIncomeSources = async () => {
+  exporting.value = true
+  try {
+    const rows = await fetchAllIncomeSourcesForExport()
+    if (!rows.length) {
+      ElMessage.warning('出力対象のデータがありません')
+      return
+    }
+
+    exportRowsToExcel(
+      rows.map((row) => ({
+        日付: row.source_date,
+        対象: row.source_target,
+        金額: Number(row.amount || 0),
+        備考: row.note,
+      })),
+      '収入来源',
+      `収入来源_${createTimestamp()}.xlsx`,
+    )
+  } catch {
+    ElMessage.error('Excel出力に失敗しました。')
+  } finally {
+    exporting.value = false
+  }
 }
 
 const openAddDialog = () => {
@@ -89,11 +179,109 @@ const submitAddIncomeSource = async () => {
     ElMessage.success('収入来源を作成しました。')
     addDialogVisible.value = false
     await fetchIncomeSources(1)
+    await refreshIncomeSourceSummary()
   } catch {
     ElMessage.error('収入来源の作成に失敗しました。')
   } finally {
     submitting.value = false
   }
+}
+
+const openBatchDialog = () => {
+  batchText.value = ''
+  batchRows.value = []
+  batchDialogVisible.value = true
+}
+
+const parseBatchLine = (line: string, lineNumber: number): BatchIncomeSourceRow | null => {
+  if (!line) return null
+
+  const cells = line.includes('\t') ? line.split('\t') : line.split(',')
+  const normalizedCells = cells.map((cell) => cell.trim())
+
+  if (lineNumber === 1 && ['日期', '日付', 'source_date'].includes(normalizedCells[0])) {
+    return null
+  }
+
+  const [sourceDate = '', sourceTarget = '', amount = '', note = ''] = normalizedCells
+  const errors: string[] = []
+
+  if (!sourceDate) {
+    errors.push('日付が未入力です')
+  } else if (!isValidDate(sourceDate)) {
+    errors.push('日付形式が正しくありません')
+  }
+  if (!sourceTarget) {
+    errors.push('対象が未入力です')
+  }
+  if (!amount) {
+    errors.push('金額が未入力です')
+  } else if (Number.isNaN(Number(amount))) {
+    errors.push('金額は数字で入力してください')
+  }
+
+  return {
+    lineNumber,
+    source_date: sourceDate,
+    source_target: sourceTarget,
+    amount,
+    note,
+    errors,
+  }
+}
+
+const previewBatch = () => {
+  const rows = batchText.value
+    .split(/\r?\n/)
+    .map((line, index) => parseBatchLine(line.trim(), index + 1))
+    .filter((row): row is BatchIncomeSourceRow => Boolean(row))
+
+  batchRows.value = rows
+  if (!rows.length) {
+    ElMessage.warning('追加できる行がありません。')
+    return
+  }
+  if (invalidBatchRows.value.length) {
+    ElMessage.warning('エラーのある行があります。内容を確認してください。')
+  }
+}
+
+const submitBatch = async () => {
+  if (!batchRows.value.length) {
+    previewBatch()
+  }
+  if (!batchRows.value.length) return
+  if (invalidBatchRows.value.length) {
+    ElMessage.warning('エラーのある行を修正してから追加してください。')
+    return
+  }
+
+  batchSubmitting.value = true
+  let successCount = 0
+  let failedCount = 0
+
+  for (const row of validBatchRows.value) {
+    try {
+      await createAccountingIncomeSource({
+        source_date: row.source_date,
+        source_target: row.source_target,
+        amount: row.amount,
+        note: row.note,
+        is_exported: false,
+      })
+      successCount += 1
+    } catch {
+      failedCount += 1
+    }
+  }
+
+  batchSubmitting.value = false
+  ElMessage.success(`追加完了：成功 ${successCount} 件、失敗 ${failedCount} 件`)
+  batchDialogVisible.value = false
+  batchText.value = ''
+  batchRows.value = []
+  await fetchIncomeSources(1)
+  await refreshIncomeSourceSummary()
 }
 
 const confirmDelete = async (incomeSource: IncomeSource) => {
@@ -106,6 +294,7 @@ const confirmDelete = async (incomeSource: IncomeSource) => {
     await deleteAccountingIncomeSource(incomeSource.id)
     ElMessage.success('収入来源を削除しました。')
     await fetchIncomeSources(currentPage.value)
+    await refreshIncomeSourceSummary()
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('収入来源の削除に失敗しました。')
@@ -115,6 +304,7 @@ const confirmDelete = async (incomeSource: IncomeSource) => {
 
 onMounted(() => {
   fetchIncomeSources()
+  refreshIncomeSourceSummary()
 })
 </script>
 
@@ -127,6 +317,8 @@ onMounted(() => {
           <p>入金や資金来源を記録します</p>
         </div>
         <div class="accounting-toolbar">
+          <el-button :loading="exporting" @click="exportIncomeSources">Excel出力</el-button>
+          <el-button @click="openBatchDialog">批量追加</el-button>
           <el-button type="primary" @click="openAddDialog">新規追加</el-button>
         </div>
       </div>
@@ -155,9 +347,20 @@ onMounted(() => {
             class="accounting-filter-date"
           />
           <div class="accounting-filter-actions">
-            <el-button type="primary" @click="fetchIncomeSources(1)">検索</el-button>
+            <el-button type="primary" @click="searchIncomeSources">検索</el-button>
             <el-button @click="clearFilters">クリア</el-button>
           </div>
+        </div>
+      </div>
+
+      <div class="accounting-summary-strip">
+        <div class="accounting-summary-pill">
+          <span>対象件数</span>
+          <strong>{{ summary.count.toLocaleString() }}件</strong>
+        </div>
+        <div class="accounting-summary-pill">
+          <span>収入合計</span>
+          <strong>{{ formatYen(summary.totalAmount) }}</strong>
         </div>
       </div>
 
@@ -217,6 +420,42 @@ onMounted(() => {
         <el-button @click="addDialogVisible = false">キャンセル</el-button>
         <el-button type="primary" :loading="submitting" @click="submitAddIncomeSource">保存</el-button>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="batchDialogVisible" title="収入来源を一括追加" width="860px" class="accounting-batch-dialog">
+      <div class="accounting-batch-help">
+        Excelからコピーして貼り付けできます。形式：日付・対象・金額・備考
+        <code>2026-07-01	公司入金	50000	7月运营费用
+2026-07-02,客户A,30000,案件预付款</code>
+      </div>
+      <el-input v-model="batchText" type="textarea" :rows="8" placeholder="Excel からコピーした内容を貼り付け" />
+      <div class="accounting-batch-actions">
+        <el-button @click="previewBatch">解析</el-button>
+        <el-button
+          type="primary"
+          :disabled="!batchRows.length || Boolean(invalidBatchRows.length)"
+          :loading="batchSubmitting"
+          @click="submitBatch"
+        >
+          確認追加
+        </el-button>
+      </div>
+      <el-table v-if="batchRows.length" :data="batchRows" max-height="320" stripe>
+        <el-table-column prop="lineNumber" label="行番号" width="80" />
+        <el-table-column prop="source_date" label="日付" width="120" />
+        <el-table-column prop="source_target" label="対象" min-width="150" />
+        <el-table-column prop="amount" label="金額" width="120" align="right" header-align="right" />
+        <el-table-column prop="note" label="備考" min-width="180" show-overflow-tooltip />
+        <el-table-column label="状態 / エラー" min-width="220">
+          <template #default="{ row }">
+            <el-tag v-if="row.errors.length" type="danger">{{ row.errors.join('、') }}</el-tag>
+            <el-tag v-else type="success">追加可能</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <p v-if="batchRows.length" class="help-text">
+        追加可能：{{ validBatchRows.length }} 件 / エラー：{{ invalidBatchRows.length }} 件
+      </p>
     </el-dialog>
   </section>
 </template>

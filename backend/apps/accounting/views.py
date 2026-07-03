@@ -1,12 +1,25 @@
+from django.db import transaction
 from django.db.models import DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-from rest_framework.decorators import api_view
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from .models import Expense, ExpenseCategory, IncomeSource, VehicleUsage
+from .models import (
+    AccountingProject,
+    AccountingProjectExpense,
+    AccountingProjectIncome,
+    Expense,
+    ExpenseCategory,
+    IncomeSource,
+    VehicleUsage,
+)
 from .serializers import (
+    AccountingProjectDetailSerializer,
+    AccountingProjectExpenseSerializer,
+    AccountingProjectIncomeSerializer,
+    AccountingProjectSerializer,
     ExpenseCategorySerializer,
     ExpenseSerializer,
     IncomeSourceSerializer,
@@ -164,6 +177,104 @@ class VehicleUsageViewSet(ModelViewSet):
                 | Q(note__icontains=keyword)
             )
         return queryset.order_by('-usage_date', '-created_at')
+
+
+class AccountingProjectViewSet(ModelViewSet):
+    queryset = AccountingProject.objects.all()
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return AccountingProjectDetailSerializer
+        return AccountingProjectSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        is_active = parse_bool(self.request.query_params.get('is_active'))
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active)
+        if self.request.query_params.get('search'):
+            keyword = self.request.query_params['search']
+            queryset = queryset.filter(
+                Q(name__icontains=keyword)
+                | Q(description__icontains=keyword)
+                | Q(note__icontains=keyword)
+            )
+        return queryset.order_by('-created_at')
+
+    @action(detail=True, methods=['post'], url_path='copy-expenses')
+    def copy_expenses(self, request, pk=None):
+        project = self.get_object()
+        expense_ids = request.data.get('expense_ids', [])
+        if not isinstance(expense_ids, list):
+            expense_ids = []
+
+        expenses = Expense.objects.filter(id__in=expense_ids)
+        created_count = 0
+
+        with transaction.atomic():
+            for expense in expenses:
+                AccountingProjectExpense.objects.create(
+                    project=project,
+                    expense_date=expense.expense_date,
+                    place=expense.place,
+                    category_name=expense.category,
+                    amount=expense.amount,
+                    payment_method=expense.payment_method,
+                    expense_target=expense.expense_target,
+                    note=expense.note,
+                    source_expense=expense,
+                )
+                created_count += 1
+
+        return Response({'created': created_count})
+
+
+class AccountingProjectIncomeViewSet(ModelViewSet):
+    queryset = AccountingProjectIncome.objects.select_related('project')
+    serializer_class = AccountingProjectIncomeSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        params = self.request.query_params
+
+        if params.get('project'):
+            queryset = queryset.filter(project_id=params['project'])
+        if params.get('start_date'):
+            queryset = queryset.filter(income_date__gte=params['start_date'])
+        if params.get('end_date'):
+            queryset = queryset.filter(income_date__lte=params['end_date'])
+        if params.get('search'):
+            keyword = params['search']
+            queryset = queryset.filter(
+                Q(income_target__icontains=keyword) | Q(note__icontains=keyword)
+            )
+        return queryset.order_by('-income_date', '-id')
+
+
+class AccountingProjectExpenseViewSet(ModelViewSet):
+    queryset = AccountingProjectExpense.objects.select_related('project', 'source_expense')
+    serializer_class = AccountingProjectExpenseSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        params = self.request.query_params
+
+        if params.get('project'):
+            queryset = queryset.filter(project_id=params['project'])
+        if params.get('start_date'):
+            queryset = queryset.filter(expense_date__gte=params['start_date'])
+        if params.get('end_date'):
+            queryset = queryset.filter(expense_date__lte=params['end_date'])
+        if params.get('search'):
+            keyword = params['search']
+            queryset = queryset.filter(
+                Q(place__icontains=keyword)
+                | Q(category_name__icontains=keyword)
+                | Q(payment_method__icontains=keyword)
+                | Q(expense_target__icontains=keyword)
+                | Q(note__icontains=keyword)
+            )
+        return queryset.order_by('-expense_date', '-id')
 
 
 @api_view(['GET'])
