@@ -12,6 +12,8 @@ urlpatterns = [
     path('api/', include('api.urls')),
     path('api/v1/internal/', include('api.internal.urls')),
     path('api/v1/portal/', include('api.portal.urls')),
+    path('sun/admin/', include((admin.site.get_urls(), 'admin'), namespace='sun-admin')),
+    path('sun/api/', include('api.urls')),
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
