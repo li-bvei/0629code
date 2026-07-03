@@ -1,0 +1,347 @@
+.accounting-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.accounting-hero {
+  padding: 24px;
+  border: 1px solid rgba(170, 212, 244, 0.62);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(170, 212, 244, 0.42), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(251, 243, 250, 0.9));
+  box-shadow: 0 18px 44px rgba(120, 150, 170, 0.12);
+}
+
+.accounting-hero h1 {
+  margin: 0;
+  color: var(--sunrise-text);
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.accounting-hero p {
+  margin: 8px 0 0;
+  color: var(--sunrise-muted);
+  font-size: 14px;
+}
+
+.accounting-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.accounting-card {
+  border: 1px solid rgba(170, 212, 244, 0.58);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 36px rgba(120, 150, 170, 0.1);
+}
+
+.accounting-card .el-card__header {
+  background: linear-gradient(90deg, rgba(170, 212, 244, 0.2), rgba(226, 197, 221, 0.18));
+}
+
+.accounting-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.accounting-summary-card {
+  min-height: 118px;
+  padding: 18px;
+  border: 1px solid rgba(170, 212, 244, 0.54);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(238, 248, 255, 0.8)),
+    #ffffff;
+  box-shadow: 0 12px 28px rgba(120, 150, 170, 0.1);
+}
+
+.accounting-summary-card.is-accent {
+  background:
+    linear-gradient(145deg, rgba(226, 197, 221, 0.34), rgba(255, 255, 255, 0.96)),
+    #ffffff;
+}
+
+.accounting-summary-card.is-danger {
+  border-color: rgba(245, 108, 108, 0.32);
+  background: linear-gradient(145deg, rgba(254, 240, 240, 0.94), rgba(255, 255, 255, 0.96));
+}
+
+.accounting-summary-label {
+  color: var(--sunrise-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.accounting-summary-value {
+  margin-top: 12px;
+  color: var(--sunrise-text);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.accounting-summary-value.is-negative {
+  color: #c45656;
+}
+
+.accounting-chart-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: 24px;
+  align-items: center;
+}
+
+.accounting-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.accounting-chart-description {
+  margin: 0 0 16px;
+  color: var(--sunrise-muted);
+  font-size: 13px;
+}
+
+.accounting-donut {
+  position: relative;
+  width: min(260px, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: #eef3f7;
+}
+
+.accounting-donut::after {
+  position: absolute;
+  inset: 22%;
+  display: grid;
+  place-items: center;
+  color: var(--sunrise-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  white-space: pre-line;
+  content: '支出\A占比';
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(170, 212, 244, 0.35);
+}
+
+.accounting-chart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.accounting-chart-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  color: var(--sunrise-text);
+  font-size: 14px;
+}
+
+.accounting-chart-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.accounting-chart-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accounting-chart-amount {
+  color: var(--sunrise-muted);
+  font-weight: 700;
+}
+
+.accounting-record-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.accounting-filter-card {
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(170, 212, 244, 0.5);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.accounting-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.accounting-filter-search {
+  width: 220px;
+}
+
+.accounting-filter-date {
+  width: 160px;
+}
+
+.accounting-filter-select {
+  width: 150px;
+}
+
+.accounting-filter-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.accounting-dialog-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.accounting-dialog-full {
+  grid-column: 1 / -1;
+}
+
+.accounting-batch-help {
+  padding: 12px;
+  margin-bottom: 12px;
+  color: var(--sunrise-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  border-radius: 10px;
+  background: var(--sunrise-blue-soft);
+}
+
+.accounting-batch-help code {
+  display: block;
+  margin-top: 6px;
+  color: var(--sunrise-text);
+  white-space: pre-wrap;
+}
+
+.accounting-batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+@media (max-width: 1100px) {
+  .accounting-summary-grid,
+  .accounting-record-grid,
+  .accounting-chart-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .accounting-hero {
+    padding: 18px;
+  }
+
+  .accounting-summary-grid,
+  .accounting-record-grid,
+  .accounting-chart-grid,
+  .accounting-chart-layout,
+  .accounting-dialog-form {
+    grid-template-columns: 1fr;
+  }
+
+  .accounting-filter-search,
+  .accounting-filter-date,
+  .accounting-filter-select {
+    width: 100%;
+  }
+
+  .accounting-filter-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .accounting-filter-actions .el-button {
+    flex: 1;
+  }
+
+  .accounting-expense-dialog.el-dialog,
+  .accounting-batch-dialog.el-dialog {
+    display: flex;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100vh;
+    margin: 0 !important;
+    flex-direction: column;
+    border-radius: 0;
+  }
+
+  .accounting-expense-dialog .el-dialog__header,
+  .accounting-batch-dialog .el-dialog__header {
+    padding: 16px;
+    border-bottom: 1px solid var(--sunrise-border);
+  }
+
+  .accounting-expense-dialog .el-dialog__body,
+  .accounting-batch-dialog .el-dialog__body {
+    flex: 1;
+    max-height: calc(100vh - 132px);
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  .accounting-expense-dialog .el-dialog__footer,
+  .accounting-batch-dialog .el-dialog__footer {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 16px;
+    background: #ffffff;
+    border-top: 1px solid var(--sunrise-border);
+  }
+
+  .accounting-expense-dialog .el-dialog__footer .el-button,
+  .accounting-batch-dialog .el-dialog__footer .el-button {
+    min-height: 40px;
+  }
+
+  .accounting-expense-dialog .el-dialog__footer .el-button + .el-button,
+  .accounting-batch-dialog .el-dialog__footer .el-button + .el-button {
+    margin-left: 8px;
+  }
+
+  .accounting-expense-dialog .form-control,
+  .accounting-batch-dialog .form-control,
+  .accounting-expense-dialog .el-input,
+  .accounting-expense-dialog .el-select,
+  .accounting-expense-dialog .el-date-editor,
+  .accounting-batch-dialog .el-textarea {
+    width: 100%;
+  }
+
+  .accounting-batch-actions {
+    position: sticky;
+    bottom: 0;
+    padding: 10px 0;
+    background: #ffffff;
+  }
+
+  .accounting-batch-actions .el-button {
+    flex: 1;
+    min-height: 40px;
+  }
+
+  .accounting-batch-dialog .el-table {
+    width: 100%;
+  }
+}

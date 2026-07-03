@@ -1,5 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from django.urls import path
+from django.urls import include, path
 
 from apps.cases.views import CaseViewSet
 from apps.companies.views import CompanyStaffViewSet, CompanyViewSet
@@ -25,6 +25,7 @@ router.register('documents', DocumentViewSet, basename='document')
 
 urlpatterns = [
     *router.urls,
+    path('accounting/', include('apps.accounting.urls')),
     path('dashboard/deadlines/', DashboardDeadlinesView.as_view(), name='dashboard-deadlines'),
     path('receptions/', ReceptionCreateView.as_view(), name='reception-create'),
 ]

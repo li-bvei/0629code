@@ -74,7 +74,11 @@ const closeSidebar = () => {
           <template #title>
             <span>会計管理</span>
           </template>
-          <el-menu-item index="/accounting">準備中</el-menu-item>
+          <el-menu-item index="/accounting">会計ダッシュボード</el-menu-item>
+          <el-menu-item index="/accounting/expenses">支出記録</el-menu-item>
+          <el-menu-item index="/accounting/expense-categories">支出カテゴリ</el-menu-item>
+          <el-menu-item index="/accounting/income-sources">収入来源</el-menu-item>
+          <el-menu-item index="/accounting/vehicle-usages">用車記録</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="reports">

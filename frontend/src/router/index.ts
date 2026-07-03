@@ -1,5 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue'
+import AccountingDashboardPage from '../pages/accounting/AccountingDashboardPage.vue'
+import ExpenseCategoryFormPage from '../pages/accounting/ExpenseCategoryFormPage.vue'
+import ExpenseCategoryListPage from '../pages/accounting/ExpenseCategoryListPage.vue'
+import ExpenseFormPage from '../pages/accounting/ExpenseFormPage.vue'
+import ExpenseListPage from '../pages/accounting/ExpenseListPage.vue'
+import IncomeSourceFormPage from '../pages/accounting/IncomeSourceFormPage.vue'
+import IncomeSourceListPage from '../pages/accounting/IncomeSourceListPage.vue'
+import VehicleUsageFormPage from '../pages/accounting/VehicleUsageFormPage.vue'
+import VehicleUsageListPage from '../pages/accounting/VehicleUsageListPage.vue'
 import CaseDetailPage from '../pages/CaseDetailPage.vue'
 import CasesPage from '../pages/CasesPage.vue'
 import CompanyDetailPage from '../pages/CompanyDetailPage.vue'
@@ -85,8 +94,67 @@ const router = createRouter({
         {
           path: 'accounting',
           name: 'accounting',
-          component: PlaceholderPage,
-          props: { title: '会計管理' },
+          component: AccountingDashboardPage,
+        },
+        {
+          path: 'accounting/expenses',
+          name: 'accounting-expenses',
+          component: ExpenseListPage,
+        },
+        {
+          path: 'accounting/expenses/create',
+          name: 'accounting-expense-create',
+          component: ExpenseFormPage,
+        },
+        {
+          path: 'accounting/expenses/:id/edit',
+          name: 'accounting-expense-edit',
+          component: ExpenseFormPage,
+        },
+        {
+          path: 'accounting/expense-categories',
+          name: 'accounting-expense-categories',
+          component: ExpenseCategoryListPage,
+        },
+        {
+          path: 'accounting/expense-categories/create',
+          name: 'accounting-expense-category-create',
+          component: ExpenseCategoryFormPage,
+        },
+        {
+          path: 'accounting/expense-categories/:id/edit',
+          name: 'accounting-expense-category-edit',
+          component: ExpenseCategoryFormPage,
+        },
+        {
+          path: 'accounting/income-sources',
+          name: 'accounting-income-sources',
+          component: IncomeSourceListPage,
+        },
+        {
+          path: 'accounting/income-sources/create',
+          name: 'accounting-income-source-create',
+          component: IncomeSourceFormPage,
+        },
+        {
+          path: 'accounting/income-sources/:id/edit',
+          name: 'accounting-income-source-edit',
+          component: IncomeSourceFormPage,
+        },
+        {
+          path: 'accounting/vehicle-usages',
+          name: 'accounting-vehicle-usages',
+          component: VehicleUsageListPage,
+        },
+        {
+          path: 'accounting/vehicle-usages/create',
+          name: 'accounting-vehicle-usage-create',
+          component: VehicleUsageFormPage,
+        },
+        {
+          path: 'accounting/vehicle-usages/:id/edit',
+          name: 'accounting-vehicle-usage-edit',
+          component: VehicleUsageFormPage,
         },
         {
           path: 'reports',
