@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.db import models
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 
 class ExpenseCategory(models.Model):
@@ -158,3 +160,137 @@ class AccountingProjectExpense(models.Model):
 
     def __str__(self):
         return f'{self.project.name} - {self.amount}'
+
+
+class VoucherItemTemplate(models.Model):
+    name = models.CharField('項目名', max_length=255, unique=True)
+    default_unit_price = models.DecimalField(
+        '默认单价',
+        max_digits=12,
+        decimal_places=0,
+        null=True,
+        blank=True,
+    )
+    is_active = models.BooleanField('有効', default=True)
+    sort_order = models.PositiveIntegerField('並び順', default=0)
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_voucher_item_templates'
+        verbose_name = '帳票明細項目'
+        verbose_name_plural = '帳票明細項目'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class AccountingVoucher(models.Model):
+    VOUCHER_TYPE_INVOICE = 'invoice'
+    VOUCHER_TYPE_RECEIPT = 'receipt'
+    VOUCHER_TYPE_CHOICES = (
+        (VOUCHER_TYPE_INVOICE, '請求書'),
+        (VOUCHER_TYPE_RECEIPT, '領収書'),
+    )
+
+    voucher_type = models.CharField('帳票種別', max_length=20, choices=VOUCHER_TYPE_CHOICES)
+    voucher_number = models.CharField('帳票番号', max_length=50, unique=True, blank=True)
+    issue_date = models.DateField('発行日')
+    recipient_name = models.CharField('宛先会社名', max_length=255, blank=True)
+    recipient_postal_code = models.CharField('宛先郵便番号', max_length=20, blank=True)
+    recipient_address = models.TextField('宛先住所', blank=True)
+    title = models.CharField('件名 / 但し書き', max_length=255, blank=True)
+    amount = models.DecimalField('金額', max_digits=12, decimal_places=0)
+    tax_amount = models.DecimalField('消費税額', max_digits=12, decimal_places=0, default=0)
+    total_amount = models.DecimalField('合計金額', max_digits=12, decimal_places=0, default=0)
+    details = models.TextField('明細', blank=True)
+    line_items = models.JSONField('明細行', default=list, blank=True)
+    note = models.TextField('備考', blank=True)
+    payment_due_date = models.DateField('支払期限', null=True, blank=True)
+    payment_method = models.CharField('支払方法', max_length=100, blank=True)
+    issuer_name = models.CharField('発行者名', max_length=255, default='SUNRISE日晟鴻達株式会社')
+    issuer_postal_code = models.CharField('発行者郵便番号', max_length=20, blank=True)
+    issuer_address = models.TextField('発行者住所', blank=True)
+    issuer_tel = models.CharField('発行者電話番号', max_length=50, blank=True)
+    issuer_registration_number = models.CharField('登録番号', max_length=100, blank=True)
+    bank_info = models.TextField('振込先', blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='accounting_vouchers',
+        verbose_name='作成者',
+    )
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_vouchers'
+        verbose_name = '帳票'
+        verbose_name_plural = '帳票'
+        ordering = ['-issue_date', '-id']
+
+    def __str__(self):
+        return f'{self.get_voucher_type_display()} {self.voucher_number}'
+
+    def save(self, *args, **kwargs):
+        self.line_items = self.normalize_line_items(self.line_items)
+        if self.line_items:
+            self.amount = sum(Decimal(str(item['line_total'])) for item in self.line_items)
+            self.tax_amount = (self.amount * Decimal('0.10')).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        else:
+            self.tax_amount = self.tax_amount or 0
+        self.total_amount = self.amount + self.tax_amount
+        if not self.voucher_number:
+            self.voucher_number = self.generate_voucher_number()
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def to_decimal(value):
+        try:
+            return Decimal(str(value or 0))
+        except (InvalidOperation, TypeError, ValueError):
+            return Decimal('0')
+
+    @classmethod
+    def normalize_line_items(cls, items):
+        if not isinstance(items, list):
+            return []
+
+        normalized = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_name = str(item.get('item_name') or '').strip()
+            quantity = cls.to_decimal(item.get('quantity'))
+            unit_price = cls.to_decimal(item.get('unit_price'))
+            if not item_name and quantity == 0 and unit_price == 0:
+                continue
+            line_total = (quantity * unit_price).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            normalized.append({
+                'item_name': item_name,
+                'quantity': float(quantity),
+                'unit_price': int(unit_price.quantize(Decimal('1'), rounding=ROUND_HALF_UP)),
+                'line_total': int(line_total),
+            })
+        return normalized
+
+    def generate_voucher_number(self):
+        prefix = 'INV' if self.voucher_type == self.VOUCHER_TYPE_INVOICE else 'REC'
+        date_part = self.issue_date.strftime('%Y%m%d')
+        base = f'{prefix}-{date_part}'
+        latest = (
+            AccountingVoucher.objects
+            .filter(voucher_number__startswith=base)
+            .order_by('-voucher_number')
+            .first()
+        )
+        next_number = 1
+        if latest and latest.voucher_number:
+            try:
+                next_number = int(latest.voucher_number.split('-')[-1]) + 1
+            except ValueError:
+                next_number = 1
+        return f'{base}-{next_number:04d}'

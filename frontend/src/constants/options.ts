@@ -17,6 +17,21 @@ export const residenceStatusOptions = [
   'その他',
 ]
 
+export const caseTypeOptions = [
+  '在留申請',
+  '在留更新',
+  '永住申請',
+  '帰化申請',
+  '会社設立',
+  '会社変更',
+  '入社手続',
+  '社会保険・年金',
+  '税務',
+  '許認可申請',
+  '届出・証明',
+  'その他',
+]
+
 export const fiscalMonthOptions = [
   '1',
   '2',

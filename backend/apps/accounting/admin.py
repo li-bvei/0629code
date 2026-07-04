@@ -4,10 +4,12 @@ from .models import (
     AccountingProject,
     AccountingProjectExpense,
     AccountingProjectIncome,
+    AccountingVoucher,
     Expense,
     ExpenseCategory,
     IncomeSource,
     VehicleUsage,
+    VoucherItemTemplate,
 )
 
 
@@ -89,3 +91,28 @@ class AccountingProjectExpenseAdmin(admin.ModelAdmin):
     list_filter = ('project', 'category_name', 'payment_method', 'expense_date')
     search_fields = ('place', 'category_name', 'payment_method', 'expense_target', 'note', 'project__name')
     date_hierarchy = 'expense_date'
+
+
+@admin.register(AccountingVoucher)
+class AccountingVoucherAdmin(admin.ModelAdmin):
+    list_display = (
+        'issue_date',
+        'voucher_type',
+        'voucher_number',
+        'recipient_name',
+        'title',
+        'total_amount',
+        'created_by',
+        'created_at',
+    )
+    list_filter = ('voucher_type', 'issue_date')
+    search_fields = ('voucher_number', 'recipient_name', 'title', 'details', 'note')
+    readonly_fields = ('total_amount', 'created_by', 'created_at', 'updated_at')
+    date_hierarchy = 'issue_date'
+
+
+@admin.register(VoucherItemTemplate)
+class VoucherItemTemplateAdmin(admin.ModelAdmin):
+    list_display = ('name', 'default_unit_price', 'is_active', 'sort_order', 'created_at')
+    list_filter = ('is_active',)
+    search_fields = ('name',)

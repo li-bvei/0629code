@@ -5,10 +5,12 @@ from .models import (
     AccountingProject,
     AccountingProjectExpense,
     AccountingProjectIncome,
+    AccountingVoucher,
     Expense,
     ExpenseCategory,
     IncomeSource,
     VehicleUsage,
+    VoucherItemTemplate,
 )
 
 
@@ -93,4 +95,20 @@ class AccountingProjectIncomeSerializer(serializers.ModelSerializer):
 class AccountingProjectExpenseSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountingProjectExpense
+        fields = '__all__'
+
+
+class AccountingVoucherSerializer(serializers.ModelSerializer):
+    voucher_type_display = serializers.CharField(source='get_voucher_type_display', read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = AccountingVoucher
+        fields = '__all__'
+        read_only_fields = ('voucher_number', 'total_amount', 'created_by', 'created_at', 'updated_at')
+
+
+class VoucherItemTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VoucherItemTemplate
         fields = '__all__'

@@ -246,6 +246,124 @@
   grid-column: 1 / -1;
 }
 
+.voucher-line-section {
+  padding: 14px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(170, 212, 244, 0.5);
+  border-radius: 14px;
+  background: rgba(248, 251, 253, 0.75);
+}
+
+.voucher-line-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.voucher-line-header p {
+  margin: 4px 0 0;
+  color: var(--sunrise-muted);
+  font-size: 13px;
+}
+
+.voucher-line-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.voucher-line-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 90px 130px 140px auto;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 12px;
+  border: 1px solid rgba(170, 212, 244, 0.36);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.voucher-line-row .el-form-item {
+  margin-bottom: 0;
+}
+
+.voucher-item-name-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voucher-item-name-control .el-button {
+  align-self: flex-start;
+}
+
+.voucher-line-delete {
+  min-height: 32px;
+  margin-bottom: 1px;
+}
+
+.voucher-total-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.voucher-total-box div {
+  min-width: 160px;
+  padding: 10px 12px;
+  border: 1px solid rgba(170, 212, 244, 0.44);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.voucher-total-box span,
+.voucher-total-box strong {
+  display: block;
+}
+
+.voucher-total-box span {
+  color: var(--sunrise-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.voucher-total-box strong {
+  margin-top: 4px;
+  color: var(--sunrise-text);
+  font-size: 18px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.voucher-total-box .is-total {
+  background: linear-gradient(135deg, rgba(170, 212, 244, 0.24), rgba(226, 197, 221, 0.18));
+}
+
+.voucher-item-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.voucher-item-manager-search {
+  justify-content: flex-start;
+}
+
+.voucher-item-manager-add {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 140px 110px auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(170, 212, 244, 0.42);
+  border-radius: 12px;
+  background: rgba(248, 251, 253, 0.78);
+}
+
 .accounting-batch-help {
   padding: 12px;
   margin-bottom: 12px;
@@ -287,7 +405,21 @@
   .accounting-record-grid,
   .accounting-chart-grid,
   .accounting-chart-layout,
-  .accounting-dialog-form {
+  .accounting-dialog-form,
+  .voucher-line-row {
+    grid-template-columns: 1fr;
+  }
+
+  .voucher-line-header,
+  .voucher-total-box {
+    flex-direction: column;
+  }
+
+  .voucher-total-box div {
+    width: 100%;
+  }
+
+  .voucher-item-manager-add {
     grid-template-columns: 1fr;
   }
 

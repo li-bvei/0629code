@@ -19,6 +19,7 @@ import type {
   Timeline,
   TimelinePayload,
 } from '../types/api'
+import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 import { getReminderDisplay } from '../utils/reminder'
 
@@ -96,24 +97,10 @@ const canCancelCase = computed(() => (
   caseDetail.value
   && !['完了', '中止', 'completed'].includes(caseDetail.value.status)
 ))
-const displayStatus = computed(() => {
-  if (!caseDetail.value) return '-'
-  if (caseDetail.value.status === '中止') return '中止'
-  if (caseDetail.value.completed_at) return '完了'
-  if (caseDetail.value.result_notified_at) return '結果通知済'
-  if (caseDetail.value.applied_at) return '申請中'
-  if (caseDetail.value.accepted_at) return '受任中'
-  return '準備中'
-})
+const displayStatus = computed(() => getCaseDisplayStatus(caseDetail.value))
 
 const displayValue = (value?: string | null) => value || '-'
 const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ')
-const getDisplayStatusTagType = (statusValue: string) => {
-  if (statusValue === '中止') return 'danger'
-  if (['結果通知済', '完了'].includes(statusValue)) return 'success'
-  if (statusValue === '申請中') return 'warning'
-  return 'info'
-}
 const getTodayDate = () => {
   const date = new Date()
   return [
@@ -694,7 +681,7 @@ onMounted(() => {
         </template>
         <el-descriptions v-if="caseDetail" :column="2" border>
           <el-descriptions-item label="現在の進捗">
-            <el-tag :type="getDisplayStatusTagType(displayStatus)">
+            <el-tag :type="getCaseDisplayStatusTagType(displayStatus)">
               {{ displayStatus }}
             </el-tag>
           </el-descriptions-item>

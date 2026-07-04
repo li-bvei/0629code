@@ -17,6 +17,7 @@ RUN if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
     && apt-get install -y --no-install-recommends \
         build-essential \
         default-libmysqlclient-dev \
+        fonts-noto-cjk \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 

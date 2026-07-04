@@ -6,7 +6,7 @@ import { useRouter } from 'vue-router'
 import { listEmployees } from '../api/employees'
 import { listCustomers } from '../api/customers'
 import { createReception } from '../api/receptions'
-import { bankAccountTypeOptions, fiscalMonthOptions, residenceStatusOptions } from '../constants/options'
+import { bankAccountTypeOptions, caseTypeOptions, fiscalMonthOptions, residenceStatusOptions } from '../constants/options'
 import type {
   Employee,
   Customer,
@@ -24,20 +24,6 @@ const customers = ref<Customer[]>([])
 const genderOptions = ['男性', '女性', 'その他']
 const relationshipOptions = ['配偶者', '子', '父', '母', '兄弟姉妹', 'その他']
 const statusOptions = ['受付中', '準備中', '申請中', '補正対応中', '完了', '中止']
-const caseTypeOptions = [
-  '在留申請',
-  '在留更新',
-  '永住申請',
-  '帰化申請',
-  '会社設立',
-  '会社変更',
-  '入社手続',
-  '社会保険・年金',
-  '税務',
-  '許認可申請',
-  '届出・証明',
-  'その他',
-]
 
 const form = ref<ReceptionPayload>({
   customer: {
@@ -153,18 +139,33 @@ const validateFamilyMembers = () => {
   return true
 }
 
-const buildPayload = (): ReceptionPayload => ({
-  ...form.value,
-  family_members: form.value.family_members.filter((familyMember) => (
-    hasAnyValue(familyMember as Record<string, unknown>)
-  )),
-  company: form.value.company,
-  case: {
-    ...form.value.case,
-    responsible_employee: form.value.case.responsible_employee || null,
-    accepted_at: form.value.case.accepted_at || null,
-  },
-})
+const buildPayload = (): ReceptionPayload => {
+  const familyMembers = form.value.family_members
+    .filter((familyMember) => hasAnyValue(familyMember as Record<string, unknown>))
+    .map((familyMember) => ({
+      ...familyMember,
+      postal_code: familyMember.postal_code || form.value.customer.postal_code || '',
+      address: familyMember.address || form.value.customer.address || '',
+    }))
+
+  const company = { ...form.value.company }
+  if (company.representative_customer_is_current_customer) {
+    company.representative_customer = null
+    company.representative_name = ''
+    company.representative_name_kana = ''
+  }
+
+  return {
+    ...form.value,
+    family_members: familyMembers,
+    company,
+    case: {
+      ...form.value.case,
+      responsible_employee: form.value.case.responsible_employee || null,
+      accepted_at: form.value.case.accepted_at || null,
+    },
+  }
+}
 
 const submitReception = async () => {
   if (!formRef.value) return
@@ -250,7 +251,15 @@ onMounted(async () => {
               <el-input v-model="form.customer.my_number" />
             </el-form-item>
             <el-form-item label="在留資格" prop="customer.residence_status">
-              <el-select v-model="form.customer.residence_status" clearable placeholder="選択してください" class="form-control">
+              <el-select
+                v-model="form.customer.residence_status"
+                clearable
+                filterable
+                allow-create
+                default-first-option
+                placeholder="選択してください"
+                class="form-control"
+              >
                 <el-option
                   v-for="status in residenceStatusOptions"
                   :key="status"
@@ -353,7 +362,15 @@ onMounted(async () => {
                 <el-input v-model="familyMember.my_number" />
               </el-form-item>
               <el-form-item label="在留資格">
-                <el-select v-model="familyMember.residence_status" clearable placeholder="選択してください" class="form-control">
+                <el-select
+                  v-model="familyMember.residence_status"
+                  clearable
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="選択してください"
+                  class="form-control"
+                >
                   <el-option
                     v-for="status in residenceStatusOptions"
                     :key="status"
@@ -401,11 +418,14 @@ onMounted(async () => {
                 inactive-text="いいえ"
               />
             </el-form-item>
-            <el-form-item label="代表者顧客" prop="company.representative_customer">
+            <el-form-item
+              v-if="!form.company.representative_customer_is_current_customer"
+              label="代表者顧客"
+              prop="company.representative_customer"
+            >
               <el-select
                 v-model="form.company.representative_customer"
                 clearable
-                :disabled="form.company.representative_customer_is_current_customer"
                 placeholder="未設定"
                 class="form-control"
               >
@@ -417,10 +437,20 @@ onMounted(async () => {
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="代表者フリガナ" prop="company.representative_name_kana" class="form-grid-start">
+            <el-form-item
+              v-if="!form.company.representative_customer_is_current_customer"
+              label="代表者フリガナ"
+              prop="company.representative_name_kana"
+              class="form-grid-start"
+            >
               <el-input v-model="form.company.representative_name_kana" />
             </el-form-item>
-            <el-form-item label="代表者氏名" prop="company.representative_name" class="form-grid-start">
+            <el-form-item
+              v-if="!form.company.representative_customer_is_current_customer"
+              label="代表者氏名"
+              prop="company.representative_name"
+              class="form-grid-start"
+            >
               <el-input v-model="form.company.representative_name" />
             </el-form-item>
             <el-form-item label="法人番号" prop="company.corporate_number">
@@ -481,7 +511,14 @@ onMounted(async () => {
               <el-input model-value="自動生成" disabled />
             </el-form-item>
             <el-form-item label="案件種別" prop="case.case_type">
-              <el-select v-model="form.case.case_type" placeholder="選択してください" class="form-control">
+              <el-select
+                v-model="form.case.case_type"
+                filterable
+                allow-create
+                default-first-option
+                placeholder="選択してください"
+                class="form-control"
+              >
                 <el-option
                   v-for="caseType in caseTypeOptions"
                   :key="caseType"

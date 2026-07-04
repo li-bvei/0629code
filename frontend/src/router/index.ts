@@ -4,6 +4,7 @@ import AccountingDashboardPage from '../pages/accounting/AccountingDashboardPage
 import AccountingProjectDetailPage from '../pages/accounting/AccountingProjectDetailPage.vue'
 import AccountingProjectFormPage from '../pages/accounting/AccountingProjectFormPage.vue'
 import AccountingProjectListPage from '../pages/accounting/AccountingProjectListPage.vue'
+import AccountingVouchersPage from '../pages/AccountingVouchersPage.vue'
 import ExpenseCategoryFormPage from '../pages/accounting/ExpenseCategoryFormPage.vue'
 import ExpenseCategoryListPage from '../pages/accounting/ExpenseCategoryListPage.vue'
 import ExpenseFormPage from '../pages/accounting/ExpenseFormPage.vue'
@@ -26,6 +27,7 @@ import ReceptionNewPage from '../pages/ReceptionNewPage.vue'
 import RemindersPage from '../pages/RemindersPage.vue'
 import TasksPage from '../pages/TasksPage.vue'
 import TimelinesPage from '../pages/TimelinesPage.vue'
+import VoucherPlaceholderPage from '../pages/VoucherPlaceholderPage.vue'
 import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
@@ -194,6 +196,39 @@ const router = createRouter({
           props: { title: '帳票管理' },
         },
         {
+          path: 'vouchers',
+          redirect: '/vouchers/invoices',
+        },
+        {
+          path: 'vouchers/invoices',
+          name: 'voucher-invoices',
+          component: AccountingVouchersPage,
+        },
+        {
+          path: 'vouchers/estimates',
+          name: 'voucher-estimates',
+          component: VoucherPlaceholderPage,
+          props: { title: '見積書' },
+        },
+        {
+          path: 'vouchers/contracts',
+          name: 'voucher-contracts',
+          component: VoucherPlaceholderPage,
+          props: { title: '契約書' },
+        },
+        {
+          path: 'vouchers/certificates',
+          name: 'voucher-certificates',
+          component: VoucherPlaceholderPage,
+          props: { title: '証明書' },
+        },
+        {
+          path: 'vouchers/others',
+          name: 'voucher-others',
+          component: VoucherPlaceholderPage,
+          props: { title: 'その他帳票' },
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: PlaceholderPage,
@@ -206,6 +241,10 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
+
+  if (to.path.startsWith('/admin')) {
+    return true
+  }
 
   if (!auth.user && !auth.loading) {
     await auth.fetchMe().catch(() => null)

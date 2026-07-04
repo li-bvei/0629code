@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { listCases } from '../api/cases'
 import { getCompany } from '../api/companies'
-import { getCustomer } from '../api/customers'
+import { getCustomer, updateCustomer } from '../api/customers'
 import { residenceStatusOptions } from '../constants/options'
 import {
   createFamilyMember,
@@ -13,7 +13,7 @@ import {
   listFamilyMembers,
   updateFamilyMember,
 } from '../api/familyMembers'
-import type { Case, Company, Customer, FamilyMember, FamilyMemberPayload } from '../types/api'
+import type { Case, Company, Customer, FamilyMember, FamilyMemberPayload, UpdateCustomerPayload } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -24,6 +24,9 @@ const customer = ref<Customer | null>(null)
 const cases = ref<Case[]>([])
 const relatedCompanies = ref<Company[]>([])
 const familyMembers = ref<FamilyMember[]>([])
+const customerSubmitting = ref(false)
+const customerDialogVisible = ref(false)
+const customerFormRef = ref<FormInstance>()
 const familySubmitting = ref(false)
 const familyDialogVisible = ref(false)
 const editingFamilyMemberId = ref<number | null>(null)
@@ -44,6 +47,24 @@ const familyForm = ref<FamilyMemberPayload>({
   residence_card_no: '',
   residence_expiry: null,
   is_dependent: true,
+  note: '',
+})
+const customerForm = ref<UpdateCustomerPayload>({
+  name: '',
+  name_kana: '',
+  birth_date: '',
+  gender: '',
+  nationality: '',
+  email: '',
+  phone: '',
+  postal_code: '',
+  address: '',
+  my_number: '',
+  residence_status: '',
+  residence_card_no: '',
+  residence_expiry: null,
+  passport_no: '',
+  passport_expiry: null,
   note: '',
 })
 
@@ -114,10 +135,15 @@ const getFamilyCardTitle = (familyMember: FamilyMember) => {
 }
 
 const genderOptions = [
-  { label: '男性', value: 'male' },
-  { label: '女性', value: 'female' },
-  { label: 'その他', value: 'other' },
+  { label: '男性', value: '男性' },
+  { label: '女性', value: '女性' },
+  { label: 'その他', value: 'その他' },
 ]
+
+const customerRules: FormRules<UpdateCustomerPayload> = {
+  name: [{ required: true, message: '氏名を入力してください。', trigger: 'blur' }],
+  birth_date: [{ required: true, message: '生年月日を入力してください。', trigger: 'change' }],
+}
 
 const familyRules: FormRules<FamilyMemberPayload> = {
   relationship: [{ required: true, message: '関係を選択してください。', trigger: 'change' }],
@@ -131,6 +157,52 @@ const formatGender = (gender?: string | null) => {
     other: 'その他',
   }
   return gender ? labels[gender] || gender : '-'
+}
+
+const resetCustomerForm = () => {
+  if (!customer.value) return
+  customerForm.value = {
+    name: customer.value.name,
+    name_kana: customer.value.name_kana,
+    birth_date: customer.value.birth_date,
+    gender: customer.value.gender,
+    nationality: customer.value.nationality,
+    email: customer.value.email,
+    phone: customer.value.phone,
+    postal_code: customer.value.postal_code,
+    address: customer.value.address,
+    my_number: customer.value.my_number,
+    residence_status: customer.value.residence_status,
+    residence_card_no: customer.value.residence_card_no,
+    residence_expiry: customer.value.residence_expiry,
+    passport_no: customer.value.passport_no,
+    passport_expiry: customer.value.passport_expiry,
+    note: customer.value.note,
+  }
+  customerFormRef.value?.clearValidate()
+}
+
+const openEditCustomerDialog = () => {
+  resetCustomerForm()
+  customerDialogVisible.value = true
+}
+
+const submitCustomer = async () => {
+  if (!customerFormRef.value) return
+
+  const valid = await customerFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  customerSubmitting.value = true
+  try {
+    customer.value = await updateCustomer(customerId.value, customerForm.value)
+    ElMessage.success('顧客情報を更新しました。')
+    customerDialogVisible.value = false
+  } catch {
+    ElMessage.error('顧客情報の更新に失敗しました。')
+  } finally {
+    customerSubmitting.value = false
+  }
 }
 
 const fetchCustomerDetail = async () => {
@@ -174,8 +246,8 @@ const resetFamilyForm = () => {
     gender: '',
     nationality: '',
     phone: '',
-    postal_code: '',
-    address: '',
+    postal_code: customer.value?.postal_code || '',
+    address: customer.value?.address || '',
     my_number: '',
     residence_status: '',
     residence_card_no: '',
@@ -226,6 +298,8 @@ const submitFamilyMember = async () => {
     const payload = {
       ...familyForm.value,
       customer: customerId.value,
+      postal_code: familyForm.value.postal_code || customer.value?.postal_code || '',
+      address: familyForm.value.address || customer.value?.address || '',
     }
     if (editingFamilyMemberId.value) {
       await updateFamilyMember(editingFamilyMemberId.value, payload)
@@ -282,7 +356,12 @@ onMounted(() => {
 
     <div v-loading="loading" class="detail-grid">
       <el-card shadow="never">
-        <template #header>基本情報</template>
+        <template #header>
+          <div class="card-header-row">
+            <span>基本情報</span>
+            <el-button type="primary" @click="openEditCustomerDialog">編集</el-button>
+          </div>
+        </template>
         <el-descriptions v-if="customer" :column="2" border>
           <el-descriptions-item label="フリガナ" :span="2">{{ displayValue(customer.name_kana) }}</el-descriptions-item>
           <el-descriptions-item label="氏名" :span="2">{{ displayValue(customer.name) }}</el-descriptions-item>
@@ -473,6 +552,109 @@ onMounted(() => {
     </div>
 
     <el-dialog
+      v-model="customerDialogVisible"
+      title="顧客情報を編集"
+      width="680px"
+      @closed="resetCustomerForm"
+    >
+      <el-form ref="customerFormRef" :model="customerForm" :rules="customerRules" label-position="top">
+        <div class="form-grid">
+          <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start">
+            <el-input v-model="customerForm.name_kana" />
+          </el-form-item>
+          <el-form-item label="氏名" prop="name" class="form-grid-start">
+            <el-input v-model="customerForm.name" />
+          </el-form-item>
+          <el-form-item label="生年月日" prop="birth_date">
+            <el-date-picker
+              v-model="customerForm.birth_date"
+              type="date"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              placeholder="YYYY-MM-DD"
+              class="form-control"
+            />
+          </el-form-item>
+          <el-form-item label="性別" prop="gender">
+            <el-select v-model="customerForm.gender" clearable placeholder="選択してください" class="form-control">
+              <el-option v-for="option in genderOptions" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="国籍" prop="nationality">
+            <el-input v-model="customerForm.nationality" />
+          </el-form-item>
+          <el-form-item label="電話番号" prop="phone">
+            <el-input v-model="customerForm.phone" />
+          </el-form-item>
+          <el-form-item label="メール" prop="email" class="form-grid-full">
+            <el-input v-model="customerForm.email" />
+          </el-form-item>
+          <el-form-item label="郵便番号" prop="postal_code" class="form-grid-start">
+            <el-input v-model="customerForm.postal_code" />
+          </el-form-item>
+          <el-form-item label="住所" prop="address" class="form-grid-full">
+            <el-input v-model="customerForm.address" />
+          </el-form-item>
+          <el-form-item label="在留資格" prop="residence_status" class="form-grid-full">
+            <el-select
+              v-model="customerForm.residence_status"
+              clearable
+              filterable
+              allow-create
+              default-first-option
+              placeholder="選択してください"
+              class="form-control"
+            >
+              <el-option
+                v-for="status in residenceStatusOptions"
+                :key="status"
+                :label="status"
+                :value="status"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="在留カード番号" prop="residence_card_no">
+            <el-input v-model="customerForm.residence_card_no" />
+          </el-form-item>
+          <el-form-item label="在留期限" prop="residence_expiry">
+            <el-date-picker
+              v-model="customerForm.residence_expiry"
+              type="date"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              placeholder="YYYY-MM-DD"
+              class="form-control"
+            />
+          </el-form-item>
+          <el-form-item label="パスポート番号" prop="passport_no">
+            <el-input v-model="customerForm.passport_no" />
+          </el-form-item>
+          <el-form-item label="パスポート期限" prop="passport_expiry">
+            <el-date-picker
+              v-model="customerForm.passport_expiry"
+              type="date"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              placeholder="YYYY-MM-DD"
+              class="form-control"
+            />
+          </el-form-item>
+          <el-form-item label="マイナンバー" prop="my_number">
+            <el-input v-model="customerForm.my_number" />
+          </el-form-item>
+        </div>
+        <el-form-item label="備考" prop="note">
+          <el-input v-model="customerForm.note" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="customerDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="customerSubmitting" @click="submitCustomer">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="familyDialogVisible"
       :title="editingFamilyMemberId ? '家族情報編集' : '家族を追加'"
       width="640px"
@@ -532,7 +714,15 @@ onMounted(() => {
             <el-input v-model="familyForm.my_number" />
           </el-form-item>
           <el-form-item label="在留資格" prop="residence_status">
-            <el-select v-model="familyForm.residence_status" clearable placeholder="選択してください" class="form-control">
+            <el-select
+              v-model="familyForm.residence_status"
+              clearable
+              filterable
+              allow-create
+              default-first-option
+              placeholder="選択してください"
+              class="form-control"
+            >
               <el-option
                 v-for="status in residenceStatusOptions"
                 :key="status"

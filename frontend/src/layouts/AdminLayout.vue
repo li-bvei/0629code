@@ -95,11 +95,28 @@ const handleLogout = async () => {
           <el-menu-item index="/accounting/projects">プロジェクト収支表</el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="reports">
+        <el-sub-menu index="vouchers">
           <template #title>
+            <el-icon><Document /></el-icon>
             <span>帳票管理</span>
           </template>
-          <el-menu-item index="/reports">準備中</el-menu-item>
+          <el-menu-item index="/vouchers/invoices">請求書・領収書</el-menu-item>
+          <el-menu-item index="/vouchers/estimates">
+            <span>見積書</span>
+            <el-tag size="small" type="info">準備中</el-tag>
+          </el-menu-item>
+          <el-menu-item index="/vouchers/contracts">
+            <span>契約書</span>
+            <el-tag size="small" type="info">準備中</el-tag>
+          </el-menu-item>
+          <el-menu-item index="/vouchers/certificates">
+            <span>証明書</span>
+            <el-tag size="small" type="info">準備中</el-tag>
+          </el-menu-item>
+          <el-menu-item index="/vouchers/others">
+            <span>その他帳票</span>
+            <el-tag size="small" type="info">準備中</el-tag>
+          </el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="system">

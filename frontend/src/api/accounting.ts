@@ -10,6 +10,8 @@ import type {
   AccountingProjectIncome,
   AccountingProjectIncomePayload,
   AccountingProjectPayload,
+  AccountingVoucher,
+  AccountingVoucherPayload,
   Expense,
   ExpenseCategory,
   ExpenseCategoryPayload,
@@ -18,6 +20,8 @@ import type {
   IncomeSourcePayload,
   VehicleUsage,
   VehicleUsagePayload,
+  VoucherItemTemplate,
+  VoucherItemTemplatePayload,
 } from '../types/accounting'
 
 const cleanParams = (params?: AccountingListParams) => {
@@ -224,4 +228,63 @@ export const copyExpensesToProject = async (projectId: number | string, expenseI
     expense_ids: expenseIds,
   })
   return response.data
+}
+
+export const listAccountingVouchers = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<AccountingVoucher>>('/accounting/vouchers/', {
+    params: cleanParams(params),
+  })
+  return response.data
+}
+
+export const createAccountingVoucher = async (payload: AccountingVoucherPayload) => {
+  const response = await http.post<AccountingVoucher>('/accounting/vouchers/', payload)
+  return response.data
+}
+
+export const updateAccountingVoucher = async (
+  id: number | string,
+  payload: Partial<AccountingVoucherPayload>,
+) => {
+  const response = await http.patch<AccountingVoucher>(`/accounting/vouchers/${id}/`, payload)
+  return response.data
+}
+
+export const deleteAccountingVoucher = async (id: number) => {
+  await http.delete(`/accounting/vouchers/${id}/`)
+}
+
+export const downloadAccountingVoucherPdf = async (id: number) => {
+  const response = await http.get<Blob>(`/accounting/vouchers/${id}/pdf/`, {
+    responseType: 'blob',
+  })
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+  }
+}
+
+export const listVoucherItemTemplates = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<VoucherItemTemplate>>(
+    '/accounting/voucher-item-templates/',
+    { params: cleanParams(params) },
+  )
+  return response.data
+}
+
+export const createVoucherItemTemplate = async (payload: VoucherItemTemplatePayload) => {
+  const response = await http.post<VoucherItemTemplate>('/accounting/voucher-item-templates/', payload)
+  return response.data
+}
+
+export const updateVoucherItemTemplate = async (
+  id: number | string,
+  payload: Partial<VoucherItemTemplatePayload>,
+) => {
+  const response = await http.patch<VoucherItemTemplate>(`/accounting/voucher-item-templates/${id}/`, payload)
+  return response.data
+}
+
+export const deleteVoucherItemTemplate = async (id: number) => {
+  await http.delete(`/accounting/voucher-item-templates/${id}/`)
 }

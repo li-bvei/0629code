@@ -7,7 +7,9 @@ import { createCase, deleteCase, listCases, updateCase } from '../api/cases'
 import { listCompanies } from '../api/companies'
 import { listCustomers } from '../api/customers'
 import { listEmployees } from '../api/employees'
+import { caseTypeOptions } from '../constants/options'
 import type { Case, CasePayload, Company, Customer, Employee } from '../types/api'
+import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const router = useRouter()
@@ -44,21 +46,6 @@ const statusOptions = [
   '補正対応中',
   '完了',
   '中止',
-]
-
-const caseTypeOptions = [
-  '在留申請',
-  '在留更新',
-  '永住申請',
-  '帰化申請',
-  '会社設立',
-  '会社変更',
-  '入社手続',
-  '社会保険・年金',
-  '税務',
-  '許認可申請',
-  '届出・証明',
-  'その他',
 ]
 
 const rules: FormRules<CasePayload> = {
@@ -212,7 +199,13 @@ const confirmDeleteCase = async (caseItem: Case) => {
       <el-table v-loading="loading" :data="cases" stripe>
         <el-table-column prop="case_number" label="案件番号" min-width="150" />
         <el-table-column prop="case_type" label="案件種別" min-width="150" />
-        <el-table-column prop="status" label="ステータス" width="130" />
+        <el-table-column label="現在の進捗" width="140">
+          <template #default="{ row }">
+            <el-tag :type="getCaseDisplayStatusTagType(getCaseDisplayStatus(row))">
+              {{ getCaseDisplayStatus(row) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="customer_name" label="顧客名" min-width="150" />
         <el-table-column prop="company_name" label="会社名" min-width="180">
           <template #default="{ row }">{{ row.company_name || '-' }}</template>
@@ -257,7 +250,14 @@ const confirmDeleteCase = async (caseItem: Case) => {
             <el-input :model-value="editingCaseId ? caseForm.case_number : '自動生成'" disabled />
           </el-form-item>
           <el-form-item label="案件種別" prop="case_type">
-            <el-select v-model="caseForm.case_type" placeholder="選択してください" class="form-control">
+            <el-select
+              v-model="caseForm.case_type"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="選択してください"
+              class="form-control"
+            >
               <el-option
                 v-for="caseType in caseTypeOptions"
                 :key="caseType"

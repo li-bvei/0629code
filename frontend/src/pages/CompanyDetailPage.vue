@@ -344,7 +344,15 @@ onMounted(() => {
             <el-input v-model="staffForm.nationality" />
           </el-form-item>
           <el-form-item label="在留資格" prop="residence_status">
-            <el-select v-model="staffForm.residence_status" clearable placeholder="選択してください" class="form-control">
+            <el-select
+              v-model="staffForm.residence_status"
+              clearable
+              filterable
+              allow-create
+              default-first-option
+              placeholder="選択してください"
+              class="form-control"
+            >
               <el-option v-for="status in residenceStatusOptions" :key="status" :label="status" :value="status" />
             </el-select>
           </el-form-item>

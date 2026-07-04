@@ -5,10 +5,12 @@ from .views import (
     AccountingProjectExpenseViewSet,
     AccountingProjectIncomeViewSet,
     AccountingProjectViewSet,
+    AccountingVoucherViewSet,
     ExpenseCategoryViewSet,
     ExpenseViewSet,
     IncomeSourceViewSet,
     VehicleUsageViewSet,
+    VoucherItemTemplateViewSet,
     dashboard,
 )
 
@@ -20,6 +22,8 @@ router.register('vehicle-usages', VehicleUsageViewSet, basename='accounting-vehi
 router.register('projects', AccountingProjectViewSet, basename='accounting-project')
 router.register('project-incomes', AccountingProjectIncomeViewSet, basename='accounting-project-income')
 router.register('project-expenses', AccountingProjectExpenseViewSet, basename='accounting-project-expense')
+router.register('vouchers', AccountingVoucherViewSet, basename='accounting-voucher')
+router.register('voucher-item-templates', VoucherItemTemplateViewSet, basename='accounting-voucher-item-template')
 
 urlpatterns = [
     path('dashboard/', dashboard, name='accounting-dashboard'),

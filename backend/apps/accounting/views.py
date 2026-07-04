@@ -10,20 +10,25 @@ from .models import (
     AccountingProject,
     AccountingProjectExpense,
     AccountingProjectIncome,
+    AccountingVoucher,
     Expense,
     ExpenseCategory,
     IncomeSource,
     VehicleUsage,
+    VoucherItemTemplate,
 )
+from .pdf import voucher_pdf_response
 from .serializers import (
     AccountingProjectDetailSerializer,
     AccountingProjectExpenseSerializer,
     AccountingProjectIncomeSerializer,
     AccountingProjectSerializer,
+    AccountingVoucherSerializer,
     ExpenseCategorySerializer,
     ExpenseSerializer,
     IncomeSourceSerializer,
     VehicleUsageSerializer,
+    VoucherItemTemplateSerializer,
 )
 
 
@@ -275,6 +280,53 @@ class AccountingProjectExpenseViewSet(ModelViewSet):
                 | Q(note__icontains=keyword)
             )
         return queryset.order_by('-expense_date', '-id')
+
+
+class AccountingVoucherViewSet(ModelViewSet):
+    queryset = AccountingVoucher.objects.select_related('created_by')
+    serializer_class = AccountingVoucherSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        params = self.request.query_params
+
+        if params.get('voucher_type'):
+            queryset = queryset.filter(voucher_type=params['voucher_type'])
+        if params.get('start_date'):
+            queryset = queryset.filter(issue_date__gte=params['start_date'])
+        if params.get('end_date'):
+            queryset = queryset.filter(issue_date__lte=params['end_date'])
+        if params.get('search'):
+            keyword = params['search']
+            queryset = queryset.filter(
+                Q(voucher_number__icontains=keyword)
+                | Q(recipient_name__icontains=keyword)
+                | Q(title__icontains=keyword)
+                | Q(details__icontains=keyword)
+                | Q(note__icontains=keyword)
+            )
+        return queryset.order_by('-issue_date', '-id')
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(created_by=user)
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        voucher = self.get_object()
+        return voucher_pdf_response(voucher)
+
+
+class VoucherItemTemplateViewSet(ModelViewSet):
+    queryset = VoucherItemTemplate.objects.all()
+    serializer_class = VoucherItemTemplateSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        include_inactive = str(self.request.query_params.get('include_inactive', '')).lower() in ('1', 'true', 'yes')
+        if self.action == 'list' and not include_inactive:
+            queryset = queryset.filter(is_active=True)
+        return queryset.order_by('sort_order', 'id')
 
 
 @api_view(['GET'])

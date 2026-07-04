@@ -2,9 +2,12 @@ import type { PaginatedResponse } from './api'
 
 export interface AccountingListParams {
   page?: number
+  page_size?: number
   search?: string
   start_date?: string | null
   end_date?: string | null
+  voucher_type?: string
+  include_inactive?: boolean | string | number
   project?: number | string
   category?: string
   payment_method?: string
@@ -191,6 +194,84 @@ export interface AccountingProjectExpensePayload {
   expense_target?: string
   note?: string
   source_expense?: number | null
+}
+
+export type AccountingVoucherType = 'invoice' | 'receipt'
+
+export interface AccountingVoucherLineItem {
+  item_name: string
+  quantity: number | string
+  unit_price: number | string
+  line_total?: number | string
+}
+
+export interface AccountingVoucher {
+  id: number
+  voucher_type: AccountingVoucherType
+  voucher_type_display: string
+  voucher_number: string
+  issue_date: string
+  recipient_name: string
+  recipient_postal_code: string
+  recipient_address: string
+  title: string
+  amount: number | string
+  tax_amount: number | string
+  total_amount: number | string
+  details: string
+  line_items: AccountingVoucherLineItem[]
+  note: string
+  payment_due_date: string | null
+  payment_method: string
+  issuer_name: string
+  issuer_postal_code: string
+  issuer_address: string
+  issuer_tel: string
+  issuer_registration_number: string
+  bank_info: string
+  created_by?: number | null
+  created_by_username?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AccountingVoucherPayload {
+  voucher_type: AccountingVoucherType
+  issue_date: string
+  recipient_name?: string
+  recipient_postal_code?: string
+  recipient_address?: string
+  title?: string
+  amount: number | string
+  tax_amount?: number | string
+  details?: string
+  line_items?: AccountingVoucherLineItem[]
+  note?: string
+  payment_due_date?: string | null
+  payment_method?: string
+  issuer_name?: string
+  issuer_postal_code?: string
+  issuer_address?: string
+  issuer_tel?: string
+  issuer_registration_number?: string
+  bank_info?: string
+}
+
+export interface VoucherItemTemplate {
+  id: number
+  name: string
+  default_unit_price?: number | string | null
+  is_active: boolean
+  sort_order: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface VoucherItemTemplatePayload {
+  name: string
+  default_unit_price?: number | string | null
+  is_active?: boolean
+  sort_order?: number
 }
 
 export type AccountingPaginatedResponse<T> = PaginatedResponse<T>
