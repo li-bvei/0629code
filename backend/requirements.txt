@@ -4,6 +4,7 @@ django-simpleui==2026.1.13
 djangorestframework==3.16.1
 gunicorn==23.0.0
 PyMySQL==1.2.0
+PyMuPDF==1.26.5
 python-dotenv==1.2.1
 reportlab==4.4.6
 sqlparse==0.5.5

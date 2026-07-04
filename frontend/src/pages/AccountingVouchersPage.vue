@@ -47,8 +47,6 @@ const filters = ref({
   title: '',
   amount_min: '',
   amount_max: '',
-  payment_due_date_from: '',
-  payment_due_date_to: '',
   keyword: '',
 })
 const newItemTemplate = ref({
@@ -130,8 +128,9 @@ const getLineTotal = (item: AccountingVoucherLineItem) => {
 const lineSubtotal = computed(() => {
   return (voucherForm.value.line_items || []).reduce((sum, item) => sum + getLineTotal(item), 0)
 })
-const taxAmount = computed(() => Math.round(lineSubtotal.value * 0.1))
-const totalAmount = computed(() => lineSubtotal.value + taxAmount.value)
+const totalAmount = computed(() => lineSubtotal.value)
+const taxExcludedAmount = computed(() => Math.round(totalAmount.value / 1.1))
+const taxAmount = computed(() => totalAmount.value - taxExcludedAmount.value)
 const filteredManagedItemTemplates = computed(() => {
   const keyword = itemManagerSearch.value.trim()
   if (!keyword) return managedVoucherItemTemplates.value
@@ -232,8 +231,6 @@ const resetFilters = () => {
     title: '',
     amount_min: '',
     amount_max: '',
-    payment_due_date_from: '',
-    payment_due_date_to: '',
     keyword: '',
   }
   fetchVouchers(1)
@@ -476,7 +473,7 @@ const buildPayload = () => {
     ...voucherForm.value,
     line_items: lineItems,
     details: lineItems.map((item) => item.item_name).filter(Boolean).join('\n'),
-    amount: lineSubtotal.value,
+    amount: taxExcludedAmount.value,
     tax_amount: taxAmount.value,
   }
   if (payload.voucher_type === 'invoice') {
@@ -554,8 +551,22 @@ const downloadPdf = async (voucher: AccountingVoucher, withSeal = false) => {
   }
 }
 
-const handlePdfDownloadCommand = (voucher: AccountingVoucher, withSeal: unknown) => {
-  downloadPdf(voucher, Boolean(withSeal))
+const handleVoucherActionCommand = (voucher: AccountingVoucher, command: string) => {
+  if (command === 'edit') {
+    openEditDialog(voucher)
+    return
+  }
+  if (command === 'pdf-no-seal') {
+    downloadPdf(voucher, false)
+    return
+  }
+  if (command === 'pdf-seal') {
+    downloadPdf(voucher, true)
+    return
+  }
+  if (command === 'delete') {
+    confirmDeleteVoucher(voucher)
+  }
 }
 
 onMounted(() => {
@@ -613,22 +624,6 @@ onMounted(() => {
         <el-input v-model="filters.title" clearable placeholder="件名 / 内容" class="accounting-filter-search" />
         <el-input v-model="filters.amount_min" clearable inputmode="numeric" placeholder="最低金額" class="accounting-filter-date" />
         <el-input v-model="filters.amount_max" clearable inputmode="numeric" placeholder="最高金額" class="accounting-filter-date" />
-        <el-date-picker
-          v-model="filters.payment_due_date_from"
-          type="date"
-          format="YYYY-MM-DD"
-          value-format="YYYY-MM-DD"
-          placeholder="支払期日 From"
-          class="accounting-filter-date"
-        />
-        <el-date-picker
-          v-model="filters.payment_due_date_to"
-          type="date"
-          format="YYYY-MM-DD"
-          value-format="YYYY-MM-DD"
-          placeholder="支払期日 To"
-          class="accounting-filter-date"
-        />
         <el-input v-model="filters.keyword" clearable placeholder="キーワード" class="accounting-filter-search" />
         <div class="accounting-filter-actions">
           <el-button type="primary" @click="handleSearch">検索</el-button>
@@ -643,11 +638,11 @@ onMounted(() => {
         <strong>{{ summary.count }}件</strong>
       </div>
       <div class="accounting-summary-pill">
-        <span>小計合計</span>
+        <span>税抜金額</span>
         <strong>{{ formatMoney(summary.amount) }}</strong>
       </div>
       <div class="accounting-summary-pill">
-        <span>消費税合計</span>
+        <span>消費税</span>
         <strong>{{ formatMoney(summary.tax) }}</strong>
       </div>
       <div class="accounting-summary-pill is-accent">
@@ -658,10 +653,10 @@ onMounted(() => {
 
     <el-card class="accounting-card" shadow="never">
       <el-table v-loading="loading" :data="vouchers" stripe>
-        <el-table-column label="発行日" width="120">
+        <el-table-column label="発行日" width="110">
           <template #default="{ row }">{{ formatDate(row.issue_date) }}</template>
         </el-table-column>
-        <el-table-column label="種別" width="100">
+        <el-table-column label="種別" width="90">
           <template #default="{ row }">
             <el-tag :type="getVoucherTypeTag(row.voucher_type)">
               {{ getVoucherTypeLabel(row.voucher_type) }}
@@ -674,7 +669,7 @@ onMounted(() => {
         <el-table-column prop="title" label="件名 / タイトル" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ row.title || '-' }}</template>
         </el-table-column>
-        <el-table-column label="内容" min-width="300">
+        <el-table-column label="内容" min-width="240">
           <template #default="{ row }">
             <el-tooltip placement="top-start" effect="light">
               <template #content>
@@ -691,34 +686,28 @@ onMounted(() => {
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="金額（税込）" width="140" align="right">
+        <el-table-column label="金額（税込）" width="130" align="right">
           <template #default="{ row }">{{ formatMoney(row.total_amount) }}</template>
         </el-table-column>
-        <el-table-column label="小計" width="130" align="right">
-          <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
-        </el-table-column>
-        <el-table-column label="消費税" width="120" align="right">
-          <template #default="{ row }">{{ formatMoney(row.tax_amount) }}</template>
-        </el-table-column>
-        <el-table-column label="支払期日" width="120">
+        <el-table-column label="支払期日" width="110">
           <template #default="{ row }">{{ row.payment_due_date ? formatDate(row.payment_due_date) : '-' }}</template>
         </el-table-column>
-        <el-table-column prop="note" label="備考" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.note || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openEditDialog(row)">編集</el-button>
-            <el-dropdown trigger="click" @command="handlePdfDownloadCommand(row, $event)">
-              <el-button text type="primary">PDF</el-button>
+            <el-dropdown trigger="click" @command="handleVoucherActionCommand(row, $event)">
+              <el-button text type="primary">
+                操作
+                <span class="operation-caret">▼</span>
+              </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item :command="false">印章なし</el-dropdown-item>
-                  <el-dropdown-item :command="true">印章あり</el-dropdown-item>
+                  <el-dropdown-item command="edit">編集</el-dropdown-item>
+                  <el-dropdown-item command="pdf-no-seal">PDF（印章なし）</el-dropdown-item>
+                  <el-dropdown-item command="pdf-seal">PDF（印章あり）</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>削除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-button text type="danger" @click="confirmDeleteVoucher(row)">削除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -815,10 +804,10 @@ onMounted(() => {
                 <el-form-item label="数量">
                   <el-input v-model="item.quantity" inputmode="decimal" />
                 </el-form-item>
-                <el-form-item label="単価">
+                <el-form-item label="単価（税込）">
                   <el-input v-model="item.unit_price" inputmode="numeric" />
                 </el-form-item>
-                <el-form-item label="金額">
+                <el-form-item label="金額（税込）">
                   <el-input :model-value="formatMoney(getLineTotal(item))" disabled />
                 </el-form-item>
                 <el-button text type="danger" class="voucher-line-delete" @click="removeLineItem(index)">
@@ -828,15 +817,15 @@ onMounted(() => {
             </div>
             <div class="voucher-total-box">
               <div>
-                <span>小計（税抜）</span>
-                <strong>{{ formatMoney(lineSubtotal) }}</strong>
+                <span>税抜金額</span>
+                <strong>{{ formatMoney(taxExcludedAmount) }}</strong>
               </div>
               <div>
-                <span>消費税（10%）</span>
+                <span>消費税</span>
                 <strong>{{ formatMoney(taxAmount) }}</strong>
               </div>
               <div class="is-total">
-                <span>合計（税込）</span>
+                <span>税込合計</span>
                 <strong>{{ formatMoney(totalAmount) }}</strong>
               </div>
             </div>

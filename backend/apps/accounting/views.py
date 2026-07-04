@@ -15,6 +15,7 @@ from .models import (
     ExpenseCategory,
     IncomeSource,
     VehicleUsage,
+    VisaReturnApplication,
     VoucherItemTemplate,
 )
 from .pdf import voucher_pdf_response
@@ -28,8 +29,10 @@ from .serializers import (
     ExpenseSerializer,
     IncomeSourceSerializer,
     VehicleUsageSerializer,
+    VisaReturnApplicationSerializer,
     VoucherItemTemplateSerializer,
 )
+from .visa_return_pdf import visa_return_pdf_response
 
 
 def parse_bool(value):
@@ -348,6 +351,33 @@ class VoucherItemTemplateViewSet(ModelViewSet):
         if self.action == 'list' and not include_inactive:
             queryset = queryset.filter(is_active=True)
         return queryset.order_by('sort_order', 'id')
+
+
+class VisaReturnApplicationViewSet(ModelViewSet):
+    queryset = VisaReturnApplication.objects.select_related('created_by')
+    serializer_class = VisaReturnApplicationSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        keyword = self.request.query_params.get('search')
+        if keyword:
+            queryset = queryset.filter(
+                Q(applicant_name__icontains=keyword)
+                | Q(passport_number__icontains=keyword)
+                | Q(phone__icontains=keyword)
+                | Q(email__icontains=keyword)
+                | Q(guarantor_name__icontains=keyword)
+            )
+        return queryset.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(created_by=user)
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        application = self.get_object()
+        return visa_return_pdf_response(application)
 
 
 @api_view(['GET'])

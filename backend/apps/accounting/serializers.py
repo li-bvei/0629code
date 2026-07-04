@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
 from django.db.models import Sum
 from rest_framework import serializers
 
@@ -10,6 +12,7 @@ from .models import (
     ExpenseCategory,
     IncomeSource,
     VehicleUsage,
+    VisaReturnApplication,
     VoucherItemTemplate,
 )
 
@@ -105,10 +108,62 @@ class AccountingVoucherSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountingVoucher
         fields = '__all__'
-        read_only_fields = ('voucher_number', 'total_amount', 'created_by', 'created_at', 'updated_at')
+        read_only_fields = (
+            'voucher_number',
+            'amount',
+            'tax_amount',
+            'total_amount',
+            'created_by',
+            'created_at',
+            'updated_at',
+        )
+
+    def calculate_amounts(self, line_items):
+        normalized_items = []
+        total_amount = Decimal('0')
+
+        for item in line_items or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                quantity = Decimal(str(item.get('quantity') or 0))
+                unit_price = Decimal(str(item.get('unit_price') or 0))
+            except (InvalidOperation, ValueError):
+                raise serializers.ValidationError({'line_items': '数量と単価は数字で入力してください。'})
+            line_total = (quantity * unit_price).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            normalized_items.append({
+                **item,
+                'quantity': int(quantity) if quantity == quantity.to_integral_value() else float(quantity),
+                'unit_price': int(unit_price) if unit_price == unit_price.to_integral_value() else float(unit_price),
+                'line_total': int(line_total),
+            })
+            total_amount += line_total
+
+        tax_excluded = (total_amount / Decimal('1.1')).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        tax_amount = total_amount - tax_excluded
+        return normalized_items, tax_excluded, tax_amount, total_amount
+
+    def validate(self, attrs):
+        line_items = attrs.get('line_items')
+        if line_items is None and self.instance is not None:
+            line_items = self.instance.line_items
+
+        normalized_items, amount, tax_amount, total_amount = self.calculate_amounts(line_items or [])
+        attrs['line_items'] = normalized_items
+        attrs['amount'] = amount
+        attrs['tax_amount'] = tax_amount
+        attrs['total_amount'] = total_amount
+        return attrs
 
 
 class VoucherItemTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = VoucherItemTemplate
         fields = '__all__'
+
+
+class VisaReturnApplicationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VisaReturnApplication
+        fields = '__all__'
+        read_only_fields = ('created_by', 'created_at', 'updated_at')

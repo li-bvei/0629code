@@ -235,14 +235,27 @@ class AccountingVoucher(models.Model):
     def __str__(self):
         return f'{self.get_voucher_type_display()} {self.voucher_number}'
 
+    # def save(self, *args, **kwargs):
+    #     self.line_items = self.normalize_line_items(self.line_items)
+    #     if self.line_items:
+    #         self.amount = sum(Decimal(str(item['line_total'])) for item in self.line_items)
+    #         self.tax_amount = (self.amount * Decimal('0.10')).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    #     else:
+    #         self.tax_amount = self.tax_amount or 0
+    #     self.total_amount = self.amount + self.tax_amount
+    #     if not self.voucher_number:
+    #         self.voucher_number = self.generate_voucher_number()
+    #     super().save(*args, **kwargs)
     def save(self, *args, **kwargs):
         self.line_items = self.normalize_line_items(self.line_items)
         if self.line_items:
-            self.amount = sum(Decimal(str(item['line_total'])) for item in self.line_items)
-            self.tax_amount = (self.amount * Decimal('0.10')).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            total_amount = sum(Decimal(str(item['line_total'])) for item in self.line_items)
+            self.amount = (total_amount / Decimal('1.1')).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            self.tax_amount = total_amount - self.amount
+            self.total_amount = total_amount
         else:
             self.tax_amount = self.tax_amount or 0
-        self.total_amount = self.amount + self.tax_amount
+            self.total_amount = self.amount + self.tax_amount
         if not self.voucher_number:
             self.voucher_number = self.generate_voucher_number()
         super().save(*args, **kwargs)
@@ -294,3 +307,57 @@ class AccountingVoucher(models.Model):
             except ValueError:
                 next_number = 1
         return f'{base}-{next_number:04d}'
+
+
+class VisaReturnApplication(models.Model):
+    GENDER_CHOICES = (
+        ('male', '男性'),
+        ('female', '女性'),
+    )
+    MARITAL_STATUS_CHOICES = (
+        ('single', '未婚'),
+        ('married', '既婚'),
+        ('divorced', '離婚'),
+        ('widowed', '死別'),
+    )
+
+    applicant_name = models.CharField('申请人姓名', max_length=255, blank=True)
+    nationality = models.CharField('国籍', max_length=100, blank=True)
+    birth_date = models.DateField('生年月日', null=True, blank=True)
+    gender = models.CharField('性別', max_length=20, blank=True, choices=GENDER_CHOICES)
+    marital_status = models.CharField('婚姻状況', max_length=20, blank=True, choices=MARITAL_STATUS_CHOICES)
+    passport_number = models.CharField('旅券番号', max_length=100, blank=True)
+    passport_issue_date = models.DateField('旅券発行日', null=True, blank=True)
+    passport_expiry_date = models.DateField('旅券期限', null=True, blank=True)
+    residence_status = models.CharField('在留資格', max_length=100, blank=True)
+    address = models.TextField('住所', blank=True)
+    phone = models.CharField('電話番号', max_length=50, blank=True)
+    email = models.EmailField('メール', blank=True)
+    occupation = models.CharField('職業', max_length=100, blank=True)
+    guarantor_name = models.CharField('保証人氏名', max_length=255, blank=True)
+    guarantor_phone = models.CharField('保証人電話番号', max_length=50, blank=True)
+    guarantor_address = models.TextField('保証人住所', blank=True)
+    guarantor_relationship = models.CharField('申請人との関係', max_length=100, blank=True)
+    guarantor_occupation = models.CharField('保証人職業', max_length=100, blank=True)
+    guarantor_snapshot = models.JSONField('保証人スナップショット', default=dict, blank=True)
+    form_data = models.JSONField('表单数据', default=dict, blank=True)
+    note = models.TextField('備考', blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='visa_return_applications',
+        verbose_name='作成者',
+    )
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_visa_return_applications'
+        verbose_name = '返签visa表'
+        verbose_name_plural = '返签visa表'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.applicant_name or f'返签visa表 {self.pk}'

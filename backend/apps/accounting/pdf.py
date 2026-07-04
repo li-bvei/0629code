@@ -232,8 +232,8 @@ def get_line_items(voucher):
         return [{
             'item_name': detail_lines[0],
             'quantity': 1,
-            'unit_price': int(voucher.amount or 0),
-            'line_total': int(voucher.amount or 0),
+            'unit_price': int(voucher.total_amount or 0),
+            'line_total': int(voucher.total_amount or 0),
         }]
 
     return [
@@ -454,9 +454,9 @@ def build_invoice_pdf(voucher, with_seal=False):
     col_widths = [item_w, unit_w, qty_w, amount_w, note_w]
     detail_rows = [[
         {'text': '適用', 'align': 'center', 'bold': True},
-        {'text': '単価', 'align': 'center', 'bold': True},
+        {'text': '単価（税込）', 'align': 'center', 'bold': True, 'size': 8},
         {'text': '数量', 'align': 'center', 'bold': True},
-        {'text': '金額', 'align': 'center', 'bold': True},
+        {'text': '金額（税込）', 'align': 'center', 'bold': True, 'size': 8},
         {'text': '備考', 'align': 'center', 'bold': True},
     ]]
 
@@ -481,7 +481,7 @@ def build_invoice_pdf(voucher, with_seal=False):
     detail_rows.extend([
         [
             {'text': '', 'span': 3, 'border': False},
-            {'text': '小計', 'align': 'right', 'size': 8},
+            {'text': '税抜金額', 'align': 'right', 'size': 8},
             {'text': yen(voucher.amount), 'align': 'right', 'size': 8},
         ],
         [
@@ -491,7 +491,7 @@ def build_invoice_pdf(voucher, with_seal=False):
         ],
         [
             {'text': '', 'span': 3, 'border': False},
-            {'text': '合計', 'align': 'right', 'bold': True, 'size': 8},
+            {'text': '税込合計', 'align': 'right', 'bold': True, 'size': 8},
             {'text': yen(voucher.total_amount), 'align': 'right', 'bold': True, 'size': 8},
         ],
     ])
@@ -594,7 +594,7 @@ def build_receipt_pdf(voucher, with_seal=False):
     y -= 8 * mm
     receipt_rows = [[
         {'text': '品　名', 'align': 'center', 'bold': True, 'fill': header_fill},
-        {'text': '金額', 'align': 'center', 'bold': True, 'fill': header_fill},
+        {'text': '金額（税込）', 'align': 'center', 'bold': True, 'fill': header_fill, 'size': 8},
         {'text': '摘　要', 'align': 'center', 'bold': True, 'fill': header_fill},
     ]]
 
@@ -616,7 +616,7 @@ def build_receipt_pdf(voucher, with_seal=False):
     receipt_rows.extend([
         [
             {'text': '', 'border': False},
-            {'text': '小計', 'align': 'right', 'size': 8},
+            {'text': '税抜金額', 'align': 'right', 'size': 8},
             {'text': yen(voucher.amount), 'align': 'right', 'size': 8},
         ],
         [
@@ -626,7 +626,7 @@ def build_receipt_pdf(voucher, with_seal=False):
         ],
         [
             {'text': '', 'border': False},
-            {'text': '合計', 'align': 'right', 'bold': True, 'size': 8},
+            {'text': '税込合計', 'align': 'right', 'bold': True, 'size': 8},
             {'text': yen(voucher.total_amount), 'align': 'right', 'bold': True, 'size': 8},
         ],
     ])

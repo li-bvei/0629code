@@ -1,0 +1,409 @@
+{
+  "visa_1": {
+    "pinyin_name1": {
+      "x": 216,
+      "y": 618,
+      "type": "text",
+      "font_size": 12
+    },
+    "pinyin_name2": {
+      "x": 216,
+      "y": 598,
+      "type": "text",
+      "font_size": 12
+    },
+    "chinese_name1": {
+      "x": 466,
+      "y": 616,
+      "type": "text",
+      "font_size": 12
+    },
+    "chinese_name2": {
+      "x": 468,
+      "y": 598,
+      "type": "text",
+      "font_size": 12
+    },
+    "used_name1": {
+      "x": 216,
+      "y": 578,
+      "type": "text",
+      "font_size": 11
+    },
+    "used_name2": {
+      "x": 469,
+      "y": 576,
+      "type": "text",
+      "font_size": 11
+    },
+    "nationality": {
+      "x": 210,
+      "y": 515,
+      "type": "text",
+      "font_size": 11
+    },
+    "orthernationality": {
+      "x": 333,
+      "y": 495,
+      "type": "text",
+      "font_size": 11
+    },
+    "birth_date": {
+      "x": 124,
+      "y": 555,
+      "type": "text",
+      "font_size": 11
+    },
+    "birth_place": {
+      "x": 275,
+      "y": 553,
+      "type": "text",
+      "font_size": 11
+    },
+    "xx": {
+      "x": 116,
+      "y": 531,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": ""
+    },
+    "xy": {
+      "x": 163,
+      "y": 532,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": ""
+    },
+    "marry1": {
+      "x": 324,
+      "y": 530,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": ""
+    },
+    "marry2": {
+      "x": 385,
+      "y": 530,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": ""
+    },
+    "marry3": {
+      "x": 444,
+      "y": 530,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": ""
+    },
+    "marry4": {
+      "x": 506,
+      "y": 530,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": ""
+    },
+    "chinese_id": {
+      "x": 146,
+      "y": 475,
+      "type": "text",
+      "font_size": 11
+    },
+    "passport_type": {
+      "x": 134,
+      "y": 452,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": "checked"
+    },
+    "passport_id": {
+      "x": 431,
+      "y": 454,
+      "type": "text",
+      "font_size": 11
+    },
+    "passport_address": {
+      "x": 122,
+      "y": 433,
+      "type": "text",
+      "font_size": 10
+    },
+    "passport_date1": {
+      "x": 476,
+      "y": 434,
+      "type": "text",
+      "font_size": 11
+    },
+    "passport_a": {
+      "x": 124,
+      "y": 413,
+      "type": "text",
+      "font_size": 11
+    },
+    "zailiu_number": {
+      "x": 196,
+      "y": 391,
+      "type": "text",
+      "font_size": 11
+    },
+    "zailiu_type": {
+      "x": 165,
+      "y": 367,
+      "type": "text",
+      "font_size": 11
+    },
+    "passport_date2": {
+      "x": 474,
+      "y": 411,
+      "type": "text",
+      "font_size": 11
+    },
+    "entry_port": {
+      "x": 120,
+      "y": 329,
+      "type": "text",
+      "font_size": 11
+    },
+    "entry_time1": {
+      "x": 167,
+      "y": 348,
+      "type": "text",
+      "font_size": 11
+    },
+    "entry_time2": {
+      "x": 277,
+      "y": 349,
+      "type": "text",
+      "font_size": 11
+    },
+    "entry_time3": {
+      "x": 475,
+      "y": 350,
+      "type": "text",
+      "font_size": 11
+    },
+    "airline": {
+      "x": 467,
+      "y": 330,
+      "type": "text",
+      "font_size": 11
+    },
+    "home_address1": {
+      "x": 120,
+      "y": 204,
+      "type": "text",
+      "font_size": 10
+    },
+    "home_address2": {
+      "x": 120,
+      "y": 191,
+      "type": "text",
+      "font_size": 10
+    },
+    "home_phone": {
+      "x": 160,
+      "y": 172,
+      "type": "text",
+      "font_size": 10
+    },
+    "mobile_phone": {
+      "x": 269,
+      "y": 172,
+      "type": "text",
+      "font_size": 10
+    },
+    "email": {
+      "x": 207,
+      "y": 153,
+      "type": "text",
+      "font_size": 10
+    },
+    "workplace_name": {
+      "x": 199,
+      "y": 117,
+      "type": "text",
+      "font_size": 10
+    },
+    "workplace_address": {
+      "x": 127,
+      "y": 83,
+      "type": "text",
+      "font_size": 10
+    },
+    "workplace_phone": {
+      "x": 458,
+      "y": 116,
+      "type": "text",
+      "font_size": 10
+    },
+    "job_title": {
+      "x": 130,
+      "y": 64,
+      "type": "text",
+      "font_size": 10
+    },
+    "hotel": {
+      "x": 206,
+      "y": 291,
+      "type": "text",
+      "font_size": 10
+    },
+    "hotel_phone": {
+      "x": 465,
+      "y": 290,
+      "type": "text",
+      "font_size": 10
+    },
+    "hotel_address": {
+      "x": 127,
+      "y": 260,
+      "type": "text",
+      "font_size": 10
+    },
+    "last": {
+      "x": 232,
+      "y": 241,
+      "type": "text",
+      "font_size": 10
+    }
+  },
+  "visa_2": {
+    "job_title2": {
+      "x": 90,
+      "y": 784,
+      "type": "text",
+      "font_size": 11
+    },
+    "guarantor_name_en": {
+      "x": 138,
+      "y": 746,
+      "type": "text",
+      "font_size": 12
+    },
+    "guarantor_name_jp": {
+      "x": 138,
+      "y": 729,
+      "type": "text",
+      "font_size": 12
+    },
+    "guarantor_phone": {
+      "x": 457,
+      "y": 729,
+      "type": "text",
+      "font_size": 11
+    },
+    "guarantor_address_en": {
+      "x": 137,
+      "y": 698,
+      "type": "text",
+      "font_size": 10
+    },
+    "guarantor_address_jp": {
+      "x": 136,
+      "y": 667,
+      "type": "text",
+      "font_size": 10
+    },
+    "guarantor_birth_date": {
+      "x": 142,
+      "y": 648,
+      "type": "text",
+      "font_size": 11
+    },
+    "relation_to_applicant": {
+      "x": 233,
+      "y": 628,
+      "type": "text",
+      "font_size": 11
+    },
+    "guarantor_job": {
+      "x": 173,
+      "y": 610,
+      "type": "text",
+      "font_size": 11
+    },
+    "guarantor_nationality": {
+      "x": 297,
+      "y": 590,
+      "type": "text",
+      "font_size": 11
+    },
+    "same": {
+      "x": 121,
+      "y": 548,
+      "type": "text",
+      "font_size": 11,
+      "default": "同上"
+    },
+    "xx": {
+      "x": 324,
+      "y": 645,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": ""
+    },
+    "xy": {
+      "x": 370,
+      "y": 645,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": ""
+    },
+    "x1": {
+      "x": 540,
+      "y": 389,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": "checked"
+    },
+    "x2": {
+      "x": 540,
+      "y": 370,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": "checked"
+    },
+    "x3": {
+      "x": 541,
+      "y": 352,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": "checked"
+    },
+    "x4": {
+      "x": 541,
+      "y": 322,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": "checked"
+    },
+    "x5": {
+      "x": 541,
+      "y": 288,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": "checked"
+    },
+    "x6": {
+      "x": 541,
+      "y": 269,
+      "type": "checkbox",
+      "mark": "x",
+      "size": 7,
+      "default": "checked"
+    }
+  }
+}

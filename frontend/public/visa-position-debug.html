@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visa Position Debug</title>
+  <style>
+    :root {
+      color: #2f3a45;
+      background: #f5f8fb;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid #dce6ef;
+      box-shadow: 0 2px 8px rgba(47, 58, 69, 0.06);
+    }
+
+    .toolbar h1 {
+      margin: 0 12px 0 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    button,
+    select,
+    input {
+      height: 34px;
+      border: 1px solid #c8d6e2;
+      border-radius: 6px;
+      background: #fff;
+      color: #2f3a45;
+      font-size: 14px;
+    }
+
+    button {
+      padding: 0 12px;
+      cursor: pointer;
+      background: #aad4f4;
+      border-color: #aad4f4;
+      font-weight: 600;
+    }
+
+    button.secondary {
+      background: #ffffff;
+      border-color: #c8d6e2;
+    }
+
+    button.danger {
+      background: #e2c5dd;
+      border-color: #e2c5dd;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .preview-card,
+    .panel {
+      border: 1px solid #dce6ef;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 4px 14px rgba(47, 58, 69, 0.05);
+    }
+
+    .preview-card {
+      overflow: auto;
+      padding: 16px;
+    }
+
+    .page-wrap {
+      position: relative;
+      display: inline-block;
+      line-height: 0;
+      min-width: 320px;
+    }
+
+    #previewImage {
+      display: block;
+      width: min(100%, 960px);
+      height: auto;
+      border: 1px solid #b7c4d0;
+      background: #fff;
+    }
+
+    .marker-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .marker {
+      position: absolute;
+      max-width: 180px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: nowrap;
+      cursor: grab;
+      pointer-events: auto;
+      user-select: none;
+      transform: translate(-2px, -11px);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .marker.text {
+      background: rgba(21, 103, 176, 0.9);
+    }
+
+    .marker.checkbox {
+      background: rgba(196, 58, 71, 0.92);
+    }
+
+    .marker.selected {
+      outline: 3px solid #f2d46f;
+      z-index: 3;
+    }
+
+    .panel {
+      position: sticky;
+      top: 72px;
+      align-self: start;
+      padding: 16px;
+    }
+
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+
+    .field-row input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0 8px;
+    }
+
+    .nudge-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 42px);
+      gap: 8px;
+      justify-content: center;
+      margin: 16px 0;
+    }
+
+    .nudge-grid button {
+      padding: 0;
+    }
+
+    .status {
+      min-height: 20px;
+      color: #577084;
+      font-size: 13px;
+    }
+
+    .hint {
+      margin-top: 12px;
+      color: #6c7f90;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .panel {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>返签 visa 坐标调试</h1>
+    <label>
+      Page
+      <select id="pageSelect">
+        <option value="visa_1">visa_1</option>
+        <option value="visa_2">visa_2</option>
+      </select>
+    </label>
+    <button id="saveButton">保存</button>
+    <button id="reloadButton" class="secondary">重新加载</button>
+    <span id="topStatus" class="status"></span>
+  </div>
+
+  <main class="layout">
+    <section class="preview-card">
+      <div id="pageWrap" class="page-wrap">
+        <img id="previewImage" alt="PDF preview">
+        <div id="markerLayer" class="marker-layer"></div>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <h2>选中字段</h2>
+      <div class="field-row"><span>字段名</span><input id="fieldName" readonly></div>
+      <div class="field-row"><span>x</span><input id="fieldX" type="number" step="1"></div>
+      <div class="field-row"><span>y</span><input id="fieldY" type="number" step="1"></div>
+      <div class="field-row"><span>type</span><input id="fieldType" readonly></div>
+      <div class="field-row"><span>font_size</span><input id="fieldFontSize" readonly></div>
+      <div class="field-row"><span>size</span><input id="fieldSize" readonly></div>
+      <div class="field-row"><span>mark</span><input id="fieldMark" readonly></div>
+      <div class="field-row"><span>default</span><input id="fieldDefault" readonly></div>
+
+      <div class="nudge-grid">
+        <span></span><button data-nudge="0,1">↑</button><span></span>
+        <button data-nudge="-1,0">←</button><button data-nudge="0,-1">↓</button><button data-nudge="1,0">→</button>
+      </div>
+
+      <div class="hint">
+        拖动标签调整位置。方向键每次移动 1，按住 Shift 每次移动 10。<br>
+        蓝色是 text，红色是 checkbox。保存只会改 x / y，不会删除原字段属性。
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const state = {
+      positions: null,
+      pageSizes: null,
+      currentPage: 'visa_1',
+      selectedField: null,
+      dragging: null,
+    }
+
+    const els = {
+      pageSelect: document.getElementById('pageSelect'),
+      saveButton: document.getElementById('saveButton'),
+      reloadButton: document.getElementById('reloadButton'),
+      topStatus: document.getElementById('topStatus'),
+      pageWrap: document.getElementById('pageWrap'),
+      previewImage: document.getElementById('previewImage'),
+      markerLayer: document.getElementById('markerLayer'),
+      fieldName: document.getElementById('fieldName'),
+      fieldX: document.getElementById('fieldX'),
+      fieldY: document.getElementById('fieldY'),
+      fieldType: document.getElementById('fieldType'),
+      fieldFontSize: document.getElementById('fieldFontSize'),
+      fieldSize: document.getElementById('fieldSize'),
+      fieldMark: document.getElementById('fieldMark'),
+      fieldDefault: document.getElementById('fieldDefault'),
+    }
+
+    function apiBase() {
+      return window.location.pathname.startsWith('/sun/')
+        ? '/sun/api/accounting/visa-position-debug'
+        : '/api/accounting/visa-position-debug'
+    }
+
+    function getCsrfToken() {
+      const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    function setStatus(message, isError = false) {
+      els.topStatus.textContent = message
+      els.topStatus.style.color = isError ? '#b54747' : '#577084'
+    }
+
+    function pageSize() {
+      return state.pageSizes[state.currentPage]
+    }
+
+    function scales() {
+      const size = pageSize()
+      return {
+        x: els.previewImage.clientWidth / size.width,
+        y: els.previewImage.clientHeight / size.height,
+      }
+    }
+
+    function fieldToDom(field) {
+      const scale = scales()
+      const size = pageSize()
+      return {
+        left: Number(field.x || 0) * scale.x,
+        top: (size.height - Number(field.y || 0)) * scale.y,
+      }
+    }
+
+    function domToField(left, top) {
+      const scale = scales()
+      const size = pageSize()
+      return {
+        x: Math.round(left / scale.x),
+        y: Math.round(size.height - (top / scale.y)),
+      }
+    }
+
+    function isPositionField(value) {
+      return value && typeof value === 'object' && Number.isFinite(Number(value.x)) && Number.isFinite(Number(value.y))
+    }
+
+    function renderMarkers() {
+      els.markerLayer.innerHTML = ''
+      const fields = state.positions[state.currentPage] || {}
+      Object.entries(fields).forEach(([fieldName, field]) => {
+        if (!isPositionField(field)) return
+        const marker = document.createElement('div')
+        marker.className = `marker ${field.type === 'checkbox' ? 'checkbox' : 'text'}`
+        if (fieldName === state.selectedField) marker.classList.add('selected')
+        marker.textContent = fieldName
+        marker.dataset.field = fieldName
+        const pos = fieldToDom(field)
+        marker.style.left = `${pos.left}px`
+        marker.style.top = `${pos.top}px`
+        marker.addEventListener('pointerdown', startDrag)
+        marker.addEventListener('click', (event) => {
+          event.stopPropagation()
+          selectField(fieldName)
+        })
+        els.markerLayer.appendChild(marker)
+      })
+      syncPanel()
+    }
+
+    function selectField(fieldName) {
+      state.selectedField = fieldName
+      renderMarkers()
+    }
+
+    function currentField() {
+      if (!state.selectedField) return null
+      return state.positions[state.currentPage][state.selectedField]
+    }
+
+    function syncPanel() {
+      const field = currentField()
+      els.fieldName.value = state.selectedField || ''
+      els.fieldX.value = field ? field.x : ''
+      els.fieldY.value = field ? field.y : ''
+      els.fieldType.value = field ? (field.type || 'text') : ''
+      els.fieldFontSize.value = field && field.font_size !== undefined ? field.font_size : ''
+      els.fieldSize.value = field && field.size !== undefined ? field.size : ''
+      els.fieldMark.value = field && field.mark !== undefined ? field.mark : ''
+      els.fieldDefault.value = field && field.default !== undefined ? String(field.default) : ''
+    }
+
+    function setSelectedPosition(x, y) {
+      const field = currentField()
+      if (!field) return
+      field.x = Math.round(Number(x))
+      field.y = Math.round(Number(y))
+      renderMarkers()
+    }
+
+    function nudge(dx, dy) {
+      const field = currentField()
+      if (!field) return
+      setSelectedPosition(Number(field.x || 0) + dx, Number(field.y || 0) + dy)
+    }
+
+    function startDrag(event) {
+      const fieldName = event.currentTarget.dataset.field
+      selectField(fieldName)
+      const field = currentField()
+      const domPos = fieldToDom(field)
+      state.dragging = {
+        fieldName,
+        pointerId: event.pointerId,
+        offsetX: event.clientX - els.pageWrap.getBoundingClientRect().left - domPos.left,
+        offsetY: event.clientY - els.pageWrap.getBoundingClientRect().top - domPos.top,
+      }
+      event.currentTarget.setPointerCapture(event.pointerId)
+      event.preventDefault()
+    }
+
+    function onPointerMove(event) {
+      if (!state.dragging) return
+      const rect = els.pageWrap.getBoundingClientRect()
+      const maxLeft = els.previewImage.clientWidth
+      const maxTop = els.previewImage.clientHeight
+      const left = Math.max(0, Math.min(maxLeft, event.clientX - rect.left - state.dragging.offsetX))
+      const top = Math.max(0, Math.min(maxTop, event.clientY - rect.top - state.dragging.offsetY))
+      const next = domToField(left, top)
+      const field = currentField()
+      field.x = next.x
+      field.y = next.y
+      renderMarkers()
+    }
+
+    function onPointerUp() {
+      state.dragging = null
+    }
+
+    function updatePreviewImage() {
+      els.previewImage.src = `${apiBase()}/preview/?page=${state.currentPage}&_=${Date.now()}`
+    }
+
+    async function loadConfig() {
+      setStatus('加载中...')
+      const response = await fetch(`${apiBase()}/config/`, { credentials: 'same-origin' })
+      if (!response.ok) throw new Error(`config load failed: ${response.status}`)
+      const data = await response.json()
+      state.positions = data.positions
+      state.pageSizes = data.page_sizes
+      state.selectedField = null
+      updatePreviewImage()
+      setStatus('加载完成')
+    }
+
+    async function saveConfig() {
+      setStatus('保存中...')
+      const response = await fetch(`${apiBase()}/config/`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({ positions: state.positions }),
+      })
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(text || `save failed: ${response.status}`)
+      }
+      const data = await response.json()
+      setStatus(`保存成功：${data.backup || ''}`)
+    }
+
+    els.pageSelect.addEventListener('change', () => {
+      state.currentPage = els.pageSelect.value
+      state.selectedField = null
+      updatePreviewImage()
+    })
+
+    els.previewImage.addEventListener('load', renderMarkers)
+    window.addEventListener('resize', renderMarkers)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    els.saveButton.addEventListener('click', () => saveConfig().catch(error => setStatus(error.message, true)))
+    els.reloadButton.addEventListener('click', () => loadConfig().catch(error => setStatus(error.message, true)))
+    els.fieldX.addEventListener('change', () => setSelectedPosition(els.fieldX.value, els.fieldY.value))
+    els.fieldY.addEventListener('change', () => setSelectedPosition(els.fieldX.value, els.fieldY.value))
+    document.querySelectorAll('[data-nudge]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const [dx, dy] = button.dataset.nudge.split(',').map(Number)
+        nudge(dx, dy)
+      })
+    })
+    window.addEventListener('keydown', (event) => {
+      const targetTag = event.target && event.target.tagName
+      if (targetTag === 'INPUT' || targetTag === 'SELECT') return
+      const step = event.shiftKey ? 10 : 1
+      if (event.key === 'ArrowUp') nudge(0, step)
+      if (event.key === 'ArrowDown') nudge(0, -step)
+      if (event.key === 'ArrowLeft') nudge(-step, 0)
+      if (event.key === 'ArrowRight') nudge(step, 0)
+    })
+
+    loadConfig().catch(error => setStatus(error.message, true))
+  </script>
+</body>
+</html>

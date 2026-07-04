@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .visa_position_debug import visa_position_config, visa_position_preview
 from .views import (
     AccountingProjectExpenseViewSet,
     AccountingProjectIncomeViewSet,
@@ -10,6 +11,7 @@ from .views import (
     ExpenseViewSet,
     IncomeSourceViewSet,
     VehicleUsageViewSet,
+    VisaReturnApplicationViewSet,
     VoucherItemTemplateViewSet,
     dashboard,
 )
@@ -24,8 +26,11 @@ router.register('project-incomes', AccountingProjectIncomeViewSet, basename='acc
 router.register('project-expenses', AccountingProjectExpenseViewSet, basename='accounting-project-expense')
 router.register('vouchers', AccountingVoucherViewSet, basename='accounting-voucher')
 router.register('voucher-item-templates', VoucherItemTemplateViewSet, basename='accounting-voucher-item-template')
+router.register('visa-return-applications', VisaReturnApplicationViewSet, basename='visa-return-application')
 
 urlpatterns = [
     path('dashboard/', dashboard, name='accounting-dashboard'),
+    path('visa-position-debug/config/', visa_position_config, name='visa-position-debug-config'),
+    path('visa-position-debug/preview/', visa_position_preview, name='visa-position-debug-preview'),
     *router.urls,
 ]

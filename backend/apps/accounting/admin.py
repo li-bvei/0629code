@@ -9,6 +9,7 @@ from .models import (
     ExpenseCategory,
     IncomeSource,
     VehicleUsage,
+    VisaReturnApplication,
     VoucherItemTemplate,
 )
 
@@ -116,3 +117,11 @@ class VoucherItemTemplateAdmin(admin.ModelAdmin):
     list_display = ('name', 'default_unit_price', 'is_active', 'sort_order', 'created_at')
     list_filter = ('is_active',)
     search_fields = ('name',)
+
+
+@admin.register(VisaReturnApplication)
+class VisaReturnApplicationAdmin(admin.ModelAdmin):
+    list_display = ('applicant_name', 'nationality', 'passport_number', 'residence_status', 'created_at')
+    list_filter = ('nationality', 'residence_status', 'gender', 'marital_status')
+    search_fields = ('applicant_name', 'passport_number', 'phone', 'email', 'guarantor_name')
+    readonly_fields = ('created_by', 'created_at', 'updated_at')
