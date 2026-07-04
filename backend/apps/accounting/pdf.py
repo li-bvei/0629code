@@ -373,8 +373,8 @@ def build_invoice_pdf(voucher):
     c.setLineWidth(0.8)
     c.line(margin_x, recipient_y - 4, margin_x + underline_w, recipient_y - 4)
 
-    issuer_right_x = width - margin_x
-    issuer_block_w = 78 * mm
+    issuer_right_x = width - 8 * mm
+    issuer_block_w = 72 * mm
     issuer_x = issuer_right_x - issuer_block_w
     issuer_y = top_y
     draw_right_text(c, issuer_right_x, issuer_y, f'発行日：{japanese_date(voucher.issue_date)}', font_name, 9)
@@ -528,7 +528,8 @@ def build_receipt_pdf(voucher):
     draw_bold_center_text(c, width / 2, y, '領　収　書', font_name, 20)
 
     y -= 18 * mm
-    draw_right_text(c, width - margin_x, y, f'発行日：{japanese_date(voucher.issue_date)}', font_name, 10)
+    receipt_issuer_right_x = width - 8 * mm
+    draw_right_text(c, receipt_issuer_right_x, y, f'発行日：{japanese_date(voucher.issue_date)}', font_name, 10)
 
     y -= 13 * mm
     recipient_text = recipient_with_honorific(voucher)
@@ -540,7 +541,7 @@ def build_receipt_pdf(voucher):
     c.setLineWidth(0.8)
     c.line(recipient_x, recipient_y - 4, recipient_x + underline_w, recipient_y - 4)
 
-    issuer_x = width - margin_x - 78 * mm
+    issuer_x = receipt_issuer_right_x - 72 * mm
     issuer_y = y + 8
     for line in issuer_lines(voucher):
         draw_text(c, issuer_x, issuer_y, line, font_name, 9)
@@ -549,17 +550,26 @@ def build_receipt_pdf(voucher):
     y -= 36 * mm
     draw_text(c, margin_x, y, '下記、正に領収いたしました。', font_name, 11)
 
-    y -= 12 * mm
-    total_box_h = 16 * mm
-    total_box_w = 108 * mm
-    c.setFillColor(colors.HexColor('#f0f0f0'))
-    c.rect(margin_x, y - total_box_h, total_box_w, total_box_h, fill=1, stroke=1)
-    c.setFillColor(colors.black)
-    draw_bold_text(c, margin_x + 6, y - 13, '合計金額', font_name, 13)
-    draw_bold_right_text(c, margin_x + total_box_w - 8, y - 13, f'{yen(voucher.total_amount)}（税込）', font_name, 16)
-
-    y -= 21 * mm
     header_fill = colors.HexColor('#f0f0f0')
+    y -= 12 * mm
+    total_box_w = content_w * 0.68
+    total_box_x = margin_x
+    total_rows = [[
+        {'text': '合計金額', 'align': 'center', 'bold': True, 'fill': header_fill, 'size': 12},
+        {'text': f'{yen(voucher.total_amount)}（税込）', 'align': 'center', 'bold': True, 'fill': header_fill, 'size': 15},
+    ]]
+    y = draw_table(
+        c,
+        total_box_x,
+        y,
+        [total_box_w * 0.36, total_box_w * 0.64],
+        12 * mm,
+        total_rows,
+        font_name,
+        font_size=12,
+    )
+
+    y -= 8 * mm
     receipt_rows = [[
         {'text': '品　名', 'align': 'center', 'bold': True, 'fill': header_fill},
         {'text': '金額', 'align': 'center', 'bold': True, 'fill': header_fill},
@@ -609,7 +619,7 @@ def build_receipt_pdf(voucher):
 
     stamp_w = 21.5 * mm
     stamp_h = 25.5 * mm
-    stamp_top_y = y
+    stamp_top_y = y + sum(receipt_row_heights[receipt_summary_start:])
     stamp_y = stamp_top_y - stamp_h
     c.setStrokeColor(colors.black)
     c.setLineWidth(0.8)
