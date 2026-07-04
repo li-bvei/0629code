@@ -292,18 +292,38 @@ class AccountingVoucherViewSet(ModelViewSet):
 
         if params.get('voucher_type'):
             queryset = queryset.filter(voucher_type=params['voucher_type'])
-        if params.get('start_date'):
-            queryset = queryset.filter(issue_date__gte=params['start_date'])
-        if params.get('end_date'):
-            queryset = queryset.filter(issue_date__lte=params['end_date'])
-        if params.get('search'):
-            keyword = params['search']
+
+        issue_date_from = params.get('issue_date_from') or params.get('start_date')
+        issue_date_to = params.get('issue_date_to') or params.get('end_date')
+        if issue_date_from:
+            queryset = queryset.filter(issue_date__gte=issue_date_from)
+        if issue_date_to:
+            queryset = queryset.filter(issue_date__lte=issue_date_to)
+
+        if params.get('recipient_name'):
+            queryset = queryset.filter(recipient_name__icontains=params['recipient_name'])
+        if params.get('title'):
+            keyword = params['title']
+            queryset = queryset.filter(Q(title__icontains=keyword) | Q(line_items__icontains=keyword))
+        if params.get('amount_min'):
+            queryset = queryset.filter(total_amount__gte=params['amount_min'])
+        if params.get('amount_max'):
+            queryset = queryset.filter(total_amount__lte=params['amount_max'])
+        if params.get('payment_due_date_from'):
+            queryset = queryset.filter(payment_due_date__gte=params['payment_due_date_from'])
+        if params.get('payment_due_date_to'):
+            queryset = queryset.filter(payment_due_date__lte=params['payment_due_date_to'])
+
+        keyword = params.get('keyword') or params.get('search')
+        if keyword:
             queryset = queryset.filter(
                 Q(voucher_number__icontains=keyword)
                 | Q(recipient_name__icontains=keyword)
                 | Q(title__icontains=keyword)
                 | Q(details__icontains=keyword)
                 | Q(note__icontains=keyword)
+                | Q(bank_info__icontains=keyword)
+                | Q(line_items__icontains=keyword)
             )
         return queryset.order_by('-issue_date', '-id')
 

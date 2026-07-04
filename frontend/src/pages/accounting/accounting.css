@@ -181,6 +181,13 @@
   background: rgba(255, 255, 255, 0.9);
 }
 
+.filter-title {
+  margin-bottom: 12px;
+  color: var(--sunrise-text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .accounting-filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -341,6 +348,25 @@
 
 .voucher-total-box .is-total {
   background: linear-gradient(135deg, rgba(170, 212, 244, 0.24), rgba(226, 197, 221, 0.18));
+}
+
+.voucher-filter-row {
+  align-items: flex-start;
+}
+
+.voucher-content-summary {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.voucher-content-tooltip {
+  max-width: 520px;
+  line-height: 1.7;
+  white-space: normal;
 }
 
 .voucher-item-manager {

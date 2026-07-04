@@ -39,6 +39,18 @@ const itemManagerVisible = ref(false)
 const itemManagerLoading = ref(false)
 const itemManagerSearch = ref('')
 const managedVoucherItemTemplates = ref<VoucherItemTemplate[]>([])
+const filters = ref({
+  issue_date_from: '',
+  issue_date_to: '',
+  voucher_type: '',
+  recipient_name: '',
+  title: '',
+  amount_min: '',
+  amount_max: '',
+  payment_due_date_from: '',
+  payment_due_date_to: '',
+  keyword: '',
+})
 const newItemTemplate = ref({
   name: '',
   default_unit_price: '',
@@ -128,6 +140,61 @@ const filteredManagedItemTemplates = computed(() => {
 
 const formatMoney = (value?: number | string | null) => `￥${Number(value || 0).toLocaleString()}`
 const getVoucherTypeLabel = (type: AccountingVoucherType) => (type === 'invoice' ? '請求書' : '領収書')
+const getVoucherTypeTag = (type: AccountingVoucherType) => (type === 'invoice' ? 'primary' : 'success')
+const getVoucherLineTotal = (item: AccountingVoucherLineItem) => {
+  if (item.line_total !== undefined && item.line_total !== null && item.line_total !== '') {
+    return Number(item.line_total || 0)
+  }
+  return Math.round(Number(item.quantity || 0) * Number(item.unit_price || 0))
+}
+const getVoucherLineItems = (voucher: AccountingVoucher) => {
+  if (voucher.line_items?.length) return voucher.line_items
+  if (voucher.details) {
+    return voucher.details
+      .split('\n')
+      .filter(Boolean)
+      .map((item_name) => ({ item_name, quantity: '', unit_price: '', line_total: '' }))
+  }
+  return []
+}
+const getVoucherContentSummary = (voucher: AccountingVoucher) => {
+  const items = getVoucherLineItems(voucher)
+  if (!items.length) return '-'
+  const visible = items.slice(0, 2).map((item) => {
+    const name = item.item_name || '-'
+    const amount = getVoucherLineTotal(item)
+    return amount ? `${name} ${formatMoney(amount)}` : name
+  })
+  const rest = items.length - visible.length
+  return rest > 0 ? `${visible.join('、')}、他${rest}件` : visible.join('、')
+}
+const getVoucherContentTooltip = (voucher: AccountingVoucher) => {
+  const items = getVoucherLineItems(voucher)
+  if (!items.length) return '-'
+  return items
+    .map((item) => {
+      const name = item.item_name || '-'
+      const unitPrice = item.unit_price !== undefined && item.unit_price !== '' ? formatMoney(item.unit_price) : '-'
+      const quantity = item.quantity !== undefined && item.quantity !== '' ? item.quantity : '-'
+      const lineTotal = getVoucherLineTotal(item)
+      const note = (item as AccountingVoucherLineItem & { note?: string; remarks?: string }).note
+        || (item as AccountingVoucherLineItem & { note?: string; remarks?: string }).remarks
+        || ''
+      return `${name} / 単価 ${unitPrice} / 数量 ${quantity} / 金額 ${formatMoney(lineTotal)}${note ? ` / ${note}` : ''}`
+    })
+    .join('\n')
+}
+const summary = computed(() => {
+  return vouchers.value.reduce(
+    (result, voucher) => {
+      result.amount += Number(voucher.amount || 0)
+      result.tax += Number(voucher.tax_amount || 0)
+      result.total += Number(voucher.total_amount || 0)
+      return result
+    },
+    { count: vouchers.value.length, amount: 0, tax: 0, total: 0 },
+  )
+})
 
 const extractFilename = (contentDisposition?: string) => {
   if (!contentDisposition) return '帳票.pdf'
@@ -141,7 +208,7 @@ const fetchVouchers = async (page = currentPage.value) => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const data = await listAccountingVouchers({ page })
+    const data = await listAccountingVouchers({ page, ...filters.value })
     vouchers.value = data.results
     total.value = data.count
     currentPage.value = page
@@ -150,6 +217,26 @@ const fetchVouchers = async (page = currentPage.value) => {
   } finally {
     loading.value = false
   }
+}
+
+const handleSearch = () => {
+  fetchVouchers(1)
+}
+
+const resetFilters = () => {
+  filters.value = {
+    issue_date_from: '',
+    issue_date_to: '',
+    voucher_type: '',
+    recipient_name: '',
+    title: '',
+    amount_min: '',
+    amount_max: '',
+    payment_due_date_from: '',
+    payment_due_date_to: '',
+    keyword: '',
+  }
+  fetchVouchers(1)
 }
 
 const fetchVoucherItemTemplates = async () => {
@@ -490,6 +577,81 @@ onMounted(() => {
 
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
 
+    <el-card class="accounting-filter-card" shadow="never">
+      <div class="filter-title">検索条件</div>
+      <div class="accounting-filter-row voucher-filter-row">
+        <el-date-picker
+          v-model="filters.issue_date_from"
+          type="date"
+          format="YYYY-MM-DD"
+          value-format="YYYY-MM-DD"
+          placeholder="発行日 From"
+          class="accounting-filter-date"
+        />
+        <el-date-picker
+          v-model="filters.issue_date_to"
+          type="date"
+          format="YYYY-MM-DD"
+          value-format="YYYY-MM-DD"
+          placeholder="発行日 To"
+          class="accounting-filter-date"
+        />
+        <el-select
+          v-model="filters.voucher_type"
+          clearable
+          placeholder="種別"
+          class="accounting-filter-select"
+        >
+          <el-option label="請求書" value="invoice" />
+          <el-option label="領収書" value="receipt" />
+        </el-select>
+        <el-input v-model="filters.recipient_name" clearable placeholder="宛先" class="accounting-filter-search" />
+        <el-input v-model="filters.title" clearable placeholder="件名 / 内容" class="accounting-filter-search" />
+        <el-input v-model="filters.amount_min" clearable inputmode="numeric" placeholder="最低金額" class="accounting-filter-date" />
+        <el-input v-model="filters.amount_max" clearable inputmode="numeric" placeholder="最高金額" class="accounting-filter-date" />
+        <el-date-picker
+          v-model="filters.payment_due_date_from"
+          type="date"
+          format="YYYY-MM-DD"
+          value-format="YYYY-MM-DD"
+          placeholder="支払期日 From"
+          class="accounting-filter-date"
+        />
+        <el-date-picker
+          v-model="filters.payment_due_date_to"
+          type="date"
+          format="YYYY-MM-DD"
+          value-format="YYYY-MM-DD"
+          placeholder="支払期日 To"
+          class="accounting-filter-date"
+        />
+        <el-input v-model="filters.keyword" clearable placeholder="キーワード" class="accounting-filter-search" />
+        <div class="accounting-filter-actions">
+          <el-button type="primary" @click="handleSearch">検索</el-button>
+          <el-button @click="resetFilters">リセット</el-button>
+        </div>
+      </div>
+    </el-card>
+
+    <div class="accounting-summary-strip">
+      <div class="accounting-summary-pill">
+        <span>対象件数</span>
+        <strong>{{ summary.count }}件</strong>
+      </div>
+      <div class="accounting-summary-pill">
+        <span>小計合計</span>
+        <strong>{{ formatMoney(summary.amount) }}</strong>
+      </div>
+      <div class="accounting-summary-pill">
+        <span>消費税合計</span>
+        <strong>{{ formatMoney(summary.tax) }}</strong>
+      </div>
+      <div class="accounting-summary-pill is-accent">
+        <span>税込合計</span>
+        <strong>{{ formatMoney(summary.total) }}</strong>
+      </div>
+    </div>
+
     <el-card class="accounting-card" shadow="never">
       <el-table v-loading="loading" :data="vouchers" stripe>
         <el-table-column label="発行日" width="120">
@@ -497,18 +659,48 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="種別" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.voucher_type === 'invoice' ? 'primary' : 'success'">
+            <el-tag :type="getVoucherTypeTag(row.voucher_type)">
               {{ getVoucherTypeLabel(row.voucher_type) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="voucher_number" label="番号" min-width="170" />
         <el-table-column prop="recipient_name" label="宛先" min-width="180">
           <template #default="{ row }">{{ row.recipient_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="title" label="件名 / 但し書き" min-width="220" show-overflow-tooltip />
-        <el-table-column label="金額" width="140" align="right">
+        <el-table-column prop="title" label="件名 / タイトル" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.title || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="内容" min-width="300">
+          <template #default="{ row }">
+            <el-tooltip placement="top-start" effect="light">
+              <template #content>
+                <div class="voucher-content-tooltip">
+                  <div
+                    v-for="line in getVoucherContentTooltip(row).split('\n')"
+                    :key="line"
+                  >
+                    {{ line }}
+                  </div>
+                </div>
+              </template>
+              <span class="voucher-content-summary">{{ getVoucherContentSummary(row) }}</span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+        <el-table-column label="金額（税込）" width="140" align="right">
           <template #default="{ row }">{{ formatMoney(row.total_amount) }}</template>
+        </el-table-column>
+        <el-table-column label="小計" width="130" align="right">
+          <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+        </el-table-column>
+        <el-table-column label="消費税" width="120" align="right">
+          <template #default="{ row }">{{ formatMoney(row.tax_amount) }}</template>
+        </el-table-column>
+        <el-table-column label="支払期日" width="120">
+          <template #default="{ row }">{{ row.payment_due_date ? formatDate(row.payment_due_date) : '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="note" label="備考" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.note || '-' }}</template>
         </el-table-column>
         <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">

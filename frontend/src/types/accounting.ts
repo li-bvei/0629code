@@ -6,7 +6,16 @@ export interface AccountingListParams {
   search?: string
   start_date?: string | null
   end_date?: string | null
+  issue_date_from?: string | null
+  issue_date_to?: string | null
   voucher_type?: string
+  recipient_name?: string
+  title?: string
+  keyword?: string
+  amount_min?: number | string | null
+  amount_max?: number | string | null
+  payment_due_date_from?: string | null
+  payment_due_date_to?: string | null
   include_inactive?: boolean | string | number
   project?: number | string
   category?: string
