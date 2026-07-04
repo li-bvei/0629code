@@ -254,8 +254,9 @@ export const deleteAccountingVoucher = async (id: number) => {
   await http.delete(`/accounting/vouchers/${id}/`)
 }
 
-export const downloadAccountingVoucherPdf = async (id: number) => {
+export const downloadAccountingVoucherPdf = async (id: number, withSeal = false) => {
   const response = await http.get<Blob>(`/accounting/vouchers/${id}/pdf/`, {
+    params: withSeal ? { with_seal: 1 } : undefined,
     responseType: 'blob',
   })
   return {

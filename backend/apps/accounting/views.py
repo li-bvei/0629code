@@ -334,7 +334,8 @@ class AccountingVoucherViewSet(ModelViewSet):
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
         voucher = self.get_object()
-        return voucher_pdf_response(voucher)
+        with_seal = parse_bool(request.query_params.get('with_seal')) is True
+        return voucher_pdf_response(voucher, with_seal=with_seal)
 
 
 class VoucherItemTemplateViewSet(ModelViewSet):

@@ -7,6 +7,7 @@ from django.http import HttpResponse
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
@@ -20,6 +21,7 @@ FALLBACK_FONT_NAME = 'HeiseiKakuGo-W5'
 FONT_DIR = Path(settings.BASE_DIR) / 'assets' / 'fonts'
 YU_MINCHO = FONT_DIR / 'YuMincho.ttf'
 YU_MINCHO_BOLD = FONT_DIR / 'YuMincho-Bold.ttf'
+SEAL_PATH = Path(settings.BASE_DIR) / 'assets' / 'images' / 'company_seal.png'
 DEFAULT_ISSUER = {
     'issuer_name': 'SUNRISE日晟鴻達株式会社',
     'issuer_postal_code': '5430043',
@@ -119,6 +121,24 @@ def draw_bold_center_text(c, x, y, text, font_name, size=10):
     bold_font = MINCHO_BOLD_FONT if MINCHO_BOLD_FONT in pdfmetrics.getRegisteredFontNames() else font_name
     c.setFont(bold_font, size)
     c.drawCentredString(x, y, text or '')
+
+
+def draw_company_seal(c, x, y, with_seal=False):
+    if not with_seal or not SEAL_PATH.exists():
+        return
+
+    seal_size = 24 * mm
+    seal = ImageReader(str(SEAL_PATH))
+    c.drawImage(
+        seal,
+        x,
+        y,
+        width=seal_size,
+        height=seal_size,
+        mask='auto',
+        preserveAspectRatio=True,
+        anchor='c',
+    )
 
 
 def draw_wrapped_lines(c, x, y, text, font_name, size=10, leading=15, max_chars=42):
@@ -353,7 +373,7 @@ def build_content_disposition(filename):
     return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quote(filename)}'
 
 
-def build_invoice_pdf(voucher):
+def build_invoice_pdf(voucher, with_seal=False):
     font_name = register_mincho_font()
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -382,6 +402,7 @@ def build_invoice_pdf(voucher):
     for line in issuer_lines(voucher):
         draw_text(c, issuer_x, issuer_y, line, font_name, 9)
         issuer_y -= 12
+    draw_company_seal(c, width - 56 * mm, top_y - 26 * mm, with_seal)
 
     y = height - 58 * mm
     draw_bold_center_text(c, width / 2, y, '請　求　書', font_name, 22)
@@ -514,7 +535,7 @@ def build_invoice_pdf(voucher):
     return buffer.getvalue()
 
 
-def build_receipt_pdf(voucher):
+def build_receipt_pdf(voucher, with_seal=False):
     font_name = register_mincho_font()
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -546,6 +567,7 @@ def build_receipt_pdf(voucher):
     for line in issuer_lines(voucher):
         draw_text(c, issuer_x, issuer_y, line, font_name, 9)
         issuer_y -= 12
+    draw_company_seal(c, width - 56 * mm, y - 12 * mm, with_seal)
 
     y -= 36 * mm
     draw_text(c, margin_x, y, '下記、正に領収いたしました。', font_name, 11)
@@ -647,14 +669,14 @@ def build_receipt_pdf(voucher):
     return buffer.getvalue()
 
 
-def build_voucher_pdf(voucher):
+def build_voucher_pdf(voucher, with_seal=False):
     if voucher.voucher_type == 'invoice':
-        return build_invoice_pdf(voucher)
-    return build_receipt_pdf(voucher)
+        return build_invoice_pdf(voucher, with_seal=with_seal)
+    return build_receipt_pdf(voucher, with_seal=with_seal)
 
 
-def voucher_pdf_response(voucher):
+def voucher_pdf_response(voucher, with_seal=False):
     filename = build_voucher_pdf_filename(voucher)
-    response = HttpResponse(build_voucher_pdf(voucher), content_type='application/pdf')
+    response = HttpResponse(build_voucher_pdf(voucher, with_seal=with_seal), content_type='application/pdf')
     response['Content-Disposition'] = build_content_disposition(filename)
     return response

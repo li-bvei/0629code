@@ -538,9 +538,9 @@ const confirmDeleteVoucher = async (voucher: AccountingVoucher) => {
   }
 }
 
-const downloadPdf = async (voucher: AccountingVoucher) => {
+const downloadPdf = async (voucher: AccountingVoucher, withSeal = false) => {
   try {
-    const { blob, contentDisposition } = await downloadAccountingVoucherPdf(voucher.id)
+    const { blob, contentDisposition } = await downloadAccountingVoucherPdf(voucher.id, withSeal)
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -552,6 +552,10 @@ const downloadPdf = async (voucher: AccountingVoucher) => {
   } catch {
     ElMessage.error('PDFのダウンロードに失敗しました。')
   }
+}
+
+const handlePdfDownloadCommand = (voucher: AccountingVoucher, withSeal: unknown) => {
+  downloadPdf(voucher, Boolean(withSeal))
 }
 
 onMounted(() => {
@@ -705,7 +709,15 @@ onMounted(() => {
         <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
             <el-button text type="primary" @click="openEditDialog(row)">編集</el-button>
-            <el-button text type="primary" @click="downloadPdf(row)">PDF</el-button>
+            <el-dropdown trigger="click" @command="handlePdfDownloadCommand(row, $event)">
+              <el-button text type="primary">PDF</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item :command="false">印章なし</el-dropdown-item>
+                  <el-dropdown-item :command="true">印章あり</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button text type="danger" @click="confirmDeleteVoucher(row)">削除</el-button>
           </template>
         </el-table-column>
