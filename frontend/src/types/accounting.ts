@@ -283,4 +283,181 @@ export interface VoucherItemTemplatePayload {
   sort_order?: number
 }
 
+export type VisaReturnGender = '' | 'male' | 'female'
+export type VisaReturnMaritalStatus = '' | 'single' | 'married' | 'divorced' | 'widowed'
+export type VisaReturnYesNo = 'yes' | 'no'
+
+export interface VisaReturnFormData {
+  [key: string]: string
+  pinyin_name1: string
+  pinyin_name2: string
+  chinese_name1: string
+  chinese_name2: string
+  used_name1: string
+  used_name2: string
+  othernationality: string
+  birth_place: string
+  chinese_id: string
+  passport_address: string
+  passport_a: string
+  zailiu_number: string
+  entry_port: string
+  airline: string
+  entry_time1: string
+  entry_time2: string
+  entry_time3: string
+  registered_address: string
+  current_address: string
+  home_address2: string
+  home_phone: string
+  workplace_name: string
+  workplace_address: string
+  workplace_phone: string
+  hotel: string
+  hotel_phone: string
+  hotel_address: string
+  last: string
+  job_title2: string
+  guarantor_name_en: string
+  guarantor_address_en: string
+  guarantor_birth_date: string
+  guarantor_nationality: string
+  guarantor_visa_status: string
+  gender2: VisaReturnGender
+  same: string
+  x1: VisaReturnYesNo
+  x2: VisaReturnYesNo
+  x3: VisaReturnYesNo
+  x4: VisaReturnYesNo
+  x5: VisaReturnYesNo
+  x6: VisaReturnYesNo
+}
+
+export interface VisaGuarantorTemplate {
+  id: number
+  name: string
+  guarantor_name: string
+  guarantor_name_en: string
+  guarantor_phone: string
+  guarantor_address: string
+  guarantor_address_en: string
+  guarantor_birth_date: string | null
+  guarantor_nationality: string
+  guarantor_visa_status: string
+  guarantor_occupation: string
+  guarantor_relationship: string
+  guarantor_company_name: string
+  note: string
+  is_active: boolean
+  sort_order: number
+  created_at?: string
+  updated_at?: string
+}
+
+export type VisaGuarantorTemplatePayload = Omit<VisaGuarantorTemplate, 'id' | 'created_at' | 'updated_at'>
+
+export interface SeifuNoticePageInfo {
+  page: number
+  width: number
+  height: number
+}
+
+export interface SeifuNoticeTemplateInfo {
+  page_count: number
+  pages: SeifuNoticePageInfo[]
+  font_available: boolean
+  font_error?: string | null
+  template_error?: string | null
+}
+
+export interface SeifuNoticeTextItem {
+  id?: string | number
+  page: number
+  text: string
+  x: number
+  y: number
+  font_size?: number
+  font_weight?: 'normal' | 'bold'
+  color?: string
+  font_family?: 'adobe_heiti'
+}
+
+export interface SeifuNoticeGeneratePayload {
+  items: SeifuNoticeTextItem[]
+}
+
+export type SeifuNoticeRecordStatus = 'draft' | 'completed'
+
+export interface SeifuNoticePdfRecord {
+  id: number
+  title: string
+  status: SeifuNoticeRecordStatus
+  text_items: SeifuNoticeTextItem[]
+  text_count: number
+  note: string
+  created_by?: number | null
+  created_by_username?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SeifuNoticeRecordPayload {
+  title: string
+  status?: SeifuNoticeRecordStatus
+  text_items: SeifuNoticeTextItem[]
+  note?: string
+}
+
+export interface VisaReturnApplication {
+  id: number
+  applicant_name: string
+  nationality: string
+  birth_date: string | null
+  gender: VisaReturnGender
+  marital_status: VisaReturnMaritalStatus
+  passport_number: string
+  passport_issue_date: string | null
+  passport_expiry_date: string | null
+  residence_status: string
+  address: string
+  phone: string
+  email: string
+  occupation: string
+  guarantor_name: string
+  guarantor_phone: string
+  guarantor_address: string
+  guarantor_relationship: string
+  guarantor_occupation: string
+  guarantor_snapshot: Record<string, unknown>
+  form_data: Partial<VisaReturnFormData> & Record<string, unknown>
+  note: string
+  created_by?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface VisaReturnApplicationPayload {
+  applicant_name?: string
+  nationality?: string
+  birth_date?: string | null
+  gender?: VisaReturnGender
+  marital_status?: VisaReturnMaritalStatus
+  passport_number?: string
+  passport_issue_date?: string | null
+  passport_expiry_date?: string | null
+  residence_status?: string
+  address?: string
+  phone?: string
+  email?: string
+  occupation?: string
+  guarantor_name?: string
+  guarantor_phone?: string
+  guarantor_address?: string
+  guarantor_relationship?: string
+  guarantor_occupation?: string
+  guarantor_snapshot?: Record<string, unknown>
+  form_data?: Partial<VisaReturnFormData> & Record<string, unknown>
+  note?: string
+}
+
 export type AccountingPaginatedResponse<T> = PaginatedResponse<T>

@@ -18,8 +18,16 @@ import type {
   ExpensePayload,
   IncomeSource,
   IncomeSourcePayload,
+  SeifuNoticeGeneratePayload,
+  SeifuNoticePdfRecord,
+  SeifuNoticeRecordPayload,
+  SeifuNoticeTemplateInfo,
   VehicleUsage,
   VehicleUsagePayload,
+  VisaGuarantorTemplate,
+  VisaGuarantorTemplatePayload,
+  VisaReturnApplication,
+  VisaReturnApplicationPayload,
   VoucherItemTemplate,
   VoucherItemTemplatePayload,
 } from '../types/accounting'
@@ -288,4 +296,132 @@ export const updateVoucherItemTemplate = async (
 
 export const deleteVoucherItemTemplate = async (id: number) => {
   await http.delete(`/accounting/voucher-item-templates/${id}/`)
+}
+
+export const listVisaReturnApplications = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<VisaReturnApplication>>(
+    '/accounting/visa-return-applications/',
+    { params: cleanParams(params) },
+  )
+  return response.data
+}
+
+export const getVisaReturnApplication = async (id: number | string) => {
+  const response = await http.get<VisaReturnApplication>(`/accounting/visa-return-applications/${id}/`)
+  return response.data
+}
+
+export const createVisaReturnApplication = async (payload: VisaReturnApplicationPayload) => {
+  const response = await http.post<VisaReturnApplication>('/accounting/visa-return-applications/', payload)
+  return response.data
+}
+
+export const updateVisaReturnApplication = async (
+  id: number | string,
+  payload: Partial<VisaReturnApplicationPayload>,
+) => {
+  const response = await http.patch<VisaReturnApplication>(`/accounting/visa-return-applications/${id}/`, payload)
+  return response.data
+}
+
+export const deleteVisaReturnApplication = async (id: number | string) => {
+  await http.delete(`/accounting/visa-return-applications/${id}/`)
+}
+
+export const listVisaGuarantorTemplates = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<VisaGuarantorTemplate>>(
+    '/accounting/visa-guarantor-templates/',
+    { params: cleanParams(params) },
+  )
+  return response.data
+}
+
+export const createVisaGuarantorTemplate = async (payload: VisaGuarantorTemplatePayload) => {
+  const response = await http.post<VisaGuarantorTemplate>('/accounting/visa-guarantor-templates/', payload)
+  return response.data
+}
+
+export const updateVisaGuarantorTemplate = async (
+  id: number | string,
+  payload: Partial<VisaGuarantorTemplatePayload>,
+) => {
+  const response = await http.patch<VisaGuarantorTemplate>(`/accounting/visa-guarantor-templates/${id}/`, payload)
+  return response.data
+}
+
+export const deleteVisaGuarantorTemplate = async (id: number | string) => {
+  await http.delete(`/accounting/visa-guarantor-templates/${id}/`)
+}
+
+export const downloadVisaReturnApplicationPdf = async (id: number | string) => {
+  const response = await http.get<Blob>(`/accounting/visa-return-applications/${id}/pdf/`, {
+    responseType: 'blob',
+  })
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+  }
+}
+
+export const getSeifuNoticeTemplateInfo = async () => {
+  const response = await http.get<SeifuNoticeTemplateInfo>('/accounting/seifu-notice-pdf/template/')
+  return response.data
+}
+
+export const getSeifuNoticePreview = async (page: number) => {
+  const response = await http.get<Blob>('/accounting/seifu-notice-pdf/preview/', {
+    params: { page },
+    responseType: 'blob',
+  })
+  return response.data
+}
+
+export const generateSeifuNoticePdf = async (payload: SeifuNoticeGeneratePayload) => {
+  const response = await http.post<Blob>('/accounting/seifu-notice-pdf/generate/', payload, {
+    responseType: 'blob',
+  })
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+  }
+}
+
+export const listSeifuNoticeRecords = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<SeifuNoticePdfRecord>>(
+    '/accounting/seifu-notice-records/',
+    { params: cleanParams(params) },
+  )
+  return response.data
+}
+
+export const getSeifuNoticeRecord = async (id: number | string) => {
+  const response = await http.get<SeifuNoticePdfRecord>(`/accounting/seifu-notice-records/${id}/`)
+  return response.data
+}
+
+export const createSeifuNoticeRecord = async (payload: SeifuNoticeRecordPayload) => {
+  const response = await http.post<SeifuNoticePdfRecord>('/accounting/seifu-notice-records/', payload)
+  return response.data
+}
+
+export const updateSeifuNoticeRecord = async (
+  id: number | string,
+  payload: Partial<SeifuNoticeRecordPayload>,
+) => {
+  const response = await http.patch<SeifuNoticePdfRecord>(`/accounting/seifu-notice-records/${id}/`, payload)
+  return response.data
+}
+
+export const deleteSeifuNoticeRecord = async (id: number | string) => {
+  await http.delete(`/accounting/seifu-notice-records/${id}/`)
+}
+
+export const downloadSeifuNoticeRecordPdf = async (id: number | string) => {
+  const response = await http.post<Blob>(`/accounting/seifu-notice-records/${id}/generate_pdf/`, undefined, {
+    responseType: 'blob',
+  })
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+  }
 }

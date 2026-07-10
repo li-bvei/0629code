@@ -25,8 +25,10 @@ import LoginPage from '../pages/LoginPage.vue'
 import PlaceholderPage from '../pages/PlaceholderPage.vue'
 import ReceptionNewPage from '../pages/ReceptionNewPage.vue'
 import RemindersPage from '../pages/RemindersPage.vue'
+import SeifuNoticePdfTextPage from '../pages/SeifuNoticePdfTextPage.vue'
 import TasksPage from '../pages/TasksPage.vue'
 import TimelinesPage from '../pages/TimelinesPage.vue'
+import VisaReturnApplicationsPage from '../pages/VisaReturnApplicationsPage.vue'
 import VoucherPlaceholderPage from '../pages/VoucherPlaceholderPage.vue'
 import { useAuthStore } from '../stores/auth'
 
@@ -203,6 +205,16 @@ const router = createRouter({
           path: 'vouchers/invoices',
           name: 'voucher-invoices',
           component: AccountingVouchersPage,
+        },
+        {
+          path: 'vouchers/visa-return',
+          name: 'voucher-visa-return',
+          component: VisaReturnApplicationsPage,
+        },
+        {
+          path: 'vouchers/seifu-notice',
+          name: 'voucher-seifu-notice',
+          component: SeifuNoticePdfTextPage,
         },
         {
           path: 'vouchers/estimates',

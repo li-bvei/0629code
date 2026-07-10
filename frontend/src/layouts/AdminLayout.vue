@@ -101,6 +101,8 @@ const handleLogout = async () => {
             <span>帳票管理</span>
           </template>
           <el-menu-item index="/vouchers/invoices">請求書・領収書</el-menu-item>
+          <el-menu-item index="/vouchers/visa-return">返签 visa 表</el-menu-item>
+          <el-menu-item index="/vouchers/seifu-notice">清風合格通知書</el-menu-item>
           <el-menu-item index="/vouchers/estimates">
             <span>見積書</span>
             <el-tag size="small" type="info">準備中</el-tag>
