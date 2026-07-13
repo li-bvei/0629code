@@ -1,19 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import type { FormInstance, FormRules, UploadFile, UploadUserFile } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { cancelCase, getCase, updateCase } from '../api/cases'
-import { createDocument, deleteDocument, listDocuments, updateDocument } from '../api/documents'
-import { createReminder, deleteReminder, listReminders, updateReminder } from '../api/reminders'
+import { listEmployees } from '../api/employees'
 import { createTask, deleteTask, listTasks, updateTask } from '../api/tasks'
 import { createTimeline, listTimelines, updateTimeline } from '../api/timelines'
 import type {
   Case,
-  Document,
-  DocumentPayload,
-  Reminder,
-  ReminderPayload,
+  Employee,
   Task,
   TaskPayload,
   Timeline,
@@ -21,140 +17,44 @@ import type {
 } from '../types/api'
 import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
-import { getReminderDisplay } from '../utils/reminder'
 
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
 const caseDetail = ref<Case | null>(null)
+const employees = ref<Employee[]>([])
 const tasks = ref<Task[]>([])
-const reminders = ref<Reminder[]>([])
 const timelines = ref<Timeline[]>([])
-const documents = ref<Document[]>([])
 const taskSubmitting = ref(false)
 const taskDialogVisible = ref(false)
 const editingTaskId = ref<number | null>(null)
+const editingTaskResponsibleEmployeeName = ref('')
 const taskFormRef = ref<FormInstance>()
-const reminderSubmitting = ref(false)
-const reminderDialogVisible = ref(false)
-const editingReminderId = ref<number | null>(null)
-const reminderFormRef = ref<FormInstance>()
 const timelineSubmitting = ref(false)
 const timelineDialogVisible = ref(false)
 const editingTimelineId = ref<number | null>(null)
 const timelineFormRef = ref<FormInstance>()
-const documentSubmitting = ref(false)
-const documentDialogVisible = ref(false)
-const editingDocumentId = ref<number | null>(null)
-const documentFormRef = ref<FormInstance>()
 const caseDateSubmitting = ref(false)
 const caseDateDialogVisible = ref(false)
 const cancelSubmitting = ref(false)
 const cancelDialogVisible = ref(false)
 const cancelFormRef = ref<FormInstance>()
-const cancelForm = ref({
-  reason: '',
-})
-const taskForm = ref<TaskPayload>({
-  case: 0,
-  title: '',
-  description: '',
-  status: '',
-  due_date: null,
-})
-const reminderForm = ref<ReminderPayload>({
-  case: 0,
-  title: '',
-  remind_at: '',
-  note: '',
-  is_done: false,
-})
-const timelineForm = ref<TimelinePayload>({
-  case: 0,
-  occurred_at: null,
-  title: '',
-  content: '',
-  is_visible_to_client: false,
-})
-const documentForm = ref<DocumentPayload>({
-  case: 0,
-  title: '',
-  file: null,
-  source: 'internal',
-  is_visible_to_client: false,
-})
-const documentFileList = ref<UploadUserFile[]>([])
-const caseDateForm = ref({
-  accepted_at: null as string | null,
-  applied_at: null as string | null,
-  result_notified_at: null as string | null,
-  completed_at: null as string | null,
-})
 
 const caseId = computed(() => Number(route.params.id))
+const displayStatus = computed(() => getCaseDisplayStatus(caseDetail.value))
 const canCancelCase = computed(() => (
   caseDetail.value
-  && !['完了', '中止', 'completed'].includes(caseDetail.value.status)
+  && !['完了', '中止', 'completed', 'closed'].includes(caseDetail.value.status)
 ))
-const displayStatus = computed(() => getCaseDisplayStatus(caseDetail.value))
-
-const displayValue = (value?: string | null) => value || '-'
-const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ')
-const getTodayDate = () => {
-  const date = new Date()
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0'),
-  ].join('-')
-}
-const sortedTimelines = computed(() => (
-  timelines.value
-    .map((timeline, index) => ({ timeline, index }))
-    .sort((left, right) => {
-      const leftDate = left.timeline.occurred_at || left.timeline.created_at
-      const rightDate = right.timeline.occurred_at || right.timeline.created_at
-      if (leftDate && rightDate && leftDate !== rightDate) {
-        return rightDate.localeCompare(leftDate)
-      }
-      if (leftDate && !rightDate) return -1
-      if (!leftDate && rightDate) return 1
-      return left.index - right.index
-    })
-    .map(({ timeline }) => timeline)
-))
-const formatFileSize = (value?: number | null) => {
-  if (!value) return '-'
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
-  return `${(value / 1024 / 1024).toFixed(1)} MB`
-}
 
 const taskStatusOptions = [
-  '未対応',
-  '対応中',
-  '完了',
-  '保留',
-]
-
-const reminderTitleOptions = [
-  '在留期限3ヶ月前',
-  '在留期限2ヶ月前',
-  '在留期限1ヶ月前',
-  '在留期限2週間前',
-  '補正提出期限',
-  '申請予定日',
-  '入管予約日',
-  '決算月2ヶ月前',
-  '決算月1ヶ月前',
-  '決算月当月',
-  '納税証明書取得予定',
-  '年金加入確認日',
-  '許可更新期限',
-  '契約更新期限',
-  'その他',
-]
+  { label: '未開始', value: 'pending', type: 'info' },
+  { label: '進行中', value: 'in_progress', type: 'warning' },
+  { label: '完了', value: 'completed', type: 'success' },
+  { label: '保留', value: 'paused', type: 'primary' },
+  { label: '取消', value: 'cancelled', type: 'danger' },
+] as const
 
 const timelineTitleOptions = [
   '受任',
@@ -171,55 +71,135 @@ const timelineTitleOptions = [
   'その他',
 ]
 
-const documentSourceOptions = [
-  { label: '内部アップロード', value: 'internal' },
-  { label: '顧客アップロード', value: 'client' },
-  { label: 'システム生成', value: 'system' },
-]
-
-const formatDocumentSource = (source?: string | null) => {
-  const option = documentSourceOptions.find((item) => item.value === source)
-  return option?.label || '-'
-}
+const taskForm = ref<TaskPayload>({
+  case: 0,
+  title: '',
+  description: '',
+  responsible_employee: null,
+  status: 'pending',
+  sort_order: 0,
+  planned_completion_date: null,
+  completed_at: null,
+})
+const timelineForm = ref<TimelinePayload>({
+  case: 0,
+  occurred_at: null,
+  title: '',
+  content: '',
+  is_visible_to_client: false,
+})
+const caseDateForm = ref({
+  accepted_at: null as string | null,
+  applied_at: null as string | null,
+  result_notified_at: null as string | null,
+  completed_at: null as string | null,
+})
+const cancelForm = ref({
+  reason: '',
+})
 
 const taskRules: FormRules<TaskPayload> = {
-  title: [{ required: true, message: 'タイトルを入力してください。', trigger: 'blur' }],
+  title: [{ required: true, message: 'タスク名を入力してください。', trigger: 'blur' }],
   status: [{ required: true, message: 'ステータスを選択してください。', trigger: 'change' }],
 }
-
-const reminderRules: FormRules<ReminderPayload> = {
-  title: [{ required: true, message: 'タイトルを入力してください。', trigger: 'blur' }],
-  remind_at: [{ required: true, message: '通知日時を入力してください。', trigger: 'change' }],
-}
-
 const timelineRules: FormRules<TimelinePayload> = {
   title: [{ required: true, message: 'タイトルを入力してください。', trigger: 'blur' }],
 }
-
-const documentRules: FormRules<DocumentPayload> = {
-  title: [{ required: true, message: 'タイトルを入力してください。', trigger: 'blur' }],
-}
-
 const cancelRules: FormRules<typeof cancelForm.value> = {
   reason: [{ required: true, message: '中止理由を入力してください。', trigger: 'blur' }],
 }
+
+const displayValue = (value?: string | null) => value || '-'
+const getTodayDate = () => {
+  const date = new Date()
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+const getTaskStatusLabel = (status: string) => (
+  taskStatusOptions.find((option) => option.value === status)?.label || status || '-'
+)
+
+const getTaskStatusTagType = (status: string) => (
+  taskStatusOptions.find((option) => option.value === status)?.type || 'info'
+)
+
+const isFinishedTask = (task: Task) => ['completed', 'cancelled'].includes(task.status)
+
+const getTaskRowClassName = ({ row }: { row: Task }) => (isFinishedTask(row) ? 'task-row-finished' : '')
+
+const sortedTasks = computed(() => (
+  [...tasks.value].sort((left, right) => {
+    const leftFinished = isFinishedTask(left) ? 1 : 0
+    const rightFinished = isFinishedTask(right) ? 1 : 0
+    if (leftFinished !== rightFinished) return leftFinished - rightFinished
+    if ((left.sort_order || 0) !== (right.sort_order || 0)) {
+      return (left.sort_order || 0) - (right.sort_order || 0)
+    }
+    return left.id - right.id
+  })
+))
+
+const sortedTimelines = computed(() => (
+  timelines.value
+    .map((timeline, index) => ({ timeline, index }))
+    .sort((left, right) => {
+      const leftDate = left.timeline.occurred_at || left.timeline.created_at
+      const rightDate = right.timeline.occurred_at || right.timeline.created_at
+      if (leftDate && rightDate && leftDate !== rightDate) return rightDate.localeCompare(leftDate)
+      if (leftDate && !rightDate) return -1
+      if (!leftDate && rightDate) return 1
+      return left.index - right.index
+    })
+    .map(({ timeline }) => timeline)
+))
+
+const taskProgressText = computed(() => {
+  const total = tasks.value.length
+  const completed = tasks.value.filter((task) => task.status === 'completed').length
+  return `${completed} / ${total}`
+})
+
+const nextTask = computed(() => sortedTasks.value.find((task) => !isFinishedTask(task)) || null)
+
+const taskEmployeeOptions = computed(() => {
+  const options = [...employees.value]
+  const selectedEmployeeId = taskForm.value.responsible_employee
+  if (
+    selectedEmployeeId
+    && !options.some((employee) => employee.id === selectedEmployeeId)
+    && editingTaskResponsibleEmployeeName.value
+  ) {
+    options.push({
+      id: selectedEmployeeId,
+      name: `${editingTaskResponsibleEmployeeName.value}（無効）`,
+      email: '',
+      phone: '',
+      is_active: false,
+      created_at: '',
+      updated_at: '',
+    })
+  }
+  return options
+})
 
 const fetchCaseDetail = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [caseData, taskData, reminderData, timelineData, documentData] = await Promise.all([
+    const [caseData, taskData, timelineData, employeeData] = await Promise.all([
       getCase(caseId.value),
       listTasks({ case: caseId.value }),
-      listReminders({ case: caseId.value }),
       listTimelines({ case: caseId.value }),
-      listDocuments({ case: caseId.value }),
+      listEmployees({ is_active: true }),
     ])
     caseDetail.value = caseData
     tasks.value = taskData.results
-    reminders.value = reminderData.results
     timelines.value = timelineData.results
-    documents.value = documentData.results
+    employees.value = employeeData.results
   } catch {
     errorMessage.value = '案件詳細の取得に失敗しました。'
   } finally {
@@ -230,11 +210,7 @@ const fetchCaseDetail = async () => {
 const fetchTasks = async () => {
   const data = await listTasks({ case: caseId.value })
   tasks.value = data.results
-}
-
-const fetchReminders = async () => {
-  const data = await listReminders({ case: caseId.value })
-  reminders.value = data.results
+  caseDetail.value = await getCase(caseId.value)
 }
 
 const fetchTimelines = async () => {
@@ -242,42 +218,21 @@ const fetchTimelines = async () => {
   timelines.value = data.results
 }
 
-const fetchDocuments = async () => {
-  const data = await listDocuments({ case: caseId.value })
-  documents.value = data.results
-}
-
-const fetchCaseAndTimelines = async () => {
-  const [caseData, timelineData] = await Promise.all([
-    getCase(caseId.value),
-    listTimelines({ case: caseId.value }),
-  ])
-  caseDetail.value = caseData
-  timelines.value = timelineData.results
-}
-
 const resetTaskForm = () => {
+  const nextSortOrder = tasks.value.reduce((maxValue, task) => Math.max(maxValue, task.sort_order || 0), 0) + 10
   editingTaskId.value = null
+  editingTaskResponsibleEmployeeName.value = ''
   taskForm.value = {
     case: caseId.value,
     title: '',
     description: '',
-    status: '',
-    due_date: null,
+    responsible_employee: caseDetail.value?.responsible_employee || null,
+    status: 'pending',
+    sort_order: nextSortOrder,
+    planned_completion_date: null,
+    completed_at: null,
   }
   taskFormRef.value?.clearValidate()
-}
-
-const resetReminderForm = () => {
-  editingReminderId.value = null
-  reminderForm.value = {
-    case: caseId.value,
-    title: '',
-    remind_at: '',
-    note: '',
-    is_done: false,
-  }
-  reminderFormRef.value?.clearValidate()
 }
 
 const resetTimelineForm = () => {
@@ -292,19 +247,6 @@ const resetTimelineForm = () => {
   timelineFormRef.value?.clearValidate()
 }
 
-const resetDocumentForm = () => {
-  editingDocumentId.value = null
-  documentForm.value = {
-    case: caseId.value,
-    title: '',
-    file: null,
-    source: 'internal',
-    is_visible_to_client: false,
-  }
-  documentFileList.value = []
-  documentFormRef.value?.clearValidate()
-}
-
 const resetCancelForm = () => {
   cancelForm.value = {
     reason: '',
@@ -317,9 +259,21 @@ const openCreateTaskDialog = () => {
   taskDialogVisible.value = true
 }
 
-const openCreateReminderDialog = () => {
-  resetReminderForm()
-  reminderDialogVisible.value = true
+const openEditTaskDialog = (task: Task) => {
+  editingTaskId.value = task.id
+  editingTaskResponsibleEmployeeName.value = task.responsible_employee_name || ''
+  taskForm.value = {
+    case: caseId.value,
+    title: task.title,
+    description: task.description,
+    responsible_employee: task.responsible_employee,
+    status: task.status,
+    sort_order: task.sort_order,
+    planned_completion_date: task.planned_completion_date || task.due_date,
+    completed_at: task.completed_at,
+  }
+  taskFormRef.value?.clearValidate()
+  taskDialogVisible.value = true
 }
 
 const openCreateTimelineDialog = () => {
@@ -340,17 +294,6 @@ const openEditTimelineDialog = (timeline: Timeline) => {
   timelineDialogVisible.value = true
 }
 
-const openCreateDocumentDialog = () => {
-  resetDocumentForm()
-  documentDialogVisible.value = true
-}
-
-const openCancelDialog = () => {
-  if (!canCancelCase.value) return
-  resetCancelForm()
-  cancelDialogVisible.value = true
-}
-
 const openCaseDateDialog = () => {
   if (!caseDetail.value) return
   caseDateForm.value = {
@@ -362,46 +305,10 @@ const openCaseDateDialog = () => {
   caseDateDialogVisible.value = true
 }
 
-const openEditTaskDialog = (task: Task) => {
-  editingTaskId.value = task.id
-  taskForm.value = {
-    case: caseId.value,
-    title: task.title,
-    description: task.description,
-    status: task.status,
-    due_date: task.due_date,
-  }
-  taskFormRef.value?.clearValidate()
-  taskDialogVisible.value = true
-}
-
-const openEditReminderDialog = (reminder: Reminder) => {
-  editingReminderId.value = reminder.id
-  reminderForm.value = {
-    case: caseId.value,
-    title: reminder.title,
-    remind_at: reminder.remind_at,
-    note: reminder.note,
-    is_done: reminder.is_done,
-  }
-  reminderFormRef.value?.clearValidate()
-  reminderDialogVisible.value = true
-}
-
-const openEditDocumentDialog = (documentItem: Document) => {
-  editingDocumentId.value = documentItem.id
-  documentForm.value = {
-    case: caseId.value,
-    title: documentItem.title,
-    file: null,
-    source: documentItem.source,
-    is_visible_to_client: documentItem.is_visible_to_client,
-  }
-  documentFileList.value = documentItem.file_name
-    ? [{ name: documentItem.file_name, url: documentItem.file_url || undefined }]
-    : []
-  documentFormRef.value?.clearValidate()
-  documentDialogVisible.value = true
+const openCancelDialog = () => {
+  if (!canCancelCase.value) return
+  resetCancelForm()
+  cancelDialogVisible.value = true
 }
 
 const submitTask = async () => {
@@ -412,11 +319,20 @@ const submitTask = async () => {
 
   taskSubmitting.value = true
   try {
-    const payload = {
+    const payload: TaskPayload = {
       ...taskForm.value,
       case: caseId.value,
-      due_date: taskForm.value.due_date || null,
+      responsible_employee: taskForm.value.responsible_employee || null,
+      planned_completion_date: taskForm.value.planned_completion_date || null,
+      completed_at: taskForm.value.completed_at || null,
     }
+    if (payload.status === 'completed' && !payload.completed_at) {
+      payload.completed_at = getTodayDate()
+    }
+    if (payload.status !== 'completed') {
+      payload.completed_at = null
+    }
+
     if (editingTaskId.value) {
       await updateTask(editingTaskId.value, payload)
       ElMessage.success('タスクを更新しました。')
@@ -454,66 +370,32 @@ const confirmDeleteTask = async (task: Task) => {
   }
 }
 
-const submitReminder = async () => {
-  if (!reminderFormRef.value) return
-
-  const valid = await reminderFormRef.value.validate().catch(() => false)
-  if (!valid) return
-
-  reminderSubmitting.value = true
+const updateTaskStatus = async (task: Task, status: TaskPayload['status']) => {
   try {
-    const payload = {
-      ...reminderForm.value,
-      case: caseId.value,
-    }
-    if (editingReminderId.value) {
-      await updateReminder(editingReminderId.value, payload)
-      ElMessage.success('その他リマインダーを更新しました。')
-    } else {
-      await createReminder(payload)
-      ElMessage.success('その他リマインダーを追加しました。')
-    }
-    reminderDialogVisible.value = false
-    await fetchReminders()
+    await updateTask(task.id, {
+      status,
+      completed_at: status === 'completed' ? (task.completed_at || getTodayDate()) : null,
+    })
+    ElMessage.success(status === 'completed' ? 'タスクを完了しました。' : 'タスクを更新しました。')
+    await fetchTasks()
   } catch {
-    ElMessage.error(
-      editingReminderId.value
-        ? 'その他リマインダーの更新に失敗しました。'
-        : 'その他リマインダーの追加に失敗しました。',
-    )
-  } finally {
-    reminderSubmitting.value = false
+    ElMessage.error('タスク状態の更新に失敗しました。')
   }
 }
 
-const confirmDeleteReminder = async (reminder: Reminder) => {
-  try {
-    await ElMessageBox.confirm(
-      `「${reminder.title}」を削除します。よろしいですか？`,
-      '削除確認',
-      {
-        confirmButtonText: '削除',
-        cancelButtonText: 'キャンセル',
-        type: 'warning',
-      },
-    )
-    await deleteReminder(reminder.id)
-    ElMessage.success('その他リマインダーを削除しました。')
-    await fetchReminders()
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('その他リマインダーの削除に失敗しました。')
-    }
-  }
-}
+const moveTask = async (task: Task, direction: -1 | 1) => {
+  const currentIndex = sortedTasks.value.findIndex((item) => item.id === task.id)
+  const targetTask = sortedTasks.value[currentIndex + direction]
+  if (!targetTask) return
 
-const toggleReminderDone = async (reminder: Reminder) => {
   try {
-    await updateReminder(reminder.id, { is_done: !reminder.is_done })
-    ElMessage.success(reminder.is_done ? '未完了に戻しました。' : '完了にしました。')
-    await fetchReminders()
+    await Promise.all([
+      updateTask(task.id, { sort_order: targetTask.sort_order }),
+      updateTask(targetTask.id, { sort_order: task.sort_order }),
+    ])
+    await fetchTasks()
   } catch {
-    ElMessage.error('完了状態の更新に失敗しました。')
+    ElMessage.error('並び順の更新に失敗しました。')
   }
 }
 
@@ -568,76 +450,6 @@ const submitTimeline = async () => {
   }
 }
 
-const submitDocument = async () => {
-  if (!documentFormRef.value) return
-
-  const valid = await documentFormRef.value.validate().catch(() => false)
-  if (!valid) return
-  if (!editingDocumentId.value && !documentForm.value.file) {
-    ElMessage.error('ファイルを選択してください。')
-    return
-  }
-
-  documentSubmitting.value = true
-  try {
-    const payload = {
-      ...documentForm.value,
-      case: caseId.value,
-    }
-    if (editingDocumentId.value) {
-      await updateDocument(editingDocumentId.value, payload)
-      ElMessage.success('書類を更新しました。')
-    } else {
-      await createDocument(payload)
-      ElMessage.success('書類を追加しました。')
-    }
-    documentDialogVisible.value = false
-    await fetchDocuments()
-  } catch {
-    ElMessage.error(editingDocumentId.value ? '書類の更新に失敗しました。' : '書類の追加に失敗しました。')
-  } finally {
-    documentSubmitting.value = false
-  }
-}
-
-const handleDocumentFileChange = (uploadFile: UploadFile) => {
-  documentForm.value.file = uploadFile.raw || null
-  documentFileList.value = uploadFile.raw
-    ? [{ name: uploadFile.name, raw: uploadFile.raw }]
-    : []
-}
-
-const handleDocumentFileRemove = () => {
-  documentForm.value.file = null
-  documentFileList.value = []
-}
-
-const downloadDocument = (documentItem: Document) => {
-  if (!documentItem.file_url) return
-  window.open(documentItem.file_url, '_blank', 'noopener')
-}
-
-const confirmDeleteDocument = async (documentItem: Document) => {
-  try {
-    await ElMessageBox.confirm(
-      `「${documentItem.title}」を削除します。よろしいですか？`,
-      '削除確認',
-      {
-        confirmButtonText: '削除',
-        cancelButtonText: 'キャンセル',
-        type: 'warning',
-      },
-    )
-    await deleteDocument(documentItem.id)
-    ElMessage.success('書類を削除しました。')
-    await fetchDocuments()
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('書類の削除に失敗しました。')
-    }
-  }
-}
-
 const submitCancelCase = async () => {
   if (!cancelFormRef.value || !canCancelCase.value) return
 
@@ -649,7 +461,8 @@ const submitCancelCase = async () => {
     await cancelCase(caseId.value, cancelForm.value.reason)
     ElMessage.success('案件を中止しました')
     cancelDialogVisible.value = false
-    await fetchCaseAndTimelines()
+    caseDetail.value = await getCase(caseId.value)
+    await fetchTimelines()
   } catch {
     ElMessage.error('案件の中止に失敗しました。')
   } finally {
@@ -675,7 +488,28 @@ onMounted(() => {
       <el-card shadow="never">
         <template #header>
           <div class="card-header-row">
-            <span>案件進捗</span>
+            <span>案件基本情報</span>
+            <el-button v-if="canCancelCase" type="danger" @click="openCancelDialog">
+              案件を中止する
+            </el-button>
+          </div>
+        </template>
+        <el-descriptions v-if="caseDetail" :column="2" border>
+          <el-descriptions-item label="案件番号">{{ displayValue(caseDetail.case_number) }}</el-descriptions-item>
+          <el-descriptions-item label="案件種別">{{ displayValue(caseDetail.case_type) }}</el-descriptions-item>
+          <el-descriptions-item label="登録ステータス">{{ displayValue(caseDetail.status) }}</el-descriptions-item>
+          <el-descriptions-item label="顧客名">{{ displayValue(caseDetail.customer_name) }}</el-descriptions-item>
+          <el-descriptions-item label="会社名">{{ displayValue(caseDetail.company_name) }}</el-descriptions-item>
+          <el-descriptions-item label="担当者">
+            {{ displayValue(caseDetail.responsible_employee_name) }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <el-card shadow="never">
+        <template #header>
+          <div class="card-header-row">
+            <span>現在の状態</span>
             <el-button @click="openCaseDateDialog">日付を編集</el-button>
           </div>
         </template>
@@ -685,147 +519,77 @@ onMounted(() => {
               {{ displayStatus }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="受任日">
-            {{ formatDate(caseDetail.accepted_at) }}
+          <el-descriptions-item label="タスク進捗">{{ taskProgressText }}</el-descriptions-item>
+          <el-descriptions-item label="次のタスク">
+            {{ nextTask?.title || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="申請日">
-            {{ formatDate(caseDetail.applied_at) }}
+          <el-descriptions-item label="次の担当者">
+            {{ nextTask?.responsible_employee_name || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="結果通知日">
-            {{ formatDate(caseDetail.result_notified_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="完了日">
-            {{ formatDate(caseDetail.completed_at) }}
-          </el-descriptions-item>
+          <el-descriptions-item label="受任日">{{ formatDate(caseDetail.accepted_at) }}</el-descriptions-item>
+          <el-descriptions-item label="申請日">{{ formatDate(caseDetail.applied_at) }}</el-descriptions-item>
+          <el-descriptions-item label="結果通知日">{{ formatDate(caseDetail.result_notified_at) }}</el-descriptions-item>
+          <el-descriptions-item label="完了日">{{ formatDate(caseDetail.completed_at) }}</el-descriptions-item>
         </el-descriptions>
-        <p class="help-text">
-          現在の進捗は案件日付情報をもとに自動表示しています。補正・追加資料対応中も、完了までは「申請中」として表示されます。
-        </p>
       </el-card>
 
       <el-card shadow="never">
         <template #header>
           <div class="card-header-row">
-            <span>案件基本情報</span>
-            <el-button v-if="canCancelCase" type="danger" @click="openCancelDialog">
-              案件を中止する
-            </el-button>
+            <span>タスク一覧</span>
+            <el-button type="primary" @click="openCreateTaskDialog">タスク追加</el-button>
           </div>
         </template>
-        <el-descriptions v-if="caseDetail" :column="2" border>
-          <el-descriptions-item label="案件番号">
-            {{ displayValue(caseDetail.case_number) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="案件種別">
-            {{ displayValue(caseDetail.case_type) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="登録ステータス">
-            {{ displayValue(caseDetail.status) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="顧客名">
-            {{ displayValue(caseDetail.customer_name) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="会社名">
-            {{ displayValue(caseDetail.company_name) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="担当者">
-            {{ displayValue(caseDetail.responsible_employee_name) }}
-          </el-descriptions-item>
-        </el-descriptions>
-      </el-card>
-
-      <template v-if="false">
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-header-row">
-              <span>その他リマインダー</span>
-              <div class="card-actions">
-                <el-button type="primary" @click="openCreateReminderDialog">
-                  リマインダー追加
-                </el-button>
-              </div>
-            </div>
-          </template>
-          <el-table :data="reminders" stripe>
-            <el-table-column label="対象" min-width="160">
-              <template #default="{ row }">{{ getReminderDisplay(row).target }}</template>
-            </el-table-column>
-            <el-table-column label="期限種別" min-width="130">
-              <template #default="{ row }">{{ getReminderDisplay(row).deadlineType }}</template>
-            </el-table-column>
-            <el-table-column label="基準日 / 到期日" min-width="130">
-              <template #default="{ row }">{{ getReminderDisplay(row).baseDate }}</template>
-            </el-table-column>
-            <el-table-column label="通知日時" min-width="160">
-              <template #default="{ row }">{{ getReminderDisplay(row).notifyAt }}</template>
-            </el-table-column>
-            <el-table-column label="残り日数" min-width="150">
-              <template #default="{ row }">
-                <el-tag :type="row.is_done ? 'info' : 'warning'">
-                  {{ getReminderDisplay(row).remainingText }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="完了状態" width="110">
-              <template #default="{ row }">{{ getReminderDisplay(row).status }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="220" fixed="right">
-              <template #default="{ row }">
-                <el-button text type="primary" @click="openEditReminderDialog(row)">編集</el-button>
-                <el-button text type="danger" @click="confirmDeleteReminder(row)">削除</el-button>
-                <el-button text type="primary" @click="toggleReminderDone(row)">
-                  {{ row.is_done ? '未完了' : '完了' }}
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <p v-if="!reminders.length" class="empty-text">該当データなし</p>
-        </el-card>
-      </template>
-
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header-row">
-            <span>書類</span>
-            <el-button type="primary" @click="openCreateDocumentDialog">書類追加</el-button>
-          </div>
-        </template>
-        <el-table :data="documents" stripe>
-          <el-table-column prop="title" label="タイトル" min-width="180" />
-          <el-table-column prop="file_name" label="ファイル名" min-width="220" show-overflow-tooltip>
-            <template #default="{ row }">{{ displayValue(row.file_name) }}</template>
+        <el-table :data="sortedTasks" stripe row-key="id" :row-class-name="getTaskRowClassName">
+          <el-table-column label="步骤" width="80">
+            <template #default="{ $index }">{{ $index + 1 }}</template>
           </el-table-column>
-          <el-table-column label="ファイルサイズ" width="130">
-            <template #default="{ row }">{{ formatFileSize(row.file_size) }}</template>
+          <el-table-column prop="title" label="タスク名" min-width="180" show-overflow-tooltip />
+          <el-table-column label="担当者" min-width="120">
+            <template #default="{ row }">{{ row.responsible_employee_name || '未指定' }}</template>
           </el-table-column>
-          <el-table-column prop="content_type" label="種類" min-width="160">
-            <template #default="{ row }">{{ displayValue(row.content_type) }}</template>
-          </el-table-column>
-          <el-table-column label="來源" width="150">
-            <template #default="{ row }">{{ formatDocumentSource(row.source) }}</template>
-          </el-table-column>
-          <el-table-column label="顧客表示" width="110">
-            <template #default="{ row }">{{ formatBoolean(row.is_visible_to_client) }}</template>
-          </el-table-column>
-          <el-table-column label="更新日時" min-width="160">
-            <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="240" fixed="right">
+          <el-table-column label="ステータス" width="110">
             <template #default="{ row }">
+              <el-tag :type="getTaskStatusTagType(row.status)">
+                {{ getTaskStatusLabel(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="予定完了日" width="130">
+            <template #default="{ row }">{{ formatDate(row.planned_completion_date || row.due_date) }}</template>
+          </el-table-column>
+          <el-table-column label="完了日" width="130">
+            <template #default="{ row }">{{ formatDate(row.completed_at) }}</template>
+          </el-table-column>
+          <el-table-column prop="description" label="備考" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.description || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="310" fixed="right">
+            <template #default="{ row }">
+              <el-button text type="primary" @click="openEditTaskDialog(row)">編集</el-button>
               <el-button
-                v-if="row.file_url"
+                v-if="row.status !== 'completed'"
                 text
-                type="primary"
-                @click="downloadDocument(row)"
+                type="success"
+                @click="updateTaskStatus(row, 'completed')"
               >
-                ダウンロード
+                完了
               </el-button>
-              <el-button text type="primary" @click="openEditDocumentDialog(row)">編集</el-button>
-              <el-button text type="danger" @click="confirmDeleteDocument(row)">削除</el-button>
+              <el-button
+                v-if="row.status !== 'paused'"
+                text
+                type="warning"
+                @click="updateTaskStatus(row, 'paused')"
+              >
+                保留
+              </el-button>
+              <el-button text @click="moveTask(row, -1)">上移</el-button>
+              <el-button text @click="moveTask(row, 1)">下移</el-button>
+              <el-button text type="danger" @click="confirmDeleteTask(row)">削除</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <p v-if="!documents.length" class="empty-text">該当データなし</p>
+        <p v-if="!tasks.length" class="empty-text">まだタスクがありません</p>
       </el-card>
 
       <el-card shadow="never">
@@ -843,9 +607,6 @@ onMounted(() => {
           <el-table-column prop="content" label="内容" min-width="260" show-overflow-tooltip>
             <template #default="{ row }">{{ displayValue(row.content) }}</template>
           </el-table-column>
-          <el-table-column label="顧客表示" width="110">
-            <template #default="{ row }">{{ formatBoolean(row.is_visible_to_client) }}</template>
-          </el-table-column>
           <el-table-column label="作成日時" min-width="160">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
           </el-table-column>
@@ -856,39 +617,6 @@ onMounted(() => {
           </el-table-column>
         </el-table>
         <p v-if="!timelines.length" class="empty-text">該当データなし</p>
-      </el-card>
-
-      <template v-if="false">
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-header-row">
-              <span>内部タスク</span>
-              <el-button type="primary" @click="openCreateTaskDialog">タスク追加</el-button>
-            </div>
-          </template>
-          <el-table :data="tasks" stripe>
-            <el-table-column prop="title" label="タイトル" min-width="180" />
-            <el-table-column prop="status" label="ステータス" width="130" />
-            <el-table-column label="期限" width="130">
-              <template #default="{ row }">{{ formatDate(row.due_date) }}</template>
-            </el-table-column>
-            <el-table-column label="更新日時" min-width="160">
-              <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
-              <template #default="{ row }">
-                <el-button text type="primary" @click="openEditTaskDialog(row)">編集</el-button>
-                <el-button text type="danger" @click="confirmDeleteTask(row)">削除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <p v-if="!tasks.length" class="empty-text">該当データなし</p>
-        </el-card>
-      </template>
-
-      <el-card shadow="never" class="placeholder-card">
-        <template #header>申請書作成</template>
-        <p>準備中</p>
       </el-card>
     </div>
 
@@ -944,39 +672,70 @@ onMounted(() => {
 
       <template #footer>
         <el-button @click="caseDateDialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="caseDateSubmitting" @click="submitCaseDates">
-          保存
-        </el-button>
+        <el-button type="primary" :loading="caseDateSubmitting" @click="submitCaseDates">保存</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="taskDialogVisible"
       :title="editingTaskId ? 'タスク編集' : 'タスク追加'"
-      width="560px"
+      width="680px"
       @closed="resetTaskForm"
     >
       <el-form ref="taskFormRef" :model="taskForm" :rules="taskRules" label-position="top">
-        <el-form-item label="タイトル" prop="title">
+        <el-form-item label="タスク名" prop="title">
           <el-input v-model="taskForm.title" />
         </el-form-item>
-        <el-form-item label="内容" prop="description">
+        <el-form-item label="詳細内容 / 備考" prop="description">
           <el-input v-model="taskForm.description" type="textarea" :rows="3" />
         </el-form-item>
         <div class="form-grid">
+          <el-form-item label="担当者" prop="responsible_employee">
+            <div class="inline-field-with-action">
+              <el-select
+                v-model="taskForm.responsible_employee"
+                clearable
+                filterable
+                placeholder="未指定"
+                class="form-control"
+              >
+                <el-option label="未指定" :value="null" />
+                <el-option
+                  v-for="employee in taskEmployeeOptions"
+                  :key="employee.id"
+                  :label="employee.name"
+                  :value="employee.id"
+                />
+              </el-select>
+              <el-button @click="router.push('/employees')">担当者管理</el-button>
+            </div>
+          </el-form-item>
           <el-form-item label="ステータス" prop="status">
             <el-select v-model="taskForm.status" placeholder="選択してください" class="form-control">
               <el-option
                 v-for="status in taskStatusOptions"
-                :key="status"
-                :label="status"
-                :value="status"
+                :key="status.value"
+                :label="status.label"
+                :value="status.value"
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="期限" prop="due_date">
+          <el-form-item label="表示順" prop="sort_order">
+            <el-input-number v-model="taskForm.sort_order" :min="0" :step="10" class="form-control" />
+          </el-form-item>
+          <el-form-item label="予定完了日" prop="planned_completion_date">
             <el-date-picker
-              v-model="taskForm.due_date"
+              v-model="taskForm.planned_completion_date"
+              type="date"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              placeholder="YYYY-MM-DD"
+              class="form-control"
+            />
+          </el-form-item>
+          <el-form-item label="完了日" prop="completed_at">
+            <el-date-picker
+              v-model="taskForm.completed_at"
               type="date"
               format="YYYY-MM-DD"
               value-format="YYYY-MM-DD"
@@ -991,56 +750,6 @@ onMounted(() => {
         <el-button @click="taskDialogVisible = false">キャンセル</el-button>
         <el-button type="primary" :loading="taskSubmitting" @click="submitTask">
           {{ editingTaskId ? '保存' : '追加' }}
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="reminderDialogVisible"
-      :title="editingReminderId ? 'その他リマインダー編集' : 'その他リマインダー追加'"
-      width="560px"
-      @closed="resetReminderForm"
-    >
-      <el-form ref="reminderFormRef" :model="reminderForm" :rules="reminderRules" label-position="top">
-        <el-form-item label="タイトル" prop="title">
-          <el-select
-            v-model="reminderForm.title"
-            allow-create
-            clearable
-            filterable
-            placeholder="選択または入力してください"
-            class="form-control"
-          >
-            <el-option
-              v-for="title in reminderTitleOptions"
-              :key="title"
-              :label="title"
-              :value="title"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="通知日時" prop="remind_at">
-          <el-date-picker
-            v-model="reminderForm.remind_at"
-            type="datetime"
-            format="YYYY-MM-DD HH:mm"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            placeholder="YYYY-MM-DD HH:mm"
-            class="form-control"
-          />
-        </el-form-item>
-        <el-form-item label="備考" prop="note">
-          <el-input v-model="reminderForm.note" type="textarea" :rows="3" />
-        </el-form-item>
-        <el-form-item label="完了状態" prop="is_done">
-          <el-switch v-model="reminderForm.is_done" active-text="完了" inactive-text="未完了" />
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="reminderDialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="reminderSubmitting" @click="submitReminder">
-          {{ editingReminderId ? '保存' : '追加' }}
         </el-button>
       </template>
     </el-dialog>
@@ -1082,64 +791,12 @@ onMounted(() => {
         <el-form-item label="内容" prop="content">
           <el-input v-model="timelineForm.content" type="textarea" :rows="4" />
         </el-form-item>
-        <el-form-item label="顧客表示" prop="is_visible_to_client">
-          <el-switch v-model="timelineForm.is_visible_to_client" active-text="表示" inactive-text="非表示" />
-        </el-form-item>
       </el-form>
 
       <template #footer>
         <el-button @click="timelineDialogVisible = false">キャンセル</el-button>
         <el-button type="primary" :loading="timelineSubmitting" @click="submitTimeline">
           {{ editingTimelineId ? '保存' : '追加' }}
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="documentDialogVisible"
-      :title="editingDocumentId ? '書類編集' : '書類追加'"
-      width="640px"
-      @closed="resetDocumentForm"
-    >
-      <el-form ref="documentFormRef" :model="documentForm" :rules="documentRules" label-position="top">
-        <el-form-item label="タイトル" prop="title">
-          <el-input v-model="documentForm.title" />
-        </el-form-item>
-        <el-form-item label="ファイル">
-          <el-upload
-            v-model:file-list="documentFileList"
-            :auto-upload="false"
-            :limit="1"
-            :on-change="handleDocumentFileChange"
-            :on-remove="handleDocumentFileRemove"
-          >
-            <el-button>ファイルを選択</el-button>
-            <template #tip>
-              <div class="upload-tip">PDF、画像、Excel、Word 等資料をアップロードできます。</div>
-            </template>
-          </el-upload>
-        </el-form-item>
-        <div class="form-grid">
-          <el-form-item label="來源" prop="source">
-            <el-select v-model="documentForm.source" placeholder="選択してください" class="form-control">
-              <el-option
-                v-for="option in documentSourceOptions"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="顧客表示" prop="is_visible_to_client">
-            <el-switch v-model="documentForm.is_visible_to_client" active-text="表示" inactive-text="非表示" />
-          </el-form-item>
-        </div>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="documentDialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="documentSubmitting" @click="submitDocument">
-          {{ editingDocumentId ? '保存' : '追加' }}
         </el-button>
       </template>
     </el-dialog>
@@ -1158,10 +815,25 @@ onMounted(() => {
 
       <template #footer>
         <el-button @click="cancelDialogVisible = false">キャンセル</el-button>
-        <el-button type="danger" :loading="cancelSubmitting" @click="submitCancelCase">
-          確認
-        </el-button>
+        <el-button type="danger" :loading="cancelSubmitting" @click="submitCancelCase">確認</el-button>
       </template>
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+:deep(.task-row-finished) {
+  color: var(--el-text-color-secondary);
+  text-decoration: line-through;
+}
+
+.inline-field-with-action {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.inline-field-with-action .form-control {
+  flex: 1;
+}
+</style>

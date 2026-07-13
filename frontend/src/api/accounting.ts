@@ -22,6 +22,13 @@ import type {
   SeifuNoticePdfRecord,
   SeifuNoticeRecordPayload,
   SeifuNoticeTemplateInfo,
+  TaxRenewalAgentTemplate,
+  TaxRenewalAgentTemplatePayload,
+  TaxRenewalPdfDiagnostic,
+  TaxRenewalGeneratePdfPayload,
+  TaxRenewalTemplate,
+  TaxRenewalVoucherPayload,
+  TaxRenewalVoucherRecord,
   VehicleUsage,
   VehicleUsagePayload,
   VisaGuarantorTemplate,
@@ -423,5 +430,100 @@ export const downloadSeifuNoticeRecordPdf = async (id: number | string) => {
   return {
     blob: response.data,
     contentDisposition: response.headers['content-disposition'] as string | undefined,
+  }
+}
+
+export const listTaxRenewalTemplates = async () => {
+  const response = await http.get<TaxRenewalTemplate[]>('/accounting/tax-renewal-templates/')
+  return response.data
+}
+
+export const listTaxRenewalRecords = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<TaxRenewalVoucherRecord>>(
+    '/accounting/tax-renewal-records/',
+    { params: cleanParams(params) },
+  )
+  return response.data
+}
+
+export const getTaxRenewalRecord = async (id: number | string) => {
+  const response = await http.get<TaxRenewalVoucherRecord>(`/accounting/tax-renewal-records/${id}/`)
+  return response.data
+}
+
+export const createTaxRenewalRecord = async (payload: TaxRenewalVoucherPayload) => {
+  const response = await http.post<TaxRenewalVoucherRecord>('/accounting/tax-renewal-records/', payload)
+  return response.data
+}
+
+export const updateTaxRenewalRecord = async (
+  id: number | string,
+  payload: Partial<TaxRenewalVoucherPayload>,
+) => {
+  const response = await http.patch<TaxRenewalVoucherRecord>(`/accounting/tax-renewal-records/${id}/`, payload)
+  return response.data
+}
+
+export const deleteTaxRenewalRecord = async (id: number | string) => {
+  await http.delete(`/accounting/tax-renewal-records/${id}/`)
+}
+
+export const generateTaxRenewalRecordPdf = async (
+  id: number | string,
+  payload?: TaxRenewalGeneratePdfPayload,
+) => {
+  const response = await http.post<Blob>(`/accounting/tax-renewal-records/${id}/generate_pdf/`, payload || {}, {
+    responseType: 'blob',
+  })
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+    mappingFieldCount: response.headers['x-mapping-field-count'] as string | undefined,
+    writtenFieldCount: response.headers['x-written-field-count'] as string | undefined,
+    skippedEmptyFieldCount: response.headers['x-skipped-empty-field-count'] as string | undefined,
+    warningFields: response.headers['x-warning-fields'] as string | undefined,
+  }
+}
+
+export const listTaxRenewalAgentTemplates = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<TaxRenewalAgentTemplate>>(
+    '/accounting/tax-renewal-agent-templates/',
+    { params: cleanParams(params) },
+  )
+  return response.data
+}
+
+export const createTaxRenewalAgentTemplate = async (payload: TaxRenewalAgentTemplatePayload) => {
+  const response = await http.post<TaxRenewalAgentTemplate>('/accounting/tax-renewal-agent-templates/', payload)
+  return response.data
+}
+
+export const updateTaxRenewalAgentTemplate = async (
+  id: number | string,
+  payload: Partial<TaxRenewalAgentTemplatePayload>,
+) => {
+  const response = await http.patch<TaxRenewalAgentTemplate>(`/accounting/tax-renewal-agent-templates/${id}/`, payload)
+  return response.data
+}
+
+export const deleteTaxRenewalAgentTemplate = async (id: number | string) => {
+  await http.delete(`/accounting/tax-renewal-agent-templates/${id}/`)
+}
+
+export const listTaxRenewalPdfDiagnostics = async () => {
+  const response = await http.get<TaxRenewalPdfDiagnostic[]>('/accounting/tax-renewal-pdf-diagnostics/')
+  return response.data
+}
+
+export const downloadTaxRenewalNumberedSample = async (templateKey: string) => {
+  const response = await http.post<Blob>(
+    '/accounting/tax-renewal-pdf-diagnostics/numbered_sample/',
+    { template_key: templateKey },
+    { responseType: 'blob' },
+  )
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+    fieldIndex: response.headers['x-field-index'] as string | undefined,
   }
 }

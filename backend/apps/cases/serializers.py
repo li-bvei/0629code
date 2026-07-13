@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.tasks.models import Task
+
 from .models import Case
 
 
@@ -9,6 +11,10 @@ class CaseSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
     responsible_employee_name = serializers.SerializerMethodField()
+    task_total_count = serializers.SerializerMethodField()
+    task_completed_count = serializers.SerializerMethodField()
+    next_task_title = serializers.SerializerMethodField()
+    next_task_responsible_employee_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Case
@@ -27,6 +33,10 @@ class CaseSerializer(serializers.ModelSerializer):
             'applied_at',
             'result_notified_at',
             'completed_at',
+            'task_total_count',
+            'task_completed_count',
+            'next_task_title',
+            'next_task_responsible_employee_name',
             'created_at',
             'updated_at',
         ]
@@ -35,6 +45,10 @@ class CaseSerializer(serializers.ModelSerializer):
             'customer_name',
             'company_name',
             'responsible_employee_name',
+            'task_total_count',
+            'task_completed_count',
+            'next_task_title',
+            'next_task_responsible_employee_name',
             'created_at',
             'updated_at',
         ]
@@ -51,3 +65,35 @@ class CaseSerializer(serializers.ModelSerializer):
         if obj.responsible_employee is None:
             return ''
         return obj.responsible_employee.name
+
+    def get_task_total_count(self, obj):
+        return obj.tasks.count()
+
+    def get_task_completed_count(self, obj):
+        return obj.tasks.filter(status=Task.STATUS_COMPLETED).count()
+
+    def get_next_task(self, obj):
+        cached_name = '_case_serializer_next_task'
+        if hasattr(obj, cached_name):
+            return getattr(obj, cached_name)
+        task = (
+            obj.tasks
+            .exclude(status__in=[Task.STATUS_COMPLETED, Task.STATUS_CANCELLED])
+            .select_related('responsible_employee')
+            .order_by('sort_order', 'id')
+            .first()
+        )
+        setattr(obj, cached_name, task)
+        return task
+
+    def get_next_task_title(self, obj):
+        task = self.get_next_task(obj)
+        if task is None:
+            return ''
+        return task.title
+
+    def get_next_task_responsible_employee_name(self, obj):
+        task = self.get_next_task(obj)
+        if task is None or task.responsible_employee is None:
+            return ''
+        return task.responsible_employee.name

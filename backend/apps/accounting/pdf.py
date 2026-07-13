@@ -22,6 +22,7 @@ FONT_DIR = Path(settings.BASE_DIR) / 'assets' / 'fonts'
 YU_MINCHO = FONT_DIR / 'YuMincho.ttf'
 YU_MINCHO_BOLD = FONT_DIR / 'YuMincho-Bold.ttf'
 SEAL_PATH = Path(settings.BASE_DIR) / 'assets' / 'images' / 'company_seal.png'
+SEAL_SIZE_PT = 56.7
 DEFAULT_ISSUER = {
     'issuer_name': 'SUNRISE日晟鴻達株式会社',
     'issuer_postal_code': '5430043',
@@ -123,18 +124,39 @@ def draw_bold_center_text(c, x, y, text, font_name, size=10):
     c.drawCentredString(x, y, text or '')
 
 
+def company_seal_image():
+    try:
+        from PIL import Image
+
+        image = Image.open(SEAL_PATH)
+        if image.mode not in ('RGBA', 'LA'):
+            return ImageReader(str(SEAL_PATH))
+
+        alpha = image.getchannel('A')
+        bbox = alpha.getbbox()
+        if not bbox:
+            return ImageReader(str(SEAL_PATH))
+
+        cropped = image.crop(bbox)
+        output = BytesIO()
+        cropped.save(output, format='PNG')
+        output.seek(0)
+        return ImageReader(output)
+    except Exception:
+        return ImageReader(str(SEAL_PATH))
+
+
 def draw_company_seal(c, x, y, with_seal=False):
     if not with_seal or not SEAL_PATH.exists():
         return
 
-    seal_size = 24 * mm
-    seal = ImageReader(str(SEAL_PATH))
+    seal = company_seal_image()
     c.drawImage(
         seal,
         x,
         y,
-        width=seal_size,
-        height=seal_size,
+        width=SEAL_SIZE_PT,
+        height=SEAL_SIZE_PT,
         mask='auto',
         preserveAspectRatio=True,
         anchor='c',

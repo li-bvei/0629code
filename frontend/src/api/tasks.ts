@@ -11,7 +11,7 @@ export const createTask = async (payload: TaskPayload) => {
   return response.data
 }
 
-export const updateTask = async (id: number, payload: TaskPayload) => {
+export const updateTask = async (id: number, payload: Partial<TaskPayload>) => {
   const response = await http.patch<Task>(`/tasks/${id}/`, payload)
   return response.data
 }

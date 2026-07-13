@@ -1,0 +1,112 @@
+{
+  "template_key": "social_insurance_payment_certificate_power_of_attorney",
+  "template_name": "社会保险纳入证明兼委任状",
+  "filename": "社会保険納入証明書兼委任状.pdf",
+  "page_count": 1,
+  "fields": {
+    "1": {
+      "label": "field_1",
+      "page": 1,
+      "x": 101.8,
+      "y": 222.1,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_2": {
+      "label": "field_2",
+      "page": 1,
+      "x": 122.5,
+      "y": 221.5,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_3": {
+      "label": "field_3",
+      "page": 1,
+      "x": 158.3,
+      "y": 221.7,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_4": {
+      "label": "field_4",
+      "page": 1,
+      "x": 180.3,
+      "y": 222.2,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_5": {
+      "label": "field_5",
+      "page": 1,
+      "x": 196.7,
+      "y": 222,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_6": {
+      "label": "field_6",
+      "page": 1,
+      "x": 216.7,
+      "y": 222.7,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_7": {
+      "label": "field_7",
+      "page": 1,
+      "x": 236.5,
+      "y": 222.5,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_8": {
+      "label": "field_8",
+      "page": 1,
+      "x": 254.4,
+      "y": 222.6,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_9": {
+      "label": "field_9",
+      "page": 1,
+      "x": 81.5,
+      "y": 280.3,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_10": {
+      "label": "field_10",
+      "page": 1,
+      "x": 101.2,
+      "y": 433.3,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_11": {
+      "label": "field_11",
+      "page": 1,
+      "x": 143.1,
+      "y": 433.7,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_12": {
+      "label": "field_12",
+      "page": 1,
+      "x": 102.2,
+      "y": 463.7,
+      "type": "text",
+      "font_size": 10
+    },
+    "field_13": {
+      "label": "field_13",
+      "page": 1,
+      "x": 143.5,
+      "y": 463.6,
+      "type": "text",
+      "font_size": 10
+    }
+  }
+}

@@ -74,7 +74,7 @@ const fetchSelectOptions = async () => {
     const [customerData, companyData, employeeData] = await Promise.all([
       listCustomers(),
       listCompanies(),
-      listEmployees(),
+      listEmployees({ is_active: true }),
     ])
     customers.value = customerData.results
     companies.value = companyData.results
@@ -212,6 +212,19 @@ const confirmDeleteCase = async (caseItem: Case) => {
         </el-table-column>
         <el-table-column prop="responsible_employee_name" label="担当者" min-width="140">
           <template #default="{ row }">{{ row.responsible_employee_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="タスク進捗" width="120">
+          <template #default="{ row }">
+            {{ row.task_completed_count || 0 }} / {{ row.task_total_count || 0 }}
+          </template>
+        </el-table-column>
+        <el-table-column label="次のタスク" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span>{{ row.next_task_title || '-' }}</span>
+            <span v-if="row.next_task_responsible_employee_name" class="muted-inline">
+              （{{ row.next_task_responsible_employee_name }}）
+            </span>
+          </template>
         </el-table-column>
         <el-table-column label="受理日" width="130">
           <template #default="{ row }">{{ formatDate(row.accepted_at) }}</template>

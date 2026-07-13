@@ -21,12 +21,14 @@ import CustomerDetailPage from '../pages/CustomerDetailPage.vue'
 import CustomersPage from '../pages/CustomersPage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
 import DocumentsPage from '../pages/DocumentsPage.vue'
+import EmployeesPage from '../pages/EmployeesPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import PlaceholderPage from '../pages/PlaceholderPage.vue'
 import ReceptionNewPage from '../pages/ReceptionNewPage.vue'
 import RemindersPage from '../pages/RemindersPage.vue'
 import SeifuNoticePdfTextPage from '../pages/SeifuNoticePdfTextPage.vue'
 import TasksPage from '../pages/TasksPage.vue'
+import TaxRenewalVouchersPage from '../pages/TaxRenewalVouchersPage.vue'
 import TimelinesPage from '../pages/TimelinesPage.vue'
 import VisaReturnApplicationsPage from '../pages/VisaReturnApplicationsPage.vue'
 import VoucherPlaceholderPage from '../pages/VoucherPlaceholderPage.vue'
@@ -85,6 +87,11 @@ const router = createRouter({
           path: 'companies/:id',
           name: 'company-detail',
           component: CompanyDetailPage,
+        },
+        {
+          path: 'employees',
+          name: 'employees',
+          component: EmployeesPage,
         },
         {
           path: 'tasks',
@@ -210,6 +217,11 @@ const router = createRouter({
           path: 'vouchers/visa-return',
           name: 'voucher-visa-return',
           component: VisaReturnApplicationsPage,
+        },
+        {
+          path: 'vouchers/tax-renewal',
+          name: 'voucher-tax-renewal',
+          component: TaxRenewalVouchersPage,
         },
         {
           path: 'vouchers/seifu-notice',

@@ -8,7 +8,11 @@ from .models import (
     Expense,
     ExpenseCategory,
     IncomeSource,
+    SeifuNoticePdfRecord,
+    TaxRenewalAgentTemplate,
+    TaxRenewalVoucherRecord,
     VehicleUsage,
+    VisaGuarantorTemplate,
     VisaReturnApplication,
     VoucherItemTemplate,
 )
@@ -125,3 +129,63 @@ class VisaReturnApplicationAdmin(admin.ModelAdmin):
     list_filter = ('nationality', 'residence_status', 'gender', 'marital_status')
     search_fields = ('applicant_name', 'passport_number', 'phone', 'email', 'guarantor_name')
     readonly_fields = ('created_by', 'created_at', 'updated_at')
+
+
+@admin.register(VisaGuarantorTemplate)
+class VisaGuarantorTemplateAdmin(admin.ModelAdmin):
+    list_display = ('name', 'guarantor_name', 'guarantor_phone', 'is_active', 'sort_order', 'created_at')
+    list_filter = ('is_active',)
+    search_fields = (
+        'name',
+        'guarantor_name',
+        'guarantor_name_en',
+        'guarantor_phone',
+        'guarantor_address',
+        'guarantor_occupation',
+        'guarantor_relationship',
+    )
+
+
+@admin.register(SeifuNoticePdfRecord)
+class SeifuNoticePdfRecordAdmin(admin.ModelAdmin):
+    list_display = ('title', 'status', 'text_count', 'created_by', 'updated_at')
+    list_filter = ('status', 'updated_at')
+    search_fields = ('title', 'note')
+    readonly_fields = ('created_by', 'created_at', 'updated_at')
+
+    def text_count(self, obj):
+        if not isinstance(obj.text_items, list):
+            return 0
+        return len([item for item in obj.text_items if str(item.get('text') or '').strip()])
+
+    text_count.short_description = '文字数量'
+
+
+@admin.register(TaxRenewalVoucherRecord)
+class TaxRenewalVoucherRecordAdmin(admin.ModelAdmin):
+    list_display = (
+        'title',
+        'category',
+        'company',
+        'customer',
+        'status',
+        'selected_template_count',
+        'updated_at',
+    )
+    list_filter = ('category', 'status', 'has_employees', 'has_dependents', 'updated_at')
+    search_fields = ('title', 'note', 'company__name', 'customer__name')
+    readonly_fields = ('created_by', 'created_at', 'updated_at')
+
+    def selected_template_count(self, obj):
+        if not isinstance(obj.selected_templates, list):
+            return 0
+        return len(obj.selected_templates)
+
+    selected_template_count.short_description = '模板数量'
+
+
+@admin.register(TaxRenewalAgentTemplate)
+class TaxRenewalAgentTemplateAdmin(admin.ModelAdmin):
+    list_display = ('name', 'agent_name', 'agent_company_name', 'agent_phone', 'is_active', 'sort_order', 'created_at')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'agent_name', 'agent_kana', 'agent_company_name', 'agent_phone', 'note')

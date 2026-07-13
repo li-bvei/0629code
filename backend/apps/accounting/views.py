@@ -2,6 +2,7 @@ from django.db import transaction
 from django.db.models import DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from rest_framework import status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
@@ -14,7 +15,11 @@ from .models import (
     Expense,
     ExpenseCategory,
     IncomeSource,
+    SeifuNoticePdfRecord,
+    TaxRenewalAgentTemplate,
+    TaxRenewalVoucherRecord,
     VehicleUsage,
+    VisaGuarantorTemplate,
     VisaReturnApplication,
     VoucherItemTemplate,
 )
@@ -28,10 +33,17 @@ from .serializers import (
     ExpenseCategorySerializer,
     ExpenseSerializer,
     IncomeSourceSerializer,
+    SeifuNoticePdfRecordSerializer,
+    TaxRenewalAgentTemplateSerializer,
+    TaxRenewalVoucherRecordSerializer,
     VehicleUsageSerializer,
+    VisaGuarantorTemplateSerializer,
     VisaReturnApplicationSerializer,
     VoucherItemTemplateSerializer,
 )
+from .seifu_notice_pdf import seifu_notice_pdf_response
+from .tax_renewal_pdf import SUPPORTED_TEMPLATE_KEY, tax_renewal_pdf_response
+from .tax_renewal_templates import get_tax_renewal_templates
 from .visa_return_pdf import visa_return_pdf_response
 
 
@@ -378,6 +390,132 @@ class VisaReturnApplicationViewSet(ModelViewSet):
     def pdf(self, request, pk=None):
         application = self.get_object()
         return visa_return_pdf_response(application)
+
+
+class VisaGuarantorTemplateViewSet(ModelViewSet):
+    queryset = VisaGuarantorTemplate.objects.all()
+    serializer_class = VisaGuarantorTemplateSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        include_inactive = str(self.request.query_params.get('include_inactive', '')).lower() in ('1', 'true', 'yes')
+        keyword = self.request.query_params.get('search')
+        if not include_inactive:
+            queryset = queryset.filter(is_active=True)
+        if keyword:
+            queryset = queryset.filter(
+                Q(name__icontains=keyword)
+                | Q(guarantor_name__icontains=keyword)
+                | Q(guarantor_name_en__icontains=keyword)
+                | Q(guarantor_phone__icontains=keyword)
+                | Q(guarantor_address__icontains=keyword)
+                | Q(guarantor_occupation__icontains=keyword)
+                | Q(guarantor_relationship__icontains=keyword)
+            )
+        return queryset.order_by('sort_order', 'id')
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=['is_active', 'updated_at'])
+
+
+class SeifuNoticePdfRecordViewSet(ModelViewSet):
+    queryset = SeifuNoticePdfRecord.objects.select_related('created_by')
+    serializer_class = SeifuNoticePdfRecordSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        keyword = self.request.query_params.get('search')
+        if keyword:
+            queryset = queryset.filter(Q(title__icontains=keyword) | Q(note__icontains=keyword))
+        return queryset.order_by('-updated_at', '-id')
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(created_by=user)
+
+    @action(detail=True, methods=['post'], url_path='generate_pdf')
+    def generate_pdf(self, request, pk=None):
+        record = self.get_object()
+        try:
+            return seifu_notice_pdf_response(record.text_items, title=record.title)
+        except FileNotFoundError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TaxRenewalVoucherRecordViewSet(ModelViewSet):
+    queryset = TaxRenewalVoucherRecord.objects.select_related('company', 'customer', 'employee', 'created_by')
+    serializer_class = TaxRenewalVoucherRecordSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        params = self.request.query_params
+        if params.get('category'):
+            queryset = queryset.filter(category=params['category'])
+        if params.get('company'):
+            queryset = queryset.filter(company_id=params['company'])
+        if params.get('customer'):
+            queryset = queryset.filter(customer_id=params['customer'])
+        keyword = params.get('search') or params.get('keyword')
+        if keyword:
+            queryset = queryset.filter(
+                Q(title__icontains=keyword)
+                | Q(note__icontains=keyword)
+                | Q(company__name__icontains=keyword)
+                | Q(customer__name__icontains=keyword)
+            )
+        return queryset.order_by('-updated_at', '-id')
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(created_by=user)
+
+    @action(detail=True, methods=['post'], url_path='generate_pdf')
+    def generate_pdf(self, request, pk=None):
+        record = self.get_object()
+        template_key = request.data.get('template_key') if isinstance(request.data, dict) else None
+        if template_key != SUPPORTED_TEMPLATE_KEY:
+            return Response({'detail': 'PDF字段映射未完成'}, status=status.HTTP_400_BAD_REQUEST)
+        if template_key not in (record.selected_templates or []):
+            return Response({'detail': '该记录未选择社会保险纳入证明兼委任状。'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            return tax_renewal_pdf_response(record, template_key)
+        except FileNotFoundError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TaxRenewalAgentTemplateViewSet(ModelViewSet):
+    queryset = TaxRenewalAgentTemplate.objects.all()
+    serializer_class = TaxRenewalAgentTemplateSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        include_inactive = str(self.request.query_params.get('include_inactive', '')).lower() in ('1', 'true', 'yes')
+        keyword = self.request.query_params.get('search')
+        if not include_inactive:
+            queryset = queryset.filter(is_active=True)
+        if keyword:
+            queryset = queryset.filter(
+                Q(name__icontains=keyword)
+                | Q(agent_name__icontains=keyword)
+                | Q(agent_kana__icontains=keyword)
+                | Q(agent_company_name__icontains=keyword)
+                | Q(agent_phone__icontains=keyword)
+            )
+        return queryset.order_by('sort_order', 'id')
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=['is_active', 'updated_at'])
+
+
+@api_view(['GET'])
+def tax_renewal_templates(request):
+    return Response(get_tax_renewal_templates())
 
 
 @api_view(['GET'])

@@ -1,0 +1,346 @@
+{
+  "template": "visa_tem.pdf",
+  "mappings": {
+    "pinyin_name1": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[10].T2[0]",
+      "type": "text"
+    },
+    "pinyin_name2": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[11].T7[0]",
+      "type": "text"
+    },
+    "chinese_name1": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[10].tyuubun[0]",
+      "type": "text"
+    },
+    "chinese_name2": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[11].tyuubun[1]",
+      "type": "text"
+    },
+    "used_name1": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[12].T16[1]",
+      "type": "text"
+    },
+    "used_name2": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[12].tyuubun[2]",
+      "type": "text"
+    },
+    "othernationality": {
+      "pdf_field": "topmostSubform[0].Page1[0].T34[0]",
+      "type": "text"
+    },
+    "birth_place": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[3].#area[4].T16[0]",
+      "type": "text"
+    },
+    "chinese_id": {
+      "pdf_field": "topmostSubform[0].Page1[0].T37[0]",
+      "type": "text"
+    },
+    "passport_address": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[9].T57[1]",
+      "type": "text"
+    },
+    "passport_a": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[0].T57[0]",
+      "type": "text"
+    },
+    "zailiu_number": {
+      "pdf_field": "topmostSubform[0].Page1[0].テキストフィールド1[0]",
+      "type": "text"
+    },
+    "entry_port": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[15].#area[16].T68[0]",
+      "type": "text"
+    },
+    "airline": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[15].#area[16].T68[1]",
+      "type": "text"
+    },
+    "entry_time1": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[21].T68[2]",
+      "type": "text"
+    },
+    "entry_time2": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[21].T68[3]",
+      "type": "text"
+    },
+    "entry_time3": {
+      "pdf_field": "topmostSubform[0].Page1[0].T66[0]",
+      "type": "text"
+    },
+    "home_phone": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[17].#area[18].T97[0]",
+      "type": "text"
+    },
+    "workplace_name": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[13].#area[14].emp_name[0]",
+      "type": "text"
+    },
+    "workplace_address": {
+      "pdf_field": "topmostSubform[0].Page1[0].emp_adr[0]",
+      "type": "text"
+    },
+    "workplace_phone": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[13].#area[14].emp_tel[0]",
+      "type": "text"
+    },
+    "hotel": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[19].#area[20].emp_name[1]",
+      "type": "text"
+    },
+    "hotel_phone": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[19].#area[20].emp_tel[1]",
+      "type": "text"
+    },
+    "hotel_address": {
+      "pdf_field": "topmostSubform[0].Page1[0].emp_adr[1]",
+      "type": "text"
+    },
+    "home_address2": {
+      "pdf_field": "topmostSubform[0].Page1[0].T0[1]",
+      "type": "text"
+    },
+    "last": {
+      "pdf_field": "topmostSubform[0].Page1[0].T64[0]",
+      "type": "text"
+    },
+    "job_title2": {
+      "pdf_field": "topmostSubform[0].Page1[0].T5[0]",
+      "type": "text"
+    },
+    "residence_status": {
+      "pdf_field": "topmostSubform[0].Page1[0].T62[0]",
+      "type": "text"
+    },
+    "birth_date": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[3].#area[4].T14[0]",
+      "type": "text"
+    },
+    "nationality": {
+      "pdf_field": "topmostSubform[0].Page1[0].T50[0]",
+      "type": "text"
+    },
+    "passport_number": {
+      "pdf_field": "topmostSubform[0].Page1[0].T49[0]",
+      "type": "text"
+    },
+    "passport_issue_date": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[9].T53[0]",
+      "type": "text"
+    },
+    "passport_expiry_date": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[0].T59[0]",
+      "type": "text"
+    },
+    "phone": {
+      "pdf_field": "topmostSubform[0].Page1[0].#area[17].#area[18].T3[0]",
+      "type": "text"
+    },
+    "email": {
+      "pdf_field": "topmostSubform[0].Page1[0].T3[1]",
+      "type": "text"
+    },
+    "gender": {
+      "type": "choice",
+      "label": "性別",
+      "rules": {
+        "male": {
+          "label": "男性",
+          "pdf_field": "topmostSubform[0].Page1[0].#area[5].#area[6].#area[7].RB1[0]",
+          "value": "0"
+        },
+        "female": {
+          "label": "女性",
+          "pdf_field": "topmostSubform[0].Page1[0].#area[5].#area[6].#area[7].RB1[0]",
+          "value": "1"
+        }
+      }
+    },
+    "marital_status": {
+      "type": "choice",
+      "label": "婚姻状況",
+      "rules": {
+        "single": {
+          "label": "未婚",
+          "pdf_field": "topmostSubform[0].Page1[0].#area[8].RB2[0]",
+          "value": "0"
+        },
+        "married": {
+          "label": "既婚",
+          "pdf_field": "topmostSubform[0].Page1[0].#area[8].RB2[0]",
+          "value": "1"
+        },
+        "divorced": {
+          "label": "離婚",
+          "pdf_field": "topmostSubform[0].Page1[0].#area[8].RB2[0]",
+          "value": "2"
+        },
+        "widowed": {
+          "label": "死別",
+          "pdf_field": "topmostSubform[0].Page1[0].#area[8].RB2[0]",
+          "value": "3"
+        }
+      }
+    },
+    "guarantor_name": {
+      "pdf_field": "topmostSubform[0].Page2[0].T19[1]",
+      "type": "text"
+    },
+    "guarantor_name_en": {
+      "pdf_field": "topmostSubform[0].Page2[0].#area[0].guarantor_name[0]",
+      "type": "text"
+    },
+    "guarantor_address_en": {
+      "pdf_field": "topmostSubform[0].Page2[0].guarantor_adr[0]",
+      "type": "text"
+    },
+    "guarantor_birth_date": {
+      "pdf_field": "topmostSubform[0].Page2[0].#area[1].#area[2].T14[0]",
+      "type": "text",
+      "format": "date"
+    },
+    "guarantor_nationality": {
+      "pdf_field": "topmostSubform[0].Page2[0].#area[1].T5[1]",
+      "type": "text"
+    },
+    "guarantor_address": {
+      "pdf_field": "topmostSubform[0].Page2[0].T23[1]",
+      "type": "text"
+    },
+    "guarantor_phone": {
+      "pdf_field": "topmostSubform[0].Page2[0].#area[0].guarantor_tel[0]",
+      "type": "text"
+    },
+    "guarantor_relationship": {
+      "pdf_field": "topmostSubform[0].Page2[0].#area[1].T25[0]",
+      "type": "text"
+    },
+    "guarantor_occupation": {
+      "pdf_field": "topmostSubform[0].Page2[0].#area[1].T5[0]",
+      "type": "text"
+    },
+    "same": {
+      "pdf_field": "topmostSubform[0].Page2[0].#area[5].T19[0]",
+      "type": "text"
+    },
+    "gender2": {
+      "type": "choice",
+      "label": "在日保証人性別",
+      "rules": {
+        "male": {
+          "label": "男性",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[1].RB1[0]",
+          "value": "0"
+        },
+        "female": {
+          "label": "女性",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[1].RB1[0]",
+          "value": "1"
+        }
+      }
+    },
+    "x1": {
+      "type": "choice",
+      "label": "確認項目1",
+      "default": "no",
+      "rules": {
+        "yes": {
+          "label": "是",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[12].#area[13].#area[14].RB5[5]",
+          "value": "0"
+        },
+        "no": {
+          "label": "否",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[12].#area[13].#area[14].RB5[5]",
+          "value": "1"
+        }
+      }
+    },
+    "x2": {
+      "type": "choice",
+      "label": "確認項目2",
+      "default": "no",
+      "rules": {
+        "yes": {
+          "label": "是",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[7].RB5[0]",
+          "value": "0"
+        },
+        "no": {
+          "label": "否",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[7].RB5[0]",
+          "value": "1"
+        }
+      }
+    },
+    "x3": {
+      "type": "choice",
+      "label": "確認項目3",
+      "default": "no",
+      "rules": {
+        "yes": {
+          "label": "是",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[8].RB5[1]",
+          "value": "0"
+        },
+        "no": {
+          "label": "否",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[8].RB5[1]",
+          "value": "1"
+        }
+      }
+    },
+    "x4": {
+      "type": "choice",
+      "label": "確認項目4",
+      "default": "no",
+      "rules": {
+        "yes": {
+          "label": "是",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[9].RB5[2]",
+          "value": "0"
+        },
+        "no": {
+          "label": "否",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[9].RB5[2]",
+          "value": "1"
+        }
+      }
+    },
+    "x5": {
+      "type": "choice",
+      "label": "確認項目5",
+      "default": "no",
+      "rules": {
+        "yes": {
+          "label": "是",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[10].RB5[3]",
+          "value": "0"
+        },
+        "no": {
+          "label": "否",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[10].RB5[3]",
+          "value": "1"
+        }
+      }
+    },
+    "x6": {
+      "type": "choice",
+      "label": "確認項目6",
+      "default": "no",
+      "rules": {
+        "yes": {
+          "label": "是",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[11].RB5[4]",
+          "value": "0"
+        },
+        "no": {
+          "label": "否",
+          "pdf_field": "topmostSubform[0].Page2[0].#area[11].RB5[4]",
+          "value": "1"
+        }
+      }
+    }
+  }
+}

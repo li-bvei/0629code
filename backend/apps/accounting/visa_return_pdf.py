@@ -1,5 +1,7 @@
 import io
 import json
+import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -13,15 +15,47 @@ TEMPLATE_DIR = Path(settings.BASE_DIR) / 'assets' / 'pdf_templates' / 'visa_retu
 POSITIONS_PATH = TEMPLATE_DIR / 'field_positions.json'
 VISA_1_PATH = TEMPLATE_DIR / 'visa_1.pdf'
 VISA_2_PATH = TEMPLATE_DIR / 'visa_2.pdf'
-FONT_PATH = Path(settings.BASE_DIR) / 'assets' / 'fonts' / 'YuMincho.ttf'
-FONT_NAME = 'YuMincho'
+VISA_FORM_TEMPLATE_PATH = TEMPLATE_DIR / 'visa_tem.pdf'
+FORM_FIELD_MAPPING_PATH = TEMPLATE_DIR / 'form_field_mapping.json'
+FONT_CANDIDATES = [
+    Path(settings.BASE_DIR) / 'assets' / 'fonts' / 'dengxian.ttf',
+    Path(settings.BASE_DIR) / 'assets' / 'fonts' / 'NotoSansCJK-Regular.ttc',
+    Path(settings.BASE_DIR) / 'assets' / 'fonts' / 'SourceHanSans-Regular.otf',
+    Path(settings.BASE_DIR) / 'assets' / 'fonts' / 'NotoSansCJKjp-Regular.otf',
+    Path(settings.BASE_DIR) / 'assets' / 'fonts' / 'YuMincho.ttf',
+]
+FONT_PATH = next((path for path in FONT_CANDIDATES if path.exists()), FONT_CANDIDATES[-1])
+FONT_NAME = 'VisaReturnFont'
 
 
 CHECKED_VALUES = {'checked', 'true', '1', 'yes', 'on'}
+logger = logging.getLogger(__name__)
+PARENT_XREF_RE = re.compile(r'/Parent\s+(\d+)\s+0\s+R')
+
+if FONT_PATH.name == 'YuMincho.ttf':
+    logger.warning('Using YuMincho.ttf for visa PDF. Some simplified Chinese glyphs may be missing.')
+
+
+def format_home_address(data):
+    registered = str(data.get('registered_address') or '').strip()
+    current = str(data.get('current_address') or data.get('home_address2') or '').strip()
+
+    if registered and current:
+        return f'户籍地址：{registered}\n现住址：{current}'
+    if registered:
+        return f'户籍地址：{registered}'
+    if current:
+        return current
+    return ''
 
 
 def load_positions():
     with POSITIONS_PATH.open('r', encoding='utf-8') as file:
+        return json.load(file)
+
+
+def load_form_field_mapping():
+    with FORM_FIELD_MAPPING_PATH.open('r', encoding='utf-8') as file:
         return json.load(file)
 
 
@@ -47,6 +81,40 @@ def get_form_data(application):
 
 def get_snapshot(application):
     return application.guarantor_snapshot if isinstance(application.guarantor_snapshot, dict) else {}
+
+
+def get_form_application_variables(application):
+    form_data = get_form_data(application)
+    snapshot = get_snapshot(application)
+    variables = {
+        'applicant_name': getattr(application, 'applicant_name', ''),
+        'birth_date': getattr(application, 'birth_date', ''),
+        'gender': getattr(application, 'gender', ''),
+        'nationality': getattr(application, 'nationality', ''),
+        'marital_status': getattr(application, 'marital_status', ''),
+        'occupation': getattr(application, 'occupation', ''),
+        'passport_number': getattr(application, 'passport_number', ''),
+        'passport_issue_date': getattr(application, 'passport_issue_date', ''),
+        'passport_expiry_date': getattr(application, 'passport_expiry_date', ''),
+        'residence_status': getattr(application, 'residence_status', ''),
+        'address': getattr(application, 'address', ''),
+        'phone': getattr(application, 'phone', ''),
+        'email': getattr(application, 'email', ''),
+        'note': getattr(application, 'note', ''),
+        'guarantor_name': getattr(application, 'guarantor_name', ''),
+        'guarantor_address': getattr(application, 'guarantor_address', ''),
+        'guarantor_phone': getattr(application, 'guarantor_phone', ''),
+        'guarantor_occupation': getattr(application, 'guarantor_occupation', ''),
+        'guarantor_relationship': getattr(application, 'guarantor_relationship', ''),
+    }
+    variables.update({key: value for key, value in form_data.items() if value not in (None, '')})
+    variables.update({key: value for key, value in snapshot.items() if value not in (None, '')})
+    variables['home_address2'] = format_home_address(variables)
+    guarantor_nationality = first_value(variables.get('guarantor_nationality'), default='')
+    guarantor_visa_status = first_value(variables.get('guarantor_visa_status'), default='')
+    if guarantor_nationality and guarantor_visa_status:
+        variables['guarantor_nationality'] = f'{guarantor_nationality} / {guarantor_visa_status}'
+    return variables
 
 
 def first_value(*values, default=''):
@@ -87,6 +155,204 @@ def is_checked(value):
     return str(value).strip().lower() in CHECKED_VALUES
 
 
+def mapped_form_value(value, config):
+    if config.get('format'):
+        return format_date(value)
+    if isinstance(value, (datetime, date)):
+        return format_date(value)
+    if value is None:
+        return ''
+    return str(value)
+
+
+def set_pdf_field_value(doc, field_name, value, update_all=False):
+    found = False
+    failed = False
+    for page in doc:
+        widgets = page.widgets()
+        if not widgets:
+            continue
+        for widget in widgets:
+            if widget.field_name != field_name:
+                continue
+            try:
+                widget.field_value = value
+                widget.update()
+                found = True
+            except Exception as exc:
+                logger.warning('Failed to update visa PDF field %s: %s', field_name, exc)
+                found = True
+                failed = True
+            if not update_all:
+                return found and not failed
+    return found and not failed
+
+
+def is_choice_widget(widget):
+    field_type = (widget.field_type_string or '').lower()
+    return 'combo' in field_type or 'list' in field_type
+
+
+def is_button_widget(widget):
+    field_type = (widget.field_type_string or '').lower()
+    return 'radio' in field_type or 'check' in field_type
+
+
+def widget_on_values(widget):
+    try:
+        states = widget.button_states() or {}
+    except Exception:
+        return []
+    values = []
+    for state_values in states.values():
+        if isinstance(state_values, (list, tuple, set)):
+            values.extend(str(value) for value in state_values if value not in (None, 'Off'))
+        elif state_values not in (None, 'Off'):
+            values.append(str(state_values))
+    return values
+
+
+def set_pdf_radio_group_value(doc, field_name, selected_value):
+    selected_value = str(selected_value)
+    found = False
+    parent_xrefs = set()
+    for page in doc:
+        widgets = page.widgets()
+        if not widgets:
+            continue
+        for widget in widgets:
+            if widget.field_name != field_name:
+                continue
+            found = True
+            on_values = widget_on_values(widget)
+            next_value = selected_value if selected_value in on_values else 'Off'
+            try:
+                doc.xref_set_key(widget.xref, 'AS', f'/{next_value}')
+                parent_match = PARENT_XREF_RE.search(doc.xref_object(widget.xref, compressed=False))
+                if parent_match:
+                    parent_xrefs.add(int(parent_match.group(1)))
+            except Exception as exc:
+                logger.warning('Failed to update visa PDF radio field %s: %s', field_name, exc)
+    for parent_xref in parent_xrefs:
+        try:
+            doc.xref_set_key(parent_xref, 'V', f'/{selected_value}')
+        except Exception as exc:
+            logger.warning('Failed to update visa PDF radio parent %s: %s', field_name, exc)
+    return found
+
+
+def fill_text_mapping(doc, pdf_field, value):
+    return set_pdf_field_value(doc, pdf_field, value)
+
+
+def fill_checkbox_mapping(doc, pdf_field, checked, checked_value='Yes', unchecked_value='Off'):
+    value = checked_value if checked else (unchecked_value or 'Off')
+    return set_pdf_field_value(doc, pdf_field, value)
+
+
+def fill_choice_mapping(doc, field_name, selected_value):
+    return set_pdf_radio_group_value(doc, field_name, selected_value)
+
+
+def draw_flattened_text(page, rect, value):
+    text = str(value or '')
+    if not text:
+        return
+    font_size = max(6, min(10, rect.height * 0.72))
+    point = fitz.Point(rect.x0 + 2, rect.y1 - max(2, rect.height * 0.2))
+    try:
+        page.insert_text(
+            point,
+            text,
+            fontsize=font_size,
+            fontname=FONT_NAME,
+            fontfile=str(FONT_PATH),
+            color=(0, 0, 0),
+        )
+    except Exception:
+        page.insert_textbox(
+            fitz.Rect(rect.x0 + 2, rect.y0 + 1, rect.x1 - 1, rect.y1 - 1),
+            text,
+            fontsize=font_size,
+            fontname=FONT_NAME,
+            fontfile=str(FONT_PATH),
+            color=(0, 0, 0),
+        )
+
+
+def draw_flattened_button(page, rect):
+    inset = max(1, min(rect.width, rect.height) * 0.2)
+    x0 = rect.x0 + inset
+    y0 = rect.y0 + inset
+    x1 = rect.x1 - inset
+    y1 = rect.y1 - inset
+    page.draw_line((x0, y0), (x1, y1), width=0.8, color=(0, 0, 0))
+    page.draw_line((x0, y1), (x1, y0), width=0.8, color=(0, 0, 0))
+
+
+def draw_value_on_field(doc, field_name, value):
+    text = str(value or '')
+    if not text:
+        return False
+    for page in doc:
+        widgets = page.widgets()
+        if not widgets:
+            continue
+        for widget in widgets:
+            if widget.field_name == field_name:
+                draw_flattened_text(page, widget.rect, text)
+                return True
+    return False
+
+
+def flatten_form_fields(doc):
+    flattened = 0
+    for page in doc:
+        widgets = list(page.widgets() or [])
+        if not widgets:
+            continue
+
+        for widget in widgets:
+            value = widget.field_value
+            try:
+                widget.update()
+            except Exception:
+                pass
+
+            if is_button_widget(widget):
+                if value and value != 'Off':
+                    draw_flattened_button(page, widget.rect)
+                    flattened += 1
+            elif value not in (None, ''):
+                draw_flattened_text(page, widget.rect, value)
+                flattened += 1
+
+        for widget in list(page.widgets() or []):
+            try:
+                page.delete_widget(widget)
+            except Exception as exc:
+                logger.warning('Failed to remove visa PDF form field %s: %s', widget.field_name, exc)
+
+    return flattened
+
+
+def save_pdf_bytes(doc, clean=False):
+    output = io.BytesIO()
+    doc.save(output, garbage=4, deflate=True, clean=clean)
+    output.seek(0)
+    return output.getvalue()
+
+
+def flatten_form_pdf_bytes(pdf_bytes):
+    doc = fitz.open(stream=pdf_bytes, filetype='pdf')
+    try:
+        flattened_count = flatten_form_fields(doc)
+        flattened_bytes = save_pdf_bytes(doc, clean=True)
+        return flattened_bytes, flattened_count
+    finally:
+        doc.close()
+
+
 def data_or_default(data, field_name, config):
     if field_name in data:
         return data[field_name]
@@ -98,7 +364,7 @@ def build_visa_page1_data(application):
     gender = first_value(form_data.get('gender'), getattr(application, 'gender', ''))
     marital_status = first_value(form_data.get('marital_status'), getattr(application, 'marital_status', ''))
 
-    return {
+    data = {
         'pinyin_name1': field_value(application, 'pinyin_name1'),
         'pinyin_name2': field_value(application, 'pinyin_name2'),
         'chinese_name1': field_value(application, 'chinese_name1'),
@@ -106,7 +372,8 @@ def build_visa_page1_data(application):
         'used_name1': field_value(application, 'used_name1'),
         'used_name2': field_value(application, 'used_name2'),
         'nationality': field_value(application, 'nationality', 'nationality'),
-        'orthernationality': field_value(application, 'orthernationality', default='无'),
+        'othernationality': field_value(application, 'othernationality', default='无'),
+        'orthernationality': field_value(application, 'othernationality', default='无'),
         'birth_date': format_date(first_value(getattr(application, 'birth_date', ''), form_data.get('birth_date'))),
         'birth_place': field_value(application, 'birth_place'),
         'xx': checked_if(gender == 'male'),
@@ -143,6 +410,10 @@ def build_visa_page1_data(application):
         'hotel_address': field_value(application, 'hotel_address'),
         'last': field_value(application, 'last'),
     }
+    data['registered_address'] = field_value(application, 'registered_address')
+    data['current_address'] = field_value(application, 'current_address')
+    data['home_address2'] = format_home_address({**form_data, **data})
+    return data
 
 
 def build_visa_page2_data(application):
@@ -164,13 +435,13 @@ def build_visa_page2_data(application):
         ),
         'guarantor_job': snapshot_value(application, 'guarantor_job', getattr(application, 'guarantor_occupation', '')),
         'guarantor_nationality': snapshot_value(application, 'guarantor_nationality'),
+        'guarantor_visa_status': snapshot_value(application, 'guarantor_visa_status'),
         'same': field_value(application, 'same', default='同上'),
         'xx': checked_if(gender == 'male'),
         'xy': checked_if(gender == 'female'),
     }
     for field_name in ('x1', 'x2', 'x3', 'x4', 'x5', 'x6'):
-        if field_name in form_data:
-            data[field_name] = form_data[field_name]
+        data[field_name] = form_data.get(field_name, 'no')
     return data
 
 
@@ -209,7 +480,7 @@ def insert_text(page, x, y, text, font_size=10):
 
 def fill_pdf_template(template_path, positions, data):
     if not FONT_PATH.exists():
-        raise FileNotFoundError(f'YuMincho.ttf is required: {FONT_PATH}')
+        raise FileNotFoundError(f'Visa PDF font is required: {FONT_PATH}')
 
     doc = fitz.open(str(template_path))
     page = doc[0]
@@ -259,13 +530,112 @@ def merge_pdfs(visa_1_bytes, visa_2_bytes):
     return output.getvalue()
 
 
-def generate_visa_return_pdf(application):
+def generate_visa_return_pdf_by_coordinates(application):
     positions = load_positions()
     page1_data = build_visa_page1_data(application)
     page2_data = build_visa_page2_data(application)
     visa_1_bytes = fill_pdf_template(VISA_1_PATH, positions['visa_1'], page1_data)
     visa_2_bytes = fill_pdf_template(VISA_2_PATH, positions['visa_2'], page2_data)
     return merge_pdfs(visa_1_bytes, visa_2_bytes)
+
+
+def fill_form_pdf(application):
+    if not VISA_FORM_TEMPLATE_PATH.exists():
+        raise FileNotFoundError(f'visa_tem.pdf not found: {VISA_FORM_TEMPLATE_PATH}')
+
+    mapping = load_form_field_mapping()
+    mappings = mapping.get('mappings') or {}
+    if not mappings:
+        raise ValueError('form_field_mapping.json has no mappings.')
+
+    variables = get_form_application_variables(application)
+    doc = fitz.open(str(VISA_FORM_TEMPLATE_PATH))
+    filled_count = 0
+    warning_count = 0
+    try:
+        for variable_name, config in mappings.items():
+            config_type = config.get('type', 'text')
+            if config_type == 'choice':
+                value = variables.get(variable_name, config.get('default', ''))
+                rule = (config.get('rules') or {}).get(str(value))
+                if not rule:
+                    continue
+                pdf_field = rule.get('pdf_field')
+                selected_value = rule.get('value', rule.get('checked_value', 'Yes'))
+                if pdf_field:
+                    if fill_choice_mapping(doc, pdf_field, selected_value):
+                        filled_count += 1
+                    else:
+                        warning_count += 1
+                continue
+
+            pdf_field = config.get('pdf_field')
+            if not pdf_field:
+                continue
+
+            value = variables.get(variable_name, '')
+            if config_type in ('checkbox', 'radio'):
+                filled = fill_checkbox_mapping(
+                    doc,
+                    pdf_field,
+                    is_checked(value),
+                    checked_value=config.get('checked_value', config.get('value', 'Yes')),
+                    unchecked_value=config.get('unchecked_value', 'Off'),
+                )
+            else:
+                mapped_value = mapped_form_value(value, config)
+                filled = fill_text_mapping(doc, pdf_field, mapped_value)
+                if not filled:
+                    filled = draw_value_on_field(doc, pdf_field, mapped_value)
+            if filled:
+                filled_count += 1
+            else:
+                warning_count += 1
+
+        try:
+            doc.need_appearances(True)
+        except Exception:
+            pass
+        filled_bytes = doc.tobytes(garbage=4, deflate=True)
+    finally:
+        doc.close()
+
+    flattened = False
+    try:
+        flattened_bytes, flattened_count = flatten_form_pdf_bytes(filled_bytes)
+        flattened = True
+        logger.info(
+            'visa form filling branch used: mapped=%s filled=%s warnings=%s flattened=%s flattened_fields=%s',
+            len(mappings),
+            filled_count,
+            warning_count,
+            flattened,
+            flattened_count,
+        )
+        return flattened_bytes
+    except Exception as exc:
+        logger.warning('Failed to flatten visa PDF form fields: %s', exc)
+        logger.info(
+            'visa form filling branch used: mapped=%s filled=%s warnings=%s flattened=%s',
+            len(mappings),
+            filled_count,
+            warning_count,
+            flattened,
+        )
+        return filled_bytes
+
+
+def generate_visa_return_pdf_by_form(application):
+    return fill_form_pdf(application)
+
+
+def generate_visa_return_pdf(application):
+    if VISA_FORM_TEMPLATE_PATH.exists() and FORM_FIELD_MAPPING_PATH.exists():
+        try:
+            return generate_visa_return_pdf_by_form(application)
+        except Exception:
+            pass
+    return generate_visa_return_pdf_by_coordinates(application)
 
 
 def build_visa_return_pdf_filename(application):

@@ -36,7 +36,7 @@ class CaseViewSet(ModelViewSet):
         'customer',
         'company',
         'responsible_employee',
-    )
+    ).prefetch_related('tasks__responsible_employee')
     serializer_class = CaseSerializer
 
     def get_queryset(self):

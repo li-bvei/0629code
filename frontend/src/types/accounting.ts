@@ -408,6 +408,198 @@ export interface SeifuNoticeRecordPayload {
   note?: string
 }
 
+export type TaxRenewalCategory = 'renewal' | 'pension'
+export type TaxRenewalStatus = 'draft' | 'completed'
+export type TaxRenewalCondition = 'none' | 'has_employees' | 'has_dependents'
+
+export interface TaxRenewalTemplate {
+  key: string
+  name: string
+  category: TaxRenewalCategory
+  filename: string
+  file_path?: string
+  file_exists: boolean
+  condition: TaxRenewalCondition
+  order: number
+  required_fields?: string[]
+}
+
+export interface TaxRenewalPdfFieldRect {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  width: number
+  height: number
+}
+
+export interface TaxRenewalPdfField {
+  index: number
+  field_name: string
+  field_type: string
+  page: number
+  rect: TaxRenewalPdfFieldRect | null
+  options: string[]
+}
+
+export interface TaxRenewalPdfPageInfo {
+  page: number
+  width: number
+  height: number
+}
+
+export interface TaxRenewalPdfDiagnostic {
+  template_key: string
+  template_name: string
+  filename: string
+  file_exists: boolean
+  page_count: number
+  pages: TaxRenewalPdfPageInfo[]
+  has_acroform: boolean
+  field_count: number
+  fields: TaxRenewalPdfField[]
+}
+
+export interface TaxRenewalDependent {
+  name?: string
+  kana?: string
+  birth_date?: string | null
+  relationship?: string
+  my_number?: string
+  address?: string
+}
+
+export interface TaxRenewalFormData {
+  company_name?: string
+  company_number?: string
+  company_address?: string
+  company_phone?: string
+  representative_name?: string
+  representative_kana?: string
+  representative_birth_date?: string | null
+  applicant_name?: string
+  applicant_kana?: string
+  applicant_address?: string
+  applicant_phone?: string
+  applicant_birth_date?: string | null
+  agent_name?: string
+  agent_kana?: string
+  agent_address?: string
+  agent_phone?: string
+  agent_company_name?: string
+  agent_position?: string
+  agent_template_id?: number | null
+  agent_snapshot?: Partial<TaxRenewalAgentTemplate> | null
+  tax_office_name?: string
+  osaka_city_ward?: string
+  osaka_prefecture_office?: string
+  fiscal_year?: string
+  fiscal_period_start?: string | null
+  fiscal_period_end?: string | null
+  fiscal_start_year?: number | string | null
+  fiscal_start_month?: number | string | null
+  fiscal_start_day?: number | string | null
+  fiscal_end_year?: number | string | null
+  fiscal_end_month?: number | string | null
+  fiscal_end_day?: number | string | null
+  fiscal_start_year_jp?: string
+  fiscal_end_year_jp?: string
+  certificate_type?: string
+  quantity?: string | number
+  employee_name?: string
+  employee_kana?: string
+  employee_birth_date?: string | null
+  employee_address?: string
+  employee_phone?: string
+  employee_my_number?: string
+  employment_start_date?: string | null
+  salary_amount?: string | number
+  establishment_symbol?: string
+  establishment_number?: string
+  social_insurance_symbol?: string
+  social_insurance_office_number?: string
+  application_reason?: string
+  representative_position?: string
+  agent_relationship?: string
+  dependents?: TaxRenewalDependent[]
+  submit_date?: string | null
+  note?: string
+}
+
+export interface TaxRenewalVoucherRecord {
+  id: number
+  title: string
+  category: TaxRenewalCategory
+  category_display?: string
+  company?: number | null
+  company_name?: string
+  customer?: number | null
+  customer_name?: string
+  employee?: number | null
+  employee_name?: string
+  status: TaxRenewalStatus
+  status_display?: string
+  has_employees: boolean
+  has_dependents: boolean
+  selected_templates: string[]
+  selected_template_count: number
+  form_data: TaxRenewalFormData
+  generated_files: string[]
+  note: string
+  created_by?: number | null
+  created_by_username?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface TaxRenewalVoucherPayload {
+  title: string
+  category: TaxRenewalCategory
+  company?: number | null
+  customer?: number | null
+  employee?: number | null
+  status?: TaxRenewalStatus
+  has_employees: boolean
+  has_dependents: boolean
+  selected_templates: string[]
+  form_data: TaxRenewalFormData
+  generated_files?: string[]
+  note?: string
+}
+
+export interface TaxRenewalGeneratePdfPayload {
+  template_key?: string
+}
+
+export interface TaxRenewalAgentTemplate {
+  id: number
+  name: string
+  agent_name: string
+  agent_kana: string
+  agent_address: string
+  agent_phone: string
+  agent_company_name: string
+  agent_position: string
+  note: string
+  is_active: boolean
+  sort_order: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface TaxRenewalAgentTemplatePayload {
+  name: string
+  agent_name: string
+  agent_kana?: string
+  agent_address?: string
+  agent_phone?: string
+  agent_company_name?: string
+  agent_position?: string
+  note?: string
+  is_active?: boolean
+  sort_order?: number
+}
+
 export interface VisaReturnApplication {
   id: number
   applicant_name: string

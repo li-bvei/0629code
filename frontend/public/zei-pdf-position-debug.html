@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>税务证明 PDF 坐标映射</title>
+  <style>
+    :root {
+      color: #2f3a45;
+      background: #f5f8fb;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    }
+    body { margin: 0; }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 16px;
+      background: #fff;
+      border-bottom: 1px solid #dce6ef;
+      box-shadow: 0 2px 8px rgba(47, 58, 69, 0.06);
+    }
+    h1 { margin: 0 8px 0 0; font-size: 18px; }
+    button, select, input, textarea {
+      height: 34px;
+      border: 1px solid #c8d6e2;
+      border-radius: 6px;
+      background: #fff;
+      color: #2f3a45;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 0 12px;
+      cursor: pointer;
+      background: #aad4f4;
+      border-color: #aad4f4;
+      font-weight: 700;
+    }
+    button.secondary { background: #fff; border-color: #c8d6e2; }
+    button.danger { background: #e2c5dd; border-color: #e2c5dd; }
+    button:disabled { cursor: not-allowed; opacity: 0.55; }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 400px;
+      gap: 16px;
+      padding: 16px;
+    }
+    .preview-card, .panel {
+      border: 1px solid #dce6ef;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 4px 14px rgba(47, 58, 69, 0.05);
+    }
+    .preview-card { overflow: auto; padding: 16px; min-height: 520px; }
+    .page-wrap { position: relative; display: inline-block; line-height: 0; min-width: 320px; }
+    #previewImage {
+      display: block;
+      width: min(100%, 980px);
+      height: auto;
+      border: 1px solid #b7c4d0;
+      background: #fff;
+    }
+    .marker-layer { position: absolute; inset: 0; pointer-events: none; }
+    .marker {
+      position: absolute;
+      display: flex;
+      align-items: flex-start;
+      overflow: hidden;
+      padding: 1px 3px;
+      color: #182635;
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: pre-wrap;
+      cursor: grab;
+      pointer-events: auto;
+      user-select: none;
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px dashed rgba(21, 103, 176, 0.65);
+      box-sizing: border-box;
+    }
+    .marker .key-badge {
+      position: absolute;
+      top: -15px;
+      left: 0;
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: #fff;
+      background: rgba(21, 103, 176, 0.92);
+      font-size: 10px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    .marker.selected { border: 2px solid #f2a900; background: rgba(255, 247, 221, 0.32); z-index: 4; }
+    .resize-handle {
+      position: absolute;
+      right: -5px;
+      bottom: -5px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #f2a900;
+      cursor: nwse-resize;
+      pointer-events: auto;
+    }
+    .panel {
+      position: sticky;
+      top: 72px;
+      align-self: start;
+      padding: 16px;
+      max-height: calc(100vh - 104px);
+      overflow: auto;
+    }
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 14px 0 10px;
+      font-size: 15px;
+      font-weight: 800;
+    }
+    .field-list {
+      display: grid;
+      gap: 6px;
+      max-height: 220px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .field-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid #dce6ef;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .field-item.selected { border-color: #409eff; background: #eef7ff; }
+    .muted { color: #6c7f90; font-size: 12px; }
+    .field-row {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 9px;
+      font-size: 13px;
+    }
+    .field-row input, .field-row select, .field-row textarea { width: 100%; padding: 0 8px; }
+    .field-row textarea {
+      height: 74px;
+      padding-top: 8px;
+      resize: vertical;
+    }
+    .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+    .status { min-height: 20px; color: #577084; font-size: 13px; }
+    .coord { margin-left: auto; color: #577084; font-size: 13px; }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .panel { position: static; max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>税务证明 PDF 坐标映射</h1>
+    <label>模板 <select id="templateSelect"></select></label>
+    <button id="prevPage" class="secondary">上一页</button>
+    <span id="pageInfo">- / -</span>
+    <button id="nextPage" class="secondary">下一页</button>
+    <button id="saveButton">保存 mapping</button>
+    <button id="testPdfButton" class="secondary">生成测试 PDF</button>
+    <button id="reloadButton" class="secondary">重新加载</button>
+    <span id="mouseCoord" class="coord">x -, y -</span>
+    <span id="topStatus" class="status"></span>
+  </div>
+
+  <main class="layout">
+    <section class="preview-card">
+      <div id="pageWrap" class="page-wrap">
+        <img id="previewImage" alt="PDF preview">
+        <div id="markerLayer" class="marker-layer"></div>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="section-title">
+        <span>字段列表</span>
+        <button id="importCommonButton" class="secondary">导入常用字段</button>
+      </div>
+      <div class="button-row">
+        <button id="addFieldButton">新增字段</button>
+        <button id="deleteFieldButton" class="danger">删除字段</button>
+      </div>
+      <div id="fieldList" class="field-list"></div>
+
+      <div class="section-title">选中字段</div>
+      <div class="field-row"><span>field_key</span><input id="fieldKey"></div>
+      <div class="field-row"><span>label</span><input id="fieldLabel"></div>
+      <div class="field-row"><span>测试内容</span><textarea id="fieldTestValue"></textarea></div>
+      <div class="field-row"><span>page</span><input id="fieldPage" type="number" min="1" step="1"></div>
+      <div class="field-row"><span>x</span><input id="fieldX" type="number" step="0.1"></div>
+      <div class="field-row"><span>y</span><input id="fieldY" type="number" step="0.1"></div>
+      <div class="field-row"><span>width</span><input id="fieldWidth" type="number" min="1" step="0.1"></div>
+      <div class="field-row"><span>height</span><input id="fieldHeight" type="number" min="1" step="0.1"></div>
+      <div class="field-row"><span>type</span><select id="fieldType"><option value="text">text</option><option value="split">split</option><option value="boxes">boxes</option></select></div>
+      <div class="field-row"><span>render_mode</span><select id="fieldRenderMode"><option value="text">text</option><option value="split">split</option><option value="boxes">boxes</option></select></div>
+      <div class="field-row"><span>font_size</span><input id="fieldFontSize" type="number" min="1" step="0.5"></div>
+      <div class="field-row"><span>align</span><select id="fieldAlign"><option value="left">left</option><option value="center">center</option><option value="right">right</option></select></div>
+      <div class="field-row"><span>valign</span><select id="fieldValign"><option value="top">top</option><option value="middle">middle</option><option value="bottom">bottom</option></select></div>
+      <div class="field-row"><span>max_lines</span><input id="fieldMaxLines" type="number" min="1" step="1"></div>
+      <div class="field-row"><span>字距</span><input id="fieldLetterSpacing" type="number" step="0.1"></div>
+      <div class="field-row"><span>split_pattern</span><input id="fieldSplitPattern"></div>
+      <div class="field-row"><span>parts JSON</span><textarea id="fieldParts"></textarea></div>
+      <div class="field-row"><span>box_count</span><input id="fieldBoxCount" type="number" min="0" step="1"></div>
+      <div class="field-row"><span>start_x</span><input id="fieldStartX" type="number" step="0.1"></div>
+      <div class="field-row"><span>box_width</span><input id="fieldBoxWidth" type="number" min="1" step="0.1"></div>
+      <div class="field-row"><span>box_gap</span><input id="fieldBoxGap" type="number" step="0.1"></div>
+      <div class="muted" id="pageSizeText">页面尺寸: -</div>
+      <div class="muted">点击 PDF 设置选中字段坐标；拖动标签调整位置；方向键微调，Shift + 方向键每次 10pt。</div>
+      <div class="muted">
+        公司名、姓名、地址通常使用 text。年/月/日有独立格子用 split。电话、邮编只有视觉分隔时优先 text。每个数字必须独立落格时用 boxes。不确定时先用 text。
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const COMMON_FIELDS = [
+      'submit_date',
+      'company_name',
+      'company_number',
+      'company_address',
+      'company_phone',
+      'representative_name',
+      'representative_kana',
+      'representative_birth_date',
+      'applicant_name',
+      'applicant_kana',
+      'applicant_address',
+      'applicant_phone',
+      'applicant_birth_date',
+      'agent_name',
+      'agent_kana',
+      'agent_address',
+      'agent_phone',
+      'agent_company_name',
+      'agent_position',
+      'tax_office_name',
+      'osaka_city_ward',
+      'osaka_prefecture_office',
+      'fiscal_period_start',
+      'fiscal_period_end',
+      'fiscal_start_year',
+      'fiscal_start_month',
+      'fiscal_start_day',
+      'fiscal_end_year',
+      'fiscal_end_month',
+      'fiscal_end_day',
+      'certificate_type',
+      'quantity',
+      'employee_name',
+      'employee_kana',
+      'employee_birth_date',
+      'employee_address',
+      'employee_phone',
+      'employee_my_number',
+      'employment_start_date',
+      'salary_amount',
+    ]
+    const DEFAULT_TEST_VALUES = {
+      company_name: 'SUNRISE日晟鴻達株式会社',
+      company_number: '1234567890123',
+      company_address: '大阪府大阪市天王寺区勝山四丁目七番三号',
+      company_phone: '06-7650-6385',
+      representative_name: '山田太郎',
+      applicant_name: '王小明',
+      agent_name: '李北北',
+      fiscal_period_start: '2025-08-01',
+      fiscal_period_end: '2026-07-31',
+      fiscal_start_year: '2025',
+      fiscal_start_month: '08',
+      fiscal_start_day: '01',
+      fiscal_end_year: '2026',
+      fiscal_end_month: '07',
+      fiscal_end_day: '31',
+      employee_name: '王小明',
+      employee_my_number: '123456789012',
+      salary_amount: '300000',
+    }
+    const RENDER_MODES = ['text', 'split', 'boxes']
+    const ALIGN_VALUES = ['left', 'center', 'right']
+    const VALIGN_VALUES = ['top', 'middle', 'bottom']
+
+    const apiBase = location.pathname.startsWith('/sun/') ? '/sun/api/accounting/' : '/api/accounting/'
+    const state = {
+      templates: [],
+      mapping: null,
+      currentTemplateKey: '',
+      currentPage: 1,
+      selectedKey: '',
+      dragging: null,
+      resizing: null,
+      imageSize: { width: 0, height: 0 },
+    }
+    const els = {
+      templateSelect: document.getElementById('templateSelect'),
+      prevPage: document.getElementById('prevPage'),
+      nextPage: document.getElementById('nextPage'),
+      pageInfo: document.getElementById('pageInfo'),
+      saveButton: document.getElementById('saveButton'),
+      testPdfButton: document.getElementById('testPdfButton'),
+      reloadButton: document.getElementById('reloadButton'),
+      importCommonButton: document.getElementById('importCommonButton'),
+      addFieldButton: document.getElementById('addFieldButton'),
+      deleteFieldButton: document.getElementById('deleteFieldButton'),
+      fieldList: document.getElementById('fieldList'),
+      previewImage: document.getElementById('previewImage'),
+      markerLayer: document.getElementById('markerLayer'),
+      pageWrap: document.getElementById('pageWrap'),
+      mouseCoord: document.getElementById('mouseCoord'),
+      topStatus: document.getElementById('topStatus'),
+      pageSizeText: document.getElementById('pageSizeText'),
+      fieldKey: document.getElementById('fieldKey'),
+      fieldLabel: document.getElementById('fieldLabel'),
+      fieldPage: document.getElementById('fieldPage'),
+      fieldX: document.getElementById('fieldX'),
+      fieldY: document.getElementById('fieldY'),
+      fieldWidth: document.getElementById('fieldWidth'),
+      fieldHeight: document.getElementById('fieldHeight'),
+      fieldType: document.getElementById('fieldType'),
+      fieldRenderMode: document.getElementById('fieldRenderMode'),
+      fieldFontSize: document.getElementById('fieldFontSize'),
+      fieldTestValue: document.getElementById('fieldTestValue'),
+      fieldAlign: document.getElementById('fieldAlign'),
+      fieldValign: document.getElementById('fieldValign'),
+      fieldMaxLines: document.getElementById('fieldMaxLines'),
+      fieldLetterSpacing: document.getElementById('fieldLetterSpacing'),
+      fieldSplitPattern: document.getElementById('fieldSplitPattern'),
+      fieldParts: document.getElementById('fieldParts'),
+      fieldBoxCount: document.getElementById('fieldBoxCount'),
+      fieldStartX: document.getElementById('fieldStartX'),
+      fieldBoxWidth: document.getElementById('fieldBoxWidth'),
+      fieldBoxGap: document.getElementById('fieldBoxGap'),
+    }
+
+    const csrfToken = () => {
+      const found = document.cookie.split('; ').find((row) => row.startsWith('csrftoken='))
+      return found ? decodeURIComponent(found.split('=')[1]) : ''
+    }
+    const setStatus = (message) => { els.topStatus.textContent = message || '' }
+    const currentTemplate = () => state.templates.find((item) => item.key === state.currentTemplateKey)
+    const currentPageInfo = () => currentTemplate()?.pages?.find((page) => page.page === state.currentPage)
+
+    const fetchJson = async (url, options = {}) => {
+      const response = await fetch(apiBase + url, {
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+          ...(options.headers || {}),
+        },
+        ...options,
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.detail || response.statusText)
+      }
+      return response.json()
+    }
+
+    const fields = () => state.mapping?.fields || {}
+    const fieldEntries = () => Object.entries(fields()).sort(([a], [b]) => a.localeCompare(b))
+    const selectedField = () => fields()[state.selectedKey]
+    const toNumber = (value, fallback) => {
+      const next = Number(value)
+      return Number.isFinite(next) ? next : fallback
+    }
+    const toInt = (value, fallback) => {
+      const next = parseInt(value, 10)
+      return Number.isFinite(next) ? next : fallback
+    }
+    const normalizeField = (key, field = {}) => {
+      const fontSize = toNumber(field.font_size, 10)
+      const renderMode = RENDER_MODES.includes(field.render_mode || field.type) ? (field.render_mode || field.type) : 'text'
+      const align = ALIGN_VALUES.includes(field.align) ? field.align : 'left'
+      const valign = VALIGN_VALUES.includes(field.valign) ? field.valign : 'top'
+      return {
+        label: field.label || key,
+        page: toInt(field.page, state.currentPage || 1),
+        x: toNumber(field.x, 100),
+        y: toNumber(field.y, 100),
+        type: field.type || renderMode || 'text',
+        font_size: fontSize,
+        test_value: Object.prototype.hasOwnProperty.call(field, 'test_value') ? field.test_value : (DEFAULT_TEST_VALUES[key] || field.label || key),
+        width: toNumber(field.width, 150),
+        height: toNumber(field.height, fontSize * 1.5),
+        align,
+        valign,
+        max_lines: Math.max(toInt(field.max_lines, 1), 1),
+        letter_spacing: toNumber(field.letter_spacing, 0),
+        render_mode: renderMode,
+        split_pattern: field.split_pattern || '-',
+        parts: Array.isArray(field.parts) ? field.parts : [],
+        box_count: Math.max(toInt(field.box_count, 0), 0),
+        start_x: toNumber(field.start_x, toNumber(field.x, 100)),
+        box_width: toNumber(field.box_width, 18),
+        box_gap: toNumber(field.box_gap, 2),
+      }
+    }
+    const normalizeAllFields = () => {
+      if (!state.mapping?.fields) return
+      Object.entries(state.mapping.fields).forEach(([key, field]) => {
+        state.mapping.fields[key] = normalizeField(key, field)
+      })
+    }
+    const fieldDisplayValue = (key, field) => field.test_value || field.label || key
+
+    const scale = () => {
+      const page = currentPageInfo()
+      if (!page || !state.imageSize.width || !state.imageSize.height) return { x: 1, y: 1 }
+      return {
+        x: state.imageSize.width / page.width,
+        y: state.imageSize.height / page.height,
+      }
+    }
+
+    const round1 = (value) => Math.round(value * 10) / 10
+
+    const pointerToPdf = (event) => {
+      const page = currentPageInfo()
+      if (!page) return null
+      const rect = els.pageWrap.getBoundingClientRect()
+      const x = ((event.clientX - rect.left) / state.imageSize.width) * page.width
+      const y = ((event.clientY - rect.top) / state.imageSize.height) * page.height
+      return {
+        x: round1(Math.max(0, Math.min(page.width, x))),
+        y: round1(Math.max(0, Math.min(page.height, y))),
+      }
+    }
+
+    const renderTemplates = () => {
+      els.templateSelect.innerHTML = ''
+      state.templates.forEach((template) => {
+        const option = document.createElement('option')
+        option.value = template.key
+        option.textContent = `${template.name}${template.file_exists ? '' : '（模板不存在）'}`
+        els.templateSelect.appendChild(option)
+      })
+    }
+
+    const renderFieldList = () => {
+      els.fieldList.innerHTML = ''
+      fieldEntries().forEach(([key, field]) => {
+        const row = document.createElement('div')
+        row.className = `field-item${state.selectedKey === key ? ' selected' : ''}`
+        row.innerHTML = `<div><strong>${key}</strong><div class="muted">${field.label || ''} / p${field.page || '-' } / ${field.x ?? '-'}, ${field.y ?? '-'}</div></div><span class="muted">${field.render_mode || field.type || 'text'}</span>`
+        row.addEventListener('click', () => selectField(key))
+        els.fieldList.appendChild(row)
+      })
+    }
+
+    const setMarkerTextAlignment = (marker, field) => {
+      marker.style.justifyContent = field.align === 'right' ? 'flex-end' : field.align === 'center' ? 'center' : 'flex-start'
+      marker.style.textAlign = field.align || 'left'
+      marker.style.alignItems = field.valign === 'bottom' ? 'flex-end' : field.valign === 'middle' ? 'center' : 'flex-start'
+    }
+
+    const makeMarker = (key, field, options = {}) => {
+      const s = scale()
+      const x = toNumber(options.x ?? field.x, 100)
+      const y = toNumber(options.y ?? field.y, 100)
+      const width = Math.max(toNumber(options.width ?? field.width, 150), 1)
+      const height = Math.max(toNumber(options.height ?? field.height, field.font_size * 1.5), 1)
+      const marker = document.createElement('div')
+      marker.className = `marker${state.selectedKey === key ? ' selected' : ''}`
+      marker.style.left = `${x * s.x}px`
+      marker.style.top = `${y * s.y}px`
+      marker.style.width = `${width * s.x}px`
+      marker.style.height = `${height * s.y}px`
+      marker.style.fontSize = `${Math.max(field.font_size * s.y, 7)}px`
+      marker.style.lineHeight = '1.2'
+      marker.style.letterSpacing = `${field.letter_spacing * s.x}px`
+      setMarkerTextAlignment(marker, { ...field, ...options })
+      marker.textContent = options.value ?? fieldDisplayValue(key, field)
+      marker.addEventListener('pointerdown', (event) => startDrag(event, key, options))
+      marker.addEventListener('click', (event) => {
+        event.stopPropagation()
+        selectField(key)
+      })
+      if (state.selectedKey === key) {
+        const badge = document.createElement('span')
+        badge.className = 'key-badge'
+        badge.textContent = key
+        marker.appendChild(badge)
+        if (!options.partIndex && !options.boxIndex) {
+          const handle = document.createElement('span')
+          handle.className = 'resize-handle'
+          handle.addEventListener('pointerdown', (event) => startResize(event, key))
+          marker.appendChild(handle)
+        }
+      }
+      return marker
+    }
+
+    const renderMarkers = () => {
+      els.markerLayer.innerHTML = ''
+      fieldEntries().forEach(([key, field]) => {
+        if (Number(field.page) !== state.currentPage) return
+        if (field.render_mode === 'split' && field.parts?.length) {
+          const pattern = field.split_pattern || '-'
+          const values = pattern ? fieldDisplayValue(key, field).split(pattern) : Array.from(fieldDisplayValue(key, field))
+          field.parts.forEach((part, index) => {
+            els.markerLayer.appendChild(makeMarker(key, field, {
+              x: toNumber(part.x, field.x),
+              y: toNumber(part.y, field.y),
+              width: toNumber(part.width, field.width),
+              height: toNumber(part.height, field.height),
+              align: part.align || field.align,
+              value: values[index] || '',
+              partIndex: index + 1,
+            }))
+          })
+          return
+        }
+        if (field.render_mode === 'boxes') {
+          const value = fieldDisplayValue(key, field)
+          const count = field.box_count || value.length
+          for (let index = 0; index < count; index += 1) {
+            els.markerLayer.appendChild(makeMarker(key, field, {
+              x: field.start_x + index * (field.box_width + field.box_gap),
+              y: field.y,
+              width: field.box_width,
+              height: field.height,
+              align: 'center',
+              value: value[index] || '',
+              boxIndex: index + 1,
+            }))
+          }
+          return
+        }
+        els.markerLayer.appendChild(makeMarker(key, field))
+      })
+    }
+
+    const renderEditor = () => {
+      const field = selectedField()
+      els.fieldKey.value = state.selectedKey || ''
+      els.fieldLabel.value = field?.label || ''
+      els.fieldTestValue.value = field?.test_value || ''
+      els.fieldPage.value = field?.page || state.currentPage
+      els.fieldX.value = field?.x ?? ''
+      els.fieldY.value = field?.y ?? ''
+      els.fieldWidth.value = field?.width ?? 150
+      els.fieldHeight.value = field?.height ?? 15
+      els.fieldType.value = field?.type || 'text'
+      els.fieldRenderMode.value = field?.render_mode || field?.type || 'text'
+      els.fieldFontSize.value = field?.font_size || 10
+      els.fieldAlign.value = field?.align || 'left'
+      els.fieldValign.value = field?.valign || 'top'
+      els.fieldMaxLines.value = field?.max_lines || 1
+      els.fieldLetterSpacing.value = field?.letter_spacing ?? 0
+      els.fieldSplitPattern.value = field?.split_pattern || '-'
+      els.fieldParts.value = JSON.stringify(field?.parts || [], null, 2)
+      els.fieldBoxCount.value = field?.box_count || 0
+      els.fieldStartX.value = field?.start_x ?? field?.x ?? ''
+      els.fieldBoxWidth.value = field?.box_width || 18
+      els.fieldBoxGap.value = field?.box_gap ?? 2
+      const page = currentPageInfo()
+      els.pageSizeText.textContent = page ? `页面尺寸: ${page.width} x ${page.height} pt` : '页面尺寸: -'
+    }
+
+    const render = () => {
+      const template = currentTemplate()
+      els.pageInfo.textContent = `${state.currentPage} / ${template?.page_count || '-'}`
+      els.prevPage.disabled = state.currentPage <= 1
+      els.nextPage.disabled = !template || state.currentPage >= template.page_count
+      renderFieldList()
+      renderMarkers()
+      renderEditor()
+    }
+
+    const selectField = (key) => {
+      state.selectedKey = key
+      render()
+    }
+
+    const setFieldValue = (key, value) => {
+      if (!state.selectedKey || !fields()[state.selectedKey]) return
+      fields()[state.selectedKey][key] = value
+      renderFieldList()
+      renderMarkers()
+    }
+
+    const updateSelectedFromInputs = () => {
+      if (!state.selectedKey || !fields()[state.selectedKey]) return
+      const oldKey = state.selectedKey
+      const nextKey = els.fieldKey.value.trim()
+      if (nextKey && nextKey !== oldKey) {
+        fields()[nextKey] = fields()[oldKey]
+        delete fields()[oldKey]
+        state.selectedKey = nextKey
+      }
+      const field = fields()[state.selectedKey]
+      field.label = els.fieldLabel.value
+      field.test_value = els.fieldTestValue.value
+      field.page = Number(els.fieldPage.value || state.currentPage)
+      field.x = Number(els.fieldX.value || 0)
+      field.y = Number(els.fieldY.value || 0)
+      field.width = Number(els.fieldWidth.value || 150)
+      field.height = Number(els.fieldHeight.value || field.font_size * 1.5 || 15)
+      field.type = els.fieldType.value || 'text'
+      field.render_mode = els.fieldRenderMode.value || field.type || 'text'
+      field.font_size = Number(els.fieldFontSize.value || 10)
+      field.align = els.fieldAlign.value || 'left'
+      field.valign = els.fieldValign.value || 'top'
+      field.max_lines = Math.max(Number(els.fieldMaxLines.value || 1), 1)
+      field.letter_spacing = Number(els.fieldLetterSpacing.value || 0)
+      field.split_pattern = els.fieldSplitPattern.value || '-'
+      field.box_count = Math.max(Number(els.fieldBoxCount.value || 0), 0)
+      field.start_x = Number(els.fieldStartX.value || field.x || 0)
+      field.box_width = Number(els.fieldBoxWidth.value || 18)
+      field.box_gap = Number(els.fieldBoxGap.value || 0)
+      try {
+        const parts = JSON.parse(els.fieldParts.value || '[]')
+        if (!Array.isArray(parts)) throw new Error('parts must be array')
+        field.parts = parts
+        setStatus('')
+      } catch (error) {
+        setStatus('parts JSON 格式不正确，未更新 parts')
+      }
+      render()
+    }
+
+    const addField = (key = '') => {
+      const base = key || `field_${fieldEntries().length + 1}`
+      let nextKey = base
+      let count = 2
+      while (fields()[nextKey]) {
+        nextKey = `${base}_${count}`
+        count += 1
+      }
+      fields()[nextKey] = normalizeField(nextKey, {
+        label: nextKey,
+        page: state.currentPage,
+        x: 100,
+        y: 100,
+        type: 'text',
+        render_mode: 'text',
+      })
+      selectField(nextKey)
+    }
+
+    const deleteField = () => {
+      if (!state.selectedKey) return
+      delete fields()[state.selectedKey]
+      state.selectedKey = fieldEntries()[0]?.[0] || ''
+      render()
+    }
+
+    const importCommonFields = () => {
+      COMMON_FIELDS.forEach((key) => {
+        if (!fields()[key]) {
+          fields()[key] = normalizeField(key, {
+            label: key,
+            page: state.currentPage,
+            x: 100,
+            y: 100,
+            type: 'text',
+            render_mode: 'text',
+            font_size: 10,
+            test_value: DEFAULT_TEST_VALUES[key] || key,
+          })
+        }
+      })
+      state.selectedKey = state.selectedKey || COMMON_FIELDS[0]
+      render()
+      setStatus('已导入常用字段')
+    }
+
+    const loadTemplates = async () => {
+      state.templates = await fetchJson('zei-pdf-position-debug/templates/')
+      renderTemplates()
+      state.currentTemplateKey = state.templates[0]?.key || ''
+      els.templateSelect.value = state.currentTemplateKey
+    }
+
+    const loadMapping = async () => {
+      if (!state.currentTemplateKey) return
+      state.mapping = await fetchJson(`zei-pdf-position-debug/mapping/?template_key=${encodeURIComponent(state.currentTemplateKey)}`)
+      normalizeAllFields()
+      state.selectedKey = fieldEntries()[0]?.[0] || ''
+    }
+
+    const loadPreview = async () => {
+      if (!state.currentTemplateKey) return
+      const url = `${apiBase}zei-pdf-position-debug/preview/?template_key=${encodeURIComponent(state.currentTemplateKey)}&page=${state.currentPage}&_=${Date.now()}`
+      els.previewImage.src = url
+    }
+
+    const loadCurrentTemplate = async () => {
+      setStatus('加载中...')
+      state.currentPage = 1
+      await loadMapping()
+      await loadPreview()
+      render()
+      setStatus('')
+    }
+
+    const saveMapping = async () => {
+      updateSelectedFromInputs()
+      const data = await fetchJson('zei-pdf-position-debug/mapping/', {
+        method: 'POST',
+        body: JSON.stringify({
+          template_key: state.currentTemplateKey,
+          mapping: state.mapping,
+        }),
+      })
+      state.mapping = data.mapping
+      setStatus(`已保存${data.backup ? `，备份 ${data.backup}` : ''}`)
+      render()
+    }
+
+    const testPdf = async () => {
+      const response = await fetch(`${apiBase}zei-pdf-position-debug/test-pdf/`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+        },
+        body: JSON.stringify({ template_key: state.currentTemplateKey }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.detail || response.statusText)
+      }
+      const blob = await response.blob()
+      const warnings = response.headers.get('x-position-warnings')
+      const cd = response.headers.get('content-disposition') || ''
+      const filenameMatch = cd.match(/filename\*=UTF-8''([^;]+)/)
+      const filename = filenameMatch ? decodeURIComponent(filenameMatch[1]) : 'zei_position_test.pdf'
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      setStatus(warnings ? decodeURIComponent(warnings) : '测试 PDF 已生成')
+    }
+
+    const startDrag = (event, key, options = {}) => {
+      event.preventDefault()
+      event.stopPropagation()
+      selectField(key)
+      const onMove = (moveEvent) => {
+        const point = pointerToPdf(moveEvent)
+        if (!point) return
+        const field = fields()[key]
+        if (options.boxIndex) {
+          field.start_x = round1(point.x - (options.boxIndex - 1) * (field.box_width + field.box_gap))
+          field.y = point.y
+        } else if (options.partIndex && field.parts?.[options.partIndex - 1]) {
+          field.parts[options.partIndex - 1].x = point.x
+          field.parts[options.partIndex - 1].y = point.y
+        } else {
+          field.x = point.x
+          field.y = point.y
+          if (field.render_mode === 'boxes') field.start_x = point.x
+        }
+        field.page = state.currentPage
+        render()
+      }
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    }
+
+    const startResize = (event, key) => {
+      event.preventDefault()
+      event.stopPropagation()
+      selectField(key)
+      const startPoint = pointerToPdf(event)
+      const field = fields()[key]
+      const initial = {
+        width: field.width,
+        height: field.height,
+        boxWidth: field.box_width,
+      }
+      const onMove = (moveEvent) => {
+        const point = pointerToPdf(moveEvent)
+        if (!point || !startPoint) return
+        const dx = point.x - startPoint.x
+        const dy = point.y - startPoint.y
+        if (field.render_mode === 'boxes') {
+          field.box_width = round1(Math.max(1, initial.boxWidth + dx))
+        } else {
+          field.width = round1(Math.max(1, initial.width + dx))
+        }
+        field.height = round1(Math.max(1, initial.height + dy))
+        render()
+      }
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    }
+
+    els.previewImage.addEventListener('load', () => {
+      state.imageSize = {
+        width: els.previewImage.clientWidth,
+        height: els.previewImage.clientHeight,
+      }
+      render()
+    })
+    els.pageWrap.addEventListener('click', (event) => {
+      if (!state.selectedKey) return
+      const point = pointerToPdf(event)
+      if (!point) return
+      const field = selectedField()
+      field.x = point.x
+      field.y = point.y
+      field.page = state.currentPage
+      render()
+    })
+    els.pageWrap.addEventListener('mousemove', (event) => {
+      const point = pointerToPdf(event)
+      els.mouseCoord.textContent = point ? `x ${point.x}, y ${point.y}` : 'x -, y -'
+    })
+    els.templateSelect.addEventListener('change', async () => {
+      state.currentTemplateKey = els.templateSelect.value
+      await loadCurrentTemplate()
+    })
+    els.prevPage.addEventListener('click', async () => {
+      if (state.currentPage <= 1) return
+      state.currentPage -= 1
+      await loadPreview()
+      render()
+    })
+    els.nextPage.addEventListener('click', async () => {
+      const template = currentTemplate()
+      if (!template || state.currentPage >= template.page_count) return
+      state.currentPage += 1
+      await loadPreview()
+      render()
+    })
+    els.saveButton.addEventListener('click', () => saveMapping().catch((error) => setStatus(error.message)))
+    els.testPdfButton.addEventListener('click', () => testPdf().catch((error) => setStatus(error.message)))
+    els.reloadButton.addEventListener('click', () => loadCurrentTemplate().catch((error) => setStatus(error.message)))
+    els.addFieldButton.addEventListener('click', () => addField())
+    els.deleteFieldButton.addEventListener('click', deleteField)
+    els.importCommonButton.addEventListener('click', importCommonFields)
+    ;[
+      els.fieldKey,
+      els.fieldLabel,
+      els.fieldTestValue,
+      els.fieldPage,
+      els.fieldX,
+      els.fieldY,
+      els.fieldWidth,
+      els.fieldHeight,
+      els.fieldType,
+      els.fieldRenderMode,
+      els.fieldFontSize,
+      els.fieldAlign,
+      els.fieldValign,
+      els.fieldMaxLines,
+      els.fieldLetterSpacing,
+      els.fieldSplitPattern,
+      els.fieldParts,
+      els.fieldBoxCount,
+      els.fieldStartX,
+      els.fieldBoxWidth,
+      els.fieldBoxGap,
+    ].forEach((input) => {
+      input.addEventListener('input', updateSelectedFromInputs)
+      input.addEventListener('change', updateSelectedFromInputs)
+    })
+    window.addEventListener('keydown', (event) => {
+      if (!state.selectedKey || !selectedField()) return
+      const activeTag = document.activeElement?.tagName
+      if (activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA') return
+      const step = event.shiftKey ? 10 : 1
+      const field = selectedField()
+      if (event.key === 'ArrowLeft') field.x = round1((field.x || 0) - step)
+      else if (event.key === 'ArrowRight') field.x = round1((field.x || 0) + step)
+      else if (event.key === 'ArrowUp') field.y = round1((field.y || 0) - step)
+      else if (event.key === 'ArrowDown') field.y = round1((field.y || 0) + step)
+      else return
+      event.preventDefault()
+      render()
+    })
+    window.addEventListener('resize', () => {
+      state.imageSize = {
+        width: els.previewImage.clientWidth,
+        height: els.previewImage.clientHeight,
+      }
+      render()
+    })
+
+    ;(async () => {
+      try {
+        await loadTemplates()
+        await loadCurrentTemplate()
+      } catch (error) {
+        setStatus(error.message)
+      }
+    })()
+  </script>
+</body>
+</html>

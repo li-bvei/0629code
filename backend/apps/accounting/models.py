@@ -2,6 +2,10 @@ from django.conf import settings
 from django.db import models
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+from apps.companies.models import Company
+from apps.customers.models import Customer
+from apps.employees.models import Employee
+
 
 class ExpenseCategory(models.Model):
     name = models.CharField('カテゴリ名', max_length=50, unique=True)
@@ -361,3 +365,158 @@ class VisaReturnApplication(models.Model):
 
     def __str__(self):
         return self.applicant_name or f'返签visa表 {self.pk}'
+
+
+class VisaGuarantorTemplate(models.Model):
+    name = models.CharField('模板名称', max_length=255)
+    guarantor_name = models.CharField('在日担保人姓名', max_length=255, blank=True)
+    guarantor_name_en = models.CharField('在日担保人英文姓名', max_length=255, blank=True)
+    guarantor_phone = models.CharField('电话', max_length=50, blank=True)
+    guarantor_address = models.TextField('日文地址', blank=True)
+    guarantor_address_en = models.TextField('英文地址', blank=True)
+    guarantor_birth_date = models.DateField('出生日期', null=True, blank=True)
+    guarantor_nationality = models.CharField('国籍', max_length=100, blank=True)
+    guarantor_visa_status = models.CharField('签证种类 / 在留资格', max_length=100, blank=True)
+    guarantor_occupation = models.CharField('职业 / 职务', max_length=100, blank=True)
+    guarantor_relationship = models.CharField('与申请人的关系', max_length=100, blank=True)
+    guarantor_company_name = models.CharField('公司名', max_length=255, blank=True)
+    note = models.TextField('备注', blank=True)
+    is_active = models.BooleanField('是否启用', default=True)
+    sort_order = models.IntegerField('排序', default=0)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_visa_guarantor_templates'
+        verbose_name = '在日担保人模板'
+        verbose_name_plural = '在日担保人模板'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class SeifuNoticePdfRecord(models.Model):
+    STATUS_DRAFT = 'draft'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CHOICES = (
+        (STATUS_DRAFT, '下書き'),
+        (STATUS_COMPLETED, '完了'),
+    )
+
+    title = models.CharField('记录名称', max_length=255)
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    text_items = models.JSONField('追加文字', default=list, blank=True)
+    note = models.TextField('备注', blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='seifu_notice_pdf_records',
+        verbose_name='作成者',
+    )
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_seifu_notice_pdf_records'
+        verbose_name = '清風合格通知書记录'
+        verbose_name_plural = '清風合格通知書记录'
+        ordering = ['-updated_at', '-id']
+
+    def __str__(self):
+        return self.title
+
+
+class TaxRenewalVoucherRecord(models.Model):
+    CATEGORY_RENEWAL = 'renewal'
+    CATEGORY_PENSION = 'pension'
+    CATEGORY_CHOICES = (
+        (CATEGORY_RENEWAL, '更新用'),
+        (CATEGORY_PENSION, '年金加入'),
+    )
+
+    STATUS_DRAFT = 'draft'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CHOICES = (
+        (STATUS_DRAFT, '下書き'),
+        (STATUS_COMPLETED, '完了'),
+    )
+
+    title = models.CharField('记录名称', max_length=255)
+    category = models.CharField('分类', max_length=20, choices=CATEGORY_CHOICES, default=CATEGORY_RENEWAL)
+    company = models.ForeignKey(
+        Company,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='tax_renewal_voucher_records',
+        verbose_name='会社',
+    )
+    customer = models.ForeignKey(
+        Customer,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='tax_renewal_voucher_records',
+        verbose_name='顧客',
+    )
+    employee = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='tax_renewal_voucher_records',
+        verbose_name='担当者',
+    )
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    has_employees = models.BooleanField('是否有雇员', default=False)
+    has_dependents = models.BooleanField('是否有抚养人', default=False)
+    selected_templates = models.JSONField('选择模板', default=list, blank=True)
+    form_data = models.JSONField('表单数据', default=dict, blank=True)
+    generated_files = models.JSONField('生成文件', default=list, blank=True)
+    note = models.TextField('备注', blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='tax_renewal_voucher_records',
+        verbose_name='作成者',
+    )
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_tax_renewal_voucher_records'
+        verbose_name = '税务证明更新用记录'
+        verbose_name_plural = '税务证明更新用记录'
+        ordering = ['-updated_at', '-id']
+
+    def __str__(self):
+        return self.title
+
+
+class TaxRenewalAgentTemplate(models.Model):
+    name = models.CharField('模板名称', max_length=255)
+    agent_name = models.CharField('代理人姓名', max_length=255)
+    agent_kana = models.CharField('代理人假名', max_length=255, blank=True)
+    agent_address = models.TextField('代理人地址', blank=True)
+    agent_phone = models.CharField('代理人电话', max_length=50, blank=True)
+    agent_company_name = models.CharField('代理公司名', max_length=255, blank=True)
+    agent_position = models.CharField('职务', max_length=100, blank=True)
+    note = models.TextField('备注', blank=True)
+    is_active = models.BooleanField('是否启用', default=True)
+    sort_order = models.IntegerField('排序', default=0)
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_tax_renewal_agent_templates'
+        verbose_name = '税务证明代理人模板'
+        verbose_name_plural = '税务证明代理人模板'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name

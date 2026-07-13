@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  AlarmClock,
   Briefcase,
   CirclePlus,
   Document,
@@ -70,17 +69,8 @@ const handleLogout = async () => {
             <el-icon><OfficeBuilding /></el-icon>
             <span>会社管理</span>
           </el-menu-item>
-          <el-menu-item index="/reminders">
-            <el-icon><AlarmClock /></el-icon>
-            <span>期限リマインダー</span>
-          </el-menu-item>
-          <el-menu-item index="/timelines">
-            <span>タイムライン</span>
-          </el-menu-item>
-          <el-menu-item index="/documents">
-            <el-icon><Document /></el-icon>
-            <span>書類管理</span>
-          </el-menu-item>
+          <el-menu-item index="/employees">担当者管理</el-menu-item>
+          <el-menu-item index="/tasks">タスク一覧</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="accounting">
@@ -90,9 +80,8 @@ const handleLogout = async () => {
           <el-menu-item index="/accounting">会計ダッシュボード</el-menu-item>
           <el-menu-item index="/accounting/expenses">支出記録</el-menu-item>
           <el-menu-item index="/accounting/expense-categories">支出カテゴリ</el-menu-item>
-          <el-menu-item index="/accounting/income-sources">収入来源</el-menu-item>
-          <el-menu-item index="/accounting/vehicle-usages">用車記録</el-menu-item>
-          <el-menu-item index="/accounting/projects">プロジェクト収支表</el-menu-item>
+          <el-menu-item index="/accounting/income-sources">収入元</el-menu-item>
+          <el-menu-item index="/accounting/vehicle-usages">車両使用記録</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="vouchers">
@@ -102,7 +91,11 @@ const handleLogout = async () => {
           </template>
           <el-menu-item index="/vouchers/invoices">請求書・領収書</el-menu-item>
           <el-menu-item index="/vouchers/visa-return">返签 visa 表</el-menu-item>
-          <el-menu-item index="/vouchers/seifu-notice">清風合格通知書</el-menu-item>
+          <el-menu-item index="/vouchers/tax-renewal">税务证明更新用</el-menu-item>
+          <el-menu-item index="/vouchers/seifu-notice">
+            <span>清風合格通知書</span>
+            <el-tag size="small" type="info">暂停</el-tag>
+          </el-menu-item>
           <el-menu-item index="/vouchers/estimates">
             <span>見積書</span>
             <el-tag size="small" type="info">準備中</el-tag>

@@ -168,6 +168,10 @@ export interface Case {
   applied_at: string | null
   result_notified_at: string | null
   completed_at: string | null
+  task_total_count: number
+  task_completed_count: number
+  next_task_title: string
+  next_task_responsible_employee_name: string
   created_at: string
   updated_at: string
 }
@@ -214,14 +218,26 @@ export interface Employee {
   updated_at: string
 }
 
+export interface EmployeePayload {
+  name: string
+  email?: string
+  phone?: string
+  is_active?: boolean
+}
+
 export interface Task {
   id: number
   case: number
   case_number: string
   title: string
   description: string
+  responsible_employee: number | null
+  responsible_employee_name: string
   status: string
+  sort_order: number
   due_date: string | null
+  planned_completion_date: string | null
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -230,8 +246,12 @@ export interface TaskPayload {
   case: number
   title: string
   description?: string
+  responsible_employee?: number | null
   status: string
+  sort_order?: number
+  planned_completion_date?: string | null
   due_date?: string | null
+  completed_at?: string | null
 }
 
 export interface Reminder {

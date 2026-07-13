@@ -5,7 +5,7 @@ from .serializers import TaskSerializer
 
 
 class TaskViewSet(ModelViewSet):
-    queryset = Task.objects.select_related('case')
+    queryset = Task.objects.select_related('case', 'responsible_employee')
     serializer_class = TaskSerializer
 
     def get_queryset(self):
