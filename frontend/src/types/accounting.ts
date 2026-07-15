@@ -73,6 +73,27 @@ export interface ExpenseTargetChartItem {
   amount: number | string
 }
 
+export interface AccountingProjectChartItem {
+  project_id: number
+  project_name: string
+  income: number | string
+  expense: number | string
+  balance: number | string
+}
+
+export interface AccountingProjectReportSummary {
+  total_income: number | string
+  project_count: number
+  total_expense: number | string
+  balance: number | string
+}
+
+export interface AccountingProjectReport {
+  summary: AccountingProjectReportSummary
+  project_chart: AccountingProjectChartItem[]
+  expense_category_chart: ExpenseTargetChartItem[]
+}
+
 export interface IncomeSource {
   id: number
   source_date: string

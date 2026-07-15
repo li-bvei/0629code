@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { getAccountingDashboard } from '../../api/accounting'
 import type { AccountingDashboard, ExpenseTargetChartItem } from '../../types/accounting'
+import { formatAccountingNumber } from '../../utils/accountingFormat'
 import { formatDate } from '../../utils/date'
 import './accounting.css'
 
@@ -31,7 +32,7 @@ const dashboard = ref<AccountingDashboard>({
   recent_vehicle_usages: [],
 })
 
-const formatCurrency = (value: number | string) => `¥ ${Number(value || 0).toLocaleString()}`
+const formatCurrency = (value: number | string) => formatAccountingNumber(value)
 const formatDistance = (value: number | string) => `${Number(value || 0).toLocaleString()} km`
 const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ')
 

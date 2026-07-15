@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { deleteAccountingProject, listAccountingProjects } from '../../api/accounting'
-import type { AccountingListParams, AccountingProject } from '../../types/accounting'
+import { deleteAccountingProject, getAccountingProjectReport, listAccountingProjects } from '../../api/accounting'
+import type { AccountingListParams, AccountingProject, AccountingProjectReport } from '../../types/accounting'
+import { formatAccountingNumber, toAccountingNumber } from '../../utils/accountingFormat'
 import { formatDate, formatDateTime } from '../../utils/date'
 import './accounting.css'
 
@@ -12,6 +13,16 @@ const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
 const projects = ref<AccountingProject[]>([])
+const report = ref<AccountingProjectReport>({
+  summary: {
+    total_income: 0,
+    project_count: 0,
+    total_expense: 0,
+    balance: 0,
+  },
+  project_chart: [],
+  expense_category_chart: [],
+})
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 20
@@ -23,6 +34,17 @@ const boolOptions = [
   { label: '有効', value: 'true' },
   { label: '無効', value: 'false' },
 ]
+
+const summaryCards = computed(() => [
+  { label: '収入合計', value: formatAccountingNumber(report.value.summary.total_income) },
+  { label: '対象件数', value: `${report.value.summary.project_count.toLocaleString()}件` },
+  { label: '支出合計', value: formatAccountingNumber(report.value.summary.total_expense) },
+  {
+    label: '残高',
+    value: formatAccountingNumber(report.value.summary.balance),
+    negative: toAccountingNumber(report.value.summary.balance) < 0,
+  },
+])
 
 const formatPeriod = (project: AccountingProject) => {
   const start = formatDate(project.start_date)
@@ -46,9 +68,22 @@ const fetchProjects = async (page = currentPage.value) => {
   }
 }
 
+const fetchReport = async () => {
+  try {
+    report.value = await getAccountingProjectReport(filters.value)
+  } catch {
+    ElMessage.error('プロジェクト収支集計の取得に失敗しました。')
+  }
+}
+
+const searchProjects = () => {
+  fetchProjects(1)
+  fetchReport()
+}
+
 const clearFilters = () => {
   filters.value = { search: '', is_active: '' }
-  fetchProjects(1)
+  searchProjects()
 }
 
 const confirmDelete = async (project: AccountingProject) => {
@@ -70,6 +105,7 @@ const confirmDelete = async (project: AccountingProject) => {
 
 onMounted(() => {
   fetchProjects()
+  fetchReport()
 })
 </script>
 
@@ -97,8 +133,17 @@ onMounted(() => {
             <el-option v-for="option in boolOptions" :key="option.value" :label="option.label" :value="option.value" />
           </el-select>
           <div class="accounting-filter-actions">
-            <el-button type="primary" @click="fetchProjects(1)">検索</el-button>
+            <el-button type="primary" @click="searchProjects">検索</el-button>
             <el-button @click="clearFilters">クリア</el-button>
+          </div>
+        </div>
+      </div>
+
+      <div class="accounting-summary-grid project-summary-grid">
+        <div v-for="card in summaryCards" :key="card.label" class="accounting-summary-card compact-summary-card">
+          <div class="accounting-summary-label">{{ card.label }}</div>
+          <div class="accounting-summary-value accounting-number" :class="{ 'is-negative': card.negative }">
+            {{ card.value }}
           </div>
         </div>
       </div>

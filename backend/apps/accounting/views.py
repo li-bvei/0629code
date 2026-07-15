@@ -1,4 +1,6 @@
 from django.db import transaction
+from decimal import Decimal
+
 from django.db.models import DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -23,6 +25,7 @@ from .models import (
     VisaReturnApplication,
     VoucherItemTemplate,
 )
+from .excel import expenses_excel_response, project_excel_response
 from .pdf import voucher_pdf_response
 from .serializers import (
     AccountingProjectDetailSerializer,
@@ -99,6 +102,36 @@ def build_expense_chart(group_field):
     ]
 
 
+def project_amount_summary(project):
+    income_total = sum((income.amount for income in project.project_incomes.all()), Decimal('0'))
+    expense_total = sum((expense.amount for expense in project.project_expenses.all()), Decimal('0'))
+    return {
+        'project_id': project.id,
+        'project_name': project.name,
+        'income': income_total,
+        'expense': expense_total,
+        'balance': income_total - expense_total,
+    }
+
+
+def build_project_expense_category_chart(projects):
+    grouped = {}
+    for project in projects:
+        for expense in project.project_expenses.all():
+            name = (expense.category_name or '').strip() or '未分類'
+            grouped[name] = grouped.get(name, Decimal('0')) + expense.amount
+    items = sorted(
+        [{'name': name, 'amount': amount} for name, amount in grouped.items() if amount],
+        key=lambda item: item['amount'],
+        reverse=True,
+    )
+    if len(items) > 8:
+        top_items = items[:7]
+        other_amount = sum((item['amount'] for item in items[7:]), Decimal('0'))
+        items = top_items + [{'name': 'その他', 'amount': other_amount}]
+    return [{'name': item['name'], 'amount': decimal_to_number(item['amount'])} for item in items]
+
+
 class ExpenseCategoryViewSet(ModelViewSet):
     queryset = ExpenseCategory.objects.all()
     serializer_class = ExpenseCategorySerializer
@@ -146,6 +179,32 @@ class ExpenseViewSet(ModelViewSet):
                 | Q(note__icontains=keyword)
             )
         return queryset.order_by('-expense_date', '-created_at')
+
+    def build_excel_filter_summary(self):
+        params = self.request.query_params
+        period = 'すべて'
+        if params.get('start_date') or params.get('end_date'):
+            period = f'{params.get("start_date") or "開始日なし"} ～ {params.get("end_date") or "終了日なし"}'
+        is_reimbursed = parse_bool(params.get('is_reimbursed'))
+        reimbursed_label = 'すべて'
+        if is_reimbursed is not None:
+            reimbursed_label = 'はい' if is_reimbursed else 'いいえ'
+        return [
+            ('対象期間', period),
+            ('支出カテゴリ', params.get('category') or 'すべて'),
+            ('支払方法', params.get('payment_method') or 'すべて'),
+            ('精算済み', reimbursed_label),
+            ('キーワード', params.get('search') or 'すべて'),
+        ]
+
+    @action(detail=False, methods=['get'], url_path='excel')
+    def excel(self, request):
+        expenses = self.get_queryset()
+        return expenses_excel_response(
+            expenses,
+            filters=self.build_excel_filter_summary(),
+            generated_at=timezone.localtime(timezone.now()),
+        )
 
 
 class IncomeSourceViewSet(ModelViewSet):
@@ -200,7 +259,7 @@ class VehicleUsageViewSet(ModelViewSet):
 
 
 class AccountingProjectViewSet(ModelViewSet):
-    queryset = AccountingProject.objects.all()
+    queryset = AccountingProject.objects.prefetch_related('project_incomes', 'project_expenses')
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -247,6 +306,41 @@ class AccountingProjectViewSet(ModelViewSet):
                 created_count += 1
 
         return Response({'created': created_count})
+
+    @action(detail=False, methods=['get'], url_path='report')
+    def report(self, request):
+        projects = list(self.get_queryset().prefetch_related('project_incomes', 'project_expenses'))
+        project_rows = [project_amount_summary(project) for project in projects]
+        total_income = sum((row['income'] for row in project_rows), Decimal('0'))
+        total_expense = sum((row['expense'] for row in project_rows), Decimal('0'))
+        project_chart = sorted(project_rows, key=lambda row: row['income'], reverse=True)[:10]
+
+        return Response({
+            'summary': {
+                'total_income': decimal_to_number(total_income),
+                'project_count': len(projects),
+                'total_expense': decimal_to_number(total_expense),
+                'balance': decimal_to_number(total_income - total_expense),
+            },
+            'project_chart': [
+                {
+                    'project_id': row['project_id'],
+                    'project_name': row['project_name'],
+                    'income': decimal_to_number(row['income']),
+                    'expense': decimal_to_number(row['expense']),
+                    'balance': decimal_to_number(row['balance']),
+                }
+                for row in project_chart
+            ],
+            'expense_category_chart': build_project_expense_category_chart(projects),
+        })
+
+    @action(detail=True, methods=['get'], url_path='excel')
+    def excel(self, request, pk=None):
+        project = self.get_object()
+        incomes = project.project_incomes.order_by('income_date', 'id')
+        expenses = project.project_expenses.order_by('expense_date', 'id')
+        return project_excel_response(project, incomes, expenses)
 
 
 class AccountingProjectIncomeViewSet(ModelViewSet):

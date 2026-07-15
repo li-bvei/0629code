@@ -2,15 +2,18 @@ import http from '../services/http'
 import type {
   Case,
   CaseChecklistItem,
+  CaseChecklistItemOptionsResponse,
   CaseChecklistItemPayload,
   CaseChecklistDemoSeedResult,
-  CaseChecklistDeletionHistoryItem,
+  CaseChecklistDeletionHistoryResponse,
   CaseChecklistTemplate,
   CaseChecklistTemplateItem,
   CaseChecklistTemplateItemPayload,
+  CaseChecklistTemplateItemMoveResult,
   CaseChecklistTemplatePayload,
   CasePayload,
   GenerateRemindersResponse,
+  ItemNameSuggestion,
   ListParams,
   PaginatedResponse,
 } from '../types/api'
@@ -22,6 +25,9 @@ type ChecklistTemplateListParams = ListParams & {
 type ChecklistTemplateItemListParams = ListParams & {
   template?: number
   is_active?: boolean | string
+  category?: string
+  search?: string
+  ordering?: string
 }
 
 export const listCases = async (params?: ListParams) => {
@@ -91,6 +97,16 @@ export const listCaseChecklistTemplateItems = async (params?: ChecklistTemplateI
   return response.data
 }
 
+export const listCaseChecklistItemOptions = async (params?: { category?: string }) => {
+  const response = await http.get<CaseChecklistItemOptionsResponse>('/case-checklist-template-items/options/', { params })
+  return response.data
+}
+
+export const listCaseChecklistItemNameSuggestions = async (params?: { q?: string }) => {
+  const response = await http.get<ItemNameSuggestion[]>('/case-checklist-template-items/name-suggestions/', { params })
+  return response.data
+}
+
 export const createCaseChecklistTemplateItem = async (payload: CaseChecklistTemplateItemPayload) => {
   const response = await http.post<CaseChecklistTemplateItem>('/case-checklist-template-items/', payload)
   return response.data
@@ -111,6 +127,16 @@ export const softDeleteCaseChecklistTemplateItem = async (id: number) => {
 
 export const restoreCaseChecklistTemplateItem = async (id: number) => {
   const response = await http.post<CaseChecklistTemplateItem>(`/case-checklist-template-items/${id}/restore/`, {})
+  return response.data
+}
+
+export const moveCaseChecklistTemplateItemUp = async (id: number) => {
+  const response = await http.post<CaseChecklistTemplateItemMoveResult>(`/case-checklist-template-items/${id}/move-up/`, {})
+  return response.data
+}
+
+export const moveCaseChecklistTemplateItemDown = async (id: number) => {
+  const response = await http.post<CaseChecklistTemplateItemMoveResult>(`/case-checklist-template-items/${id}/move-down/`, {})
   return response.data
 }
 
@@ -150,7 +176,7 @@ export const seedStandardCaseChecklistTemplates = async () => {
   return response.data
 }
 
-export const listCaseChecklistDeletionHistory = async () => {
-  const response = await http.get<CaseChecklistDeletionHistoryItem[]>('/case-checklist-deletion-history/')
+export const listCaseChecklistDeletionHistory = async (params?: ListParams) => {
+  const response = await http.get<CaseChecklistDeletionHistoryResponse>('/case-checklist-deletion-history/', { params })
   return response.data
 }

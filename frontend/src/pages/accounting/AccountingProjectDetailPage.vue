@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { saveAs } from 'file-saver'
 import { useRoute, useRouter } from 'vue-router'
 import {
   copyExpensesToProject,
@@ -10,6 +11,7 @@ import {
   createAccountingProjectIncome,
   deleteAccountingProjectExpense,
   deleteAccountingProjectIncome,
+  downloadAccountingProjectExcel,
   getAccountingProject,
   listAccountingExpenses,
   listAccountingExpenseCategories,
@@ -28,8 +30,8 @@ import type {
   Expense,
   ExpenseCategory,
 } from '../../types/accounting'
+import { formatAccountingNumber, formatAccountingPercent, toAccountingNumber } from '../../utils/accountingFormat'
 import { formatDate } from '../../utils/date'
-import { createTimestamp, exportSheetsToExcel } from '../../utils/exportExcel'
 import './accounting.css'
 
 interface BatchIncomeRow {
@@ -107,6 +109,7 @@ const copyFilters = ref<AccountingListParams>({
 })
 
 const paymentMethodOptions = ['现金', '信用卡', '银行转账', 'PayPay', 'ICOCA', '公司账户', '个人垫付', '其他']
+const chartColors = ['#aad4f4', '#e2c5dd', '#9ed9cc', '#f5d48b', '#c8d4f7', '#f3b6b6', '#b9e2f7', '#d8c7f2']
 
 const incomeRules: FormRules<AccountingProjectIncomePayload> = {
   income_date: [{ required: true, message: '日付を入力してください。', trigger: 'change' }],
@@ -122,13 +125,82 @@ const invalidIncomeBatchRows = computed(() => incomeBatchRows.value.filter((row)
 const validExpenseBatchRows = computed(() => expenseBatchRows.value.filter((row) => !row.errors.length))
 const invalidExpenseBatchRows = computed(() => expenseBatchRows.value.filter((row) => row.errors.length))
 
-const formatYen = (value: number | string) => `${Number(value || 0).toLocaleString()}円`
+const formatAmount = (value: number | string | null | undefined) => formatAccountingNumber(value)
 const formatPeriod = () => {
   if (!project.value) return '-'
   const start = formatDate(project.value.start_date)
   const end = formatDate(project.value.end_date)
   if (start === '-' && end === '-') return '-'
   return `${start} - ${end}`
+}
+
+const targetCount = computed(() => Number(project.value?.income_count || 0) + Number(project.value?.expense_count || 0))
+
+const summaryCards = computed(() => [
+  { label: '収入合計', value: formatAmount(project.value?.income_total || 0) },
+  { label: '対象件数', value: `${targetCount.value.toLocaleString()}件` },
+  { label: '支出合計', value: formatAmount(project.value?.expense_total || 0) },
+  {
+    label: '残高',
+    value: formatAmount(project.value?.balance || 0),
+    negative: toAccountingNumber(project.value?.balance || 0) < 0,
+  },
+])
+
+const projectComparisonRows = computed(() => {
+  if (!project.value) return []
+  return [
+    { label: '収入', amount: toAccountingNumber(project.value.income_total), className: 'income' },
+    { label: '支出', amount: toAccountingNumber(project.value.expense_total), className: 'expense' },
+    { label: '残高', amount: toAccountingNumber(project.value.balance), className: 'balance' },
+  ]
+})
+
+const comparisonMaxAmount = computed(() => Math.max(...projectComparisonRows.value.map((row) => Math.abs(row.amount)), 1))
+
+const expenseCategoryChartItems = computed(() => {
+  const grouped = new Map<string, number>()
+  expenses.value.forEach((expense) => {
+    const name = (expense.category_name || '').trim() || '未分類'
+    grouped.set(name, (grouped.get(name) || 0) + toAccountingNumber(expense.amount))
+  })
+  const items = [...grouped.entries()]
+    .map(([name, amount]) => ({ name, amount }))
+    .filter((item) => item.amount > 0)
+    .sort((left, right) => right.amount - left.amount)
+  if (items.length > 8) {
+    const topItems = items.slice(0, 7)
+    const otherAmount = items.slice(7).reduce((total, item) => total + item.amount, 0)
+    return [...topItems, { name: 'その他', amount: otherAmount }]
+  }
+  return items
+})
+
+const expenseCategoryTotal = computed(() => expenseCategoryChartItems.value.reduce((total, item) => total + item.amount, 0))
+
+const chartPercent = (amount: number) => {
+  if (!expenseCategoryTotal.value) return '0.0%'
+  return formatAccountingPercent((amount / expenseCategoryTotal.value) * 100)
+}
+
+const donutBackground = computed(() => {
+  if (!expenseCategoryChartItems.value.length || !expenseCategoryTotal.value) return '#eef3f7'
+  let current = 0
+  const stops = expenseCategoryChartItems.value.map((item, index) => {
+    const start = current
+    current += (item.amount / expenseCategoryTotal.value) * 100
+    return `${chartColors[index % chartColors.length]} ${start}% ${current}%`
+  })
+  return `conic-gradient(${stops.join(', ')})`
+})
+
+const downloadFileName = (contentDisposition?: string) => {
+  const fallback = `プロジェクト収支表_${project.value?.name || projectId.value}.xlsx`
+  if (!contentDisposition) return fallback
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/)
+  if (utf8Match) return decodeURIComponent(utf8Match[1])
+  const match = contentDisposition.match(/filename="?([^"]+)"?/)
+  return match?.[1] || fallback
 }
 const isValidDate = (value: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
@@ -413,36 +485,14 @@ const submitCopyExpenses = async () => {
   await refreshAll()
 }
 
-const exportProject = () => {
+const exportProject = async () => {
   if (!project.value) return
   exporting.value = true
   try {
-    exportSheetsToExcel(
-      [
-        {
-          sheetName: 'プロジェクト収入',
-          rows: incomes.value.map((row) => ({
-            日付: row.income_date,
-            対象: row.income_target || '',
-            金額: Number(row.amount || 0),
-            備考: row.note || '',
-          })),
-        },
-        {
-          sheetName: 'プロジェクト支出',
-          rows: expenses.value.map((row) => ({
-            日付: row.expense_date,
-            場所: row.place || '',
-            カテゴリ: row.category_name || '',
-            金額: Number(row.amount || 0),
-            支払方法: row.payment_method || '',
-            費用対象: row.expense_target || '',
-            備考: row.note || '',
-          })),
-        },
-      ],
-      `プロジェクト収支表_${project.value.name}_${createTimestamp()}.xlsx`,
-    )
+    const result = await downloadAccountingProjectExcel(projectId.value)
+    saveAs(result.blob, downloadFileName(result.contentDisposition))
+  } catch {
+    ElMessage.error('Excel出力に失敗しました。')
   } finally {
     exporting.value = false
   }
@@ -481,12 +531,50 @@ onMounted(() => {
         </el-descriptions>
       </el-card>
 
-      <div class="accounting-summary-strip">
-        <div class="accounting-summary-pill"><span>収入合計</span><strong>{{ formatYen(project?.income_total || 0) }}</strong></div>
-        <div class="accounting-summary-pill"><span>支出合計</span><strong>{{ formatYen(project?.expense_total || 0) }}</strong></div>
-        <div class="accounting-summary-pill"><span>残高</span><strong>{{ formatYen(project?.balance || 0) }}</strong></div>
-        <div class="accounting-summary-pill"><span>収入件数</span><strong>{{ project?.income_count || 0 }}件</strong></div>
-        <div class="accounting-summary-pill"><span>支出件数</span><strong>{{ project?.expense_count || 0 }}件</strong></div>
+      <div class="accounting-summary-grid project-summary-grid">
+        <div v-for="card in summaryCards" :key="card.label" class="accounting-summary-card compact-summary-card">
+          <div class="accounting-summary-label">{{ card.label }}</div>
+          <div class="accounting-summary-value accounting-number" :class="{ 'is-negative': card.negative }">
+            {{ card.value }}
+          </div>
+        </div>
+      </div>
+
+      <div class="project-chart-grid">
+        <el-card shadow="never" class="accounting-card">
+          <template #header>プロジェクト別収支比較</template>
+          <p class="accounting-chart-description">表示件数：上位10件を表示</p>
+          <div v-if="projectComparisonRows.length" class="project-bar-chart">
+            <div v-for="row in projectComparisonRows" :key="row.label" class="project-bar-row">
+              <span class="project-bar-label">{{ row.label }}</span>
+              <div class="project-bar-track">
+                <div
+                  class="project-bar-fill"
+                  :class="row.className"
+                  :style="{ width: `${Math.max(4, (Math.abs(row.amount) / comparisonMaxAmount) * 100)}%` }"
+                />
+              </div>
+              <span class="project-bar-amount accounting-number">{{ formatAmount(row.amount) }}</span>
+            </div>
+          </div>
+          <p v-else class="empty-text">表示できる収支データがありません。</p>
+        </el-card>
+
+        <el-card shadow="never" class="accounting-card">
+          <template #header>支出構成</template>
+          <p class="accounting-chart-description">支出カテゴリ別構成</p>
+          <div v-if="expenseCategoryChartItems.length" class="accounting-chart-layout compact-chart-layout">
+            <div class="accounting-donut" :style="{ background: donutBackground }" />
+            <div class="accounting-chart-list">
+              <div v-for="(item, index) in expenseCategoryChartItems" :key="item.name" class="accounting-chart-row">
+                <span class="accounting-chart-dot" :style="{ backgroundColor: chartColors[index % chartColors.length] }" />
+                <span class="accounting-chart-name">{{ item.name }}（{{ chartPercent(item.amount) }}）</span>
+                <span class="accounting-chart-amount accounting-number">{{ formatAmount(item.amount) }}</span>
+              </div>
+            </div>
+          </div>
+          <p v-else class="empty-text">表示できる支出データがありません。</p>
+        </el-card>
       </div>
 
       <el-card shadow="never" class="accounting-card">
@@ -502,7 +590,7 @@ onMounted(() => {
         <el-table :data="incomes" stripe>
           <el-table-column label="日付" width="130"><template #default="{ row }">{{ formatDate(row.income_date) }}</template></el-table-column>
           <el-table-column prop="income_target" label="対象" min-width="160" />
-          <el-table-column label="金額" width="130" align="right" header-align="right"><template #default="{ row }">{{ formatYen(row.amount) }}</template></el-table-column>
+          <el-table-column label="金額" width="130" align="right" header-align="right"><template #default="{ row }"><span class="accounting-number">{{ formatAmount(row.amount) }}</span></template></el-table-column>
           <el-table-column prop="note" label="備考" min-width="220" show-overflow-tooltip />
           <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
@@ -539,7 +627,7 @@ onMounted(() => {
           <el-table-column label="日付" width="130"><template #default="{ row }">{{ formatDate(row.expense_date) }}</template></el-table-column>
           <el-table-column prop="place" label="場所" min-width="130" />
           <el-table-column prop="category_name" label="カテゴリ" min-width="130" />
-          <el-table-column label="金額" width="130" align="right" header-align="right"><template #default="{ row }">{{ formatYen(row.amount) }}</template></el-table-column>
+          <el-table-column label="金額" width="130" align="right" header-align="right"><template #default="{ row }"><span class="accounting-number">{{ formatAmount(row.amount) }}</span></template></el-table-column>
           <el-table-column prop="payment_method" label="支払方法" min-width="120" />
           <el-table-column prop="expense_target" label="費用対象" min-width="150" />
           <el-table-column prop="note" label="備考" min-width="220" show-overflow-tooltip />
@@ -636,7 +724,7 @@ onMounted(() => {
         <el-table-column label="日付" width="120"><template #default="{ row }">{{ formatDate(row.expense_date) }}</template></el-table-column>
         <el-table-column prop="place" label="場所" min-width="120" />
         <el-table-column prop="category" label="カテゴリ" min-width="120" />
-        <el-table-column label="金額" width="120" align="right"><template #default="{ row }">{{ formatYen(row.amount) }}</template></el-table-column>
+        <el-table-column label="金額" width="120" align="right"><template #default="{ row }"><span class="accounting-number">{{ formatAmount(row.amount) }}</span></template></el-table-column>
         <el-table-column prop="payment_method" label="支払方法" min-width="120" />
         <el-table-column prop="expense_target" label="費用対象" min-width="140" />
         <el-table-column prop="note" label="備考" min-width="160" show-overflow-tooltip />

@@ -3,16 +3,18 @@ import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { saveAs } from 'file-saver'
 import { useRouter } from 'vue-router'
 import {
   createAccountingExpense,
   deleteAccountingExpense,
+  downloadAccountingExpensesExcel,
   listAccountingExpenseCategories,
   listAccountingExpenses,
 } from '../../api/accounting'
 import type { AccountingListParams, Expense, ExpenseCategory, ExpensePayload } from '../../types/accounting'
+import { formatAccountingNumber } from '../../utils/accountingFormat'
 import { formatDate } from '../../utils/date'
-import { createTimestamp, exportRowsToExcel } from '../../utils/exportExcel'
 import './accounting.css'
 
 interface BatchExpenseRow {
@@ -85,10 +87,16 @@ const addRules: FormRules<ExpensePayload> = {
 const validBatchRows = computed(() => batchRows.value.filter((row) => !row.errors.length))
 const invalidBatchRows = computed(() => batchRows.value.filter((row) => row.errors.length))
 
-const formatCurrency = (value: number | string) => `¥ ${Number(value || 0).toLocaleString()}`
-const formatYen = (value: number | string) => `${Number(value || 0).toLocaleString()}円`
 const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ')
-const formatExportBoolean = (value: boolean) => (value ? '済' : '未')
+
+const downloadFileName = (contentDisposition?: string) => {
+  const fallback = '支出記録.xlsx'
+  if (!contentDisposition) return fallback
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/)
+  if (utf8Match) return decodeURIComponent(utf8Match[1])
+  const match = contentDisposition.match(/filename="?([^"]+)"?/)
+  return match?.[1] || fallback
+}
 
 const createEmptyExpenseForm = (): ExpensePayload => ({
   expense_date: '',
@@ -187,26 +195,8 @@ const refreshExpenseSummary = async () => {
 const exportExpenses = async () => {
   exporting.value = true
   try {
-    const rows = await fetchAllExpensesForExport()
-    if (!rows.length) {
-      ElMessage.warning('出力対象のデータがありません')
-      return
-    }
-
-    exportRowsToExcel(
-      rows.map((row) => ({
-        日付: row.expense_date,
-        場所: row.place,
-        カテゴリ: row.category,
-        金額: Number(row.amount || 0),
-        支払方法: row.payment_method,
-        費用対象: row.expense_target,
-        備考: row.note,
-        精算済み: formatExportBoolean(row.is_reimbursed),
-      })),
-      '支出記録',
-      `支出記録_${createTimestamp()}.xlsx`,
-    )
+    const result = await downloadAccountingExpensesExcel(filters.value)
+    saveAs(result.blob, downloadFileName(result.contentDisposition))
   } catch {
     ElMessage.error('Excel出力に失敗しました。')
   } finally {
@@ -435,11 +425,11 @@ onMounted(() => {
         </div>
         <div class="accounting-summary-pill">
           <span>支出合計</span>
-          <strong>{{ formatYen(summary.totalAmount) }}</strong>
+          <strong class="accounting-number">{{ formatAccountingNumber(summary.totalAmount) }}</strong>
         </div>
         <div class="accounting-summary-pill">
           <span>未精算合計</span>
-          <strong>{{ formatYen(summary.unreimbursedAmount) }}</strong>
+          <strong class="accounting-number">{{ formatAccountingNumber(summary.unreimbursedAmount) }}</strong>
         </div>
       </div>
 
@@ -450,7 +440,7 @@ onMounted(() => {
         <el-table-column prop="place" label="場所" min-width="150" />
         <el-table-column prop="category" label="カテゴリ" min-width="130" />
         <el-table-column label="金額" min-width="120" align="right" header-align="right">
-          <template #default="{ row }">{{ formatCurrency(row.amount) }}</template>
+          <template #default="{ row }"><span class="accounting-number">{{ formatAccountingNumber(row.amount) }}</span></template>
         </el-table-column>
         <el-table-column prop="payment_method" label="支払方法" min-width="130" />
         <el-table-column prop="expense_target" label="費用対象" min-width="160" />

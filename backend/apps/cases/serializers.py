@@ -103,6 +103,8 @@ class CaseSerializer(serializers.ModelSerializer):
 class CaseChecklistTemplateItemSerializer(serializers.ModelSerializer):
     template_name = serializers.CharField(source='template.name', read_only=True)
     item_type_display = serializers.CharField(source='get_item_type_display', read_only=True)
+    can_move_up = serializers.SerializerMethodField()
+    can_move_down = serializers.SerializerMethodField()
 
     class Meta:
         model = CaseChecklistTemplateItem
@@ -120,12 +122,47 @@ class CaseChecklistTemplateItemSerializer(serializers.ModelSerializer):
             'description',
             'sort_order',
             'is_active',
+            'can_move_up',
+            'can_move_down',
             'deleted_at',
             'deleted_with_template',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'template_name', 'item_type_display', 'deleted_at', 'deleted_with_template', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id',
+            'template_name',
+            'item_type_display',
+            'can_move_up',
+            'can_move_down',
+            'deleted_at',
+            'deleted_with_template',
+            'created_at',
+            'updated_at',
+        ]
+
+    def _get_order_info(self, obj):
+        cache = self.context.setdefault('_template_item_order_cache', {})
+        if obj.template_id not in cache:
+            ordered_ids = list(
+                CaseChecklistTemplateItem.objects
+                .filter(template_id=obj.template_id, deleted_at__isnull=True)
+                .order_by('sort_order', 'id')
+                .values_list('id', flat=True)
+            )
+            cache[obj.template_id] = {
+                'positions': {item_id: index + 1 for index, item_id in enumerate(ordered_ids)},
+                'total': len(ordered_ids),
+            }
+        return cache[obj.template_id]
+
+    def get_can_move_up(self, obj):
+        order_info = self._get_order_info(obj)
+        return order_info['positions'].get(obj.id, 1) > 1
+
+    def get_can_move_down(self, obj):
+        order_info = self._get_order_info(obj)
+        return order_info['positions'].get(obj.id, order_info['total']) < order_info['total']
 
 
 class CaseChecklistTemplateSerializer(serializers.ModelSerializer):

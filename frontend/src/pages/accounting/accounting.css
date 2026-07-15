@@ -243,6 +243,108 @@
   font-weight: 800;
 }
 
+.accounting-number {
+  font-variant-numeric: tabular-nums;
+}
+
+.project-summary-grid {
+  margin-bottom: 16px;
+}
+
+.compact-summary-card {
+  min-height: 92px;
+}
+
+.project-chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.project-bar-chart,
+.project-report-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.project-bar-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 130px;
+  gap: 12px;
+  align-items: center;
+}
+
+.project-bar-label,
+.project-report-name {
+  overflow: hidden;
+  color: var(--sunrise-text);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-bar-track,
+.project-report-track {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(170, 212, 244, 0.22);
+}
+
+.project-bar-fill,
+.project-report-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.project-bar-fill.income,
+.project-report-fill.income {
+  background: #7bbce8;
+}
+
+.project-bar-fill.expense,
+.project-report-fill.expense {
+  background: #e2a9bf;
+}
+
+.project-bar-fill.balance,
+.project-report-fill.balance {
+  background: #8fd2bf;
+}
+
+.project-bar-amount {
+  color: var(--sunrise-text);
+  font-weight: 700;
+  text-align: right;
+}
+
+.project-report-row {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(170, 212, 244, 0.28);
+}
+
+.project-report-series {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 110px;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+  color: var(--sunrise-muted);
+  font-size: 13px;
+}
+
+.project-report-series strong {
+  color: var(--sunrise-text);
+  text-align: right;
+}
+
+.compact-chart-layout {
+  grid-template-columns: minmax(140px, 220px) 1fr;
+  gap: 16px;
+}
+
 .accounting-dialog-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -430,7 +532,8 @@
 @media (max-width: 1100px) {
   .accounting-summary-grid,
   .accounting-record-grid,
-  .accounting-chart-grid {
+  .accounting-chart-grid,
+  .project-chart-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -443,10 +546,21 @@
   .accounting-summary-grid,
   .accounting-record-grid,
   .accounting-chart-grid,
+  .project-chart-grid,
   .accounting-chart-layout,
   .accounting-dialog-form,
   .voucher-line-row {
     grid-template-columns: 1fr;
+  }
+
+  .project-bar-row,
+  .project-report-series {
+    grid-template-columns: 1fr;
+  }
+
+  .project-bar-amount,
+  .project-report-series strong {
+    text-align: left;
   }
 
   .voucher-line-header,

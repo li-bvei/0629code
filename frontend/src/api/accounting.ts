@@ -4,6 +4,7 @@ import type {
   AccountingListParams,
   AccountingPaginatedResponse,
   AccountingProject,
+  AccountingProjectReport,
   AccountingProjectDetail,
   AccountingProjectExpense,
   AccountingProjectExpensePayload,
@@ -75,6 +76,17 @@ export const updateAccountingExpense = async (id: number | string, payload: Part
 
 export const deleteAccountingExpense = async (id: number) => {
   await http.delete(`/accounting/expenses/${id}/`)
+}
+
+export const downloadAccountingExpensesExcel = async (params?: AccountingListParams) => {
+  const response = await http.get<Blob>('/accounting/expenses/excel/', {
+    params: cleanParams(params),
+    responseType: 'blob',
+  })
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+  }
 }
 
 export const listAccountingExpenseCategories = async (params?: AccountingListParams) => {
@@ -167,9 +179,26 @@ export const listAccountingProjects = async (params?: AccountingListParams) => {
 
 export const getAccountingProjects = listAccountingProjects
 
+export const getAccountingProjectReport = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingProjectReport>('/accounting/projects/report/', {
+    params: cleanParams(params),
+  })
+  return response.data
+}
+
 export const getAccountingProject = async (id: number | string) => {
   const response = await http.get<AccountingProjectDetail>(`/accounting/projects/${id}/`)
   return response.data
+}
+
+export const downloadAccountingProjectExcel = async (id: number | string) => {
+  const response = await http.get<Blob>(`/accounting/projects/${id}/excel/`, {
+    responseType: 'blob',
+  })
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+  }
 }
 
 export const createAccountingProject = async (payload: AccountingProjectPayload) => {

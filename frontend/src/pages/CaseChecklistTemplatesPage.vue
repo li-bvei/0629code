@@ -6,9 +6,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createCaseChecklistTemplate,
   createCaseChecklistTemplateItem,
+  listCaseChecklistItemNameSuggestions,
+  listCaseChecklistItemOptions,
   listCaseChecklistDeletionHistory,
   listCaseChecklistTemplateItems,
   listCaseChecklistTemplates,
+  moveCaseChecklistTemplateItemDown,
+  moveCaseChecklistTemplateItemUp,
   restoreCaseChecklistTemplate,
   restoreCaseChecklistTemplateItem,
   seedStandardCaseChecklistTemplates,
@@ -24,6 +28,7 @@ import type {
   CaseChecklistTemplateItem,
   CaseChecklistTemplateItemPayload,
   CaseChecklistTemplatePayload,
+  ItemNameSuggestion,
 } from '../types/api'
 import { formatDateTime } from '../utils/date'
 
@@ -44,6 +49,21 @@ const templateItems = ref<CaseChecklistTemplateItem[]>([])
 const demoSeedSubmitting = ref(false)
 const deletionHistory = ref<CaseChecklistDeletionHistoryItem[]>([])
 const deletionHistoryLoading = ref(false)
+const deletionHistoryDialogVisible = ref(false)
+const templateCurrentPage = ref(1)
+const templatePageSize = ref(20)
+const templateTotal = ref(0)
+const itemCurrentPage = ref(1)
+const itemPageSize = ref(20)
+const itemTotal = ref(0)
+const deletionCurrentPage = ref(1)
+const deletionPageSize = ref(10)
+const deletionTotal = ref(0)
+const latestDeletedAt = ref<string | null>(null)
+const categoryCandidates = ref<string[]>([])
+let templateRequestId = 0
+let templateItemRequestId = 0
+let deletionHistoryRequestId = 0
 
 const presetCategories = [
   '本人資料',
@@ -101,6 +121,7 @@ const templateRules: FormRules<CaseChecklistTemplatePayload> = {
 }
 
 const itemRules: FormRules<CaseChecklistTemplateItemPayload> = {
+  category: [{ required: true, message: '分類を選択してください。', trigger: 'change' }],
   name: [{ required: true, message: '項目名を入力してください。', trigger: 'blur' }],
   item_type: [{ required: true, message: '項目タイプを選択してください。', trigger: 'change' }],
 }
@@ -119,38 +140,57 @@ const sortedItems = computed(() => (
 ))
 
 const categoryOptions = computed(() => {
-  const loadedValues = templates.value.flatMap((template) => (
-    template.items?.map((item) => item.category).filter(Boolean) || []
-  ))
   const currentValues = templateItems.value.map((item) => item.category).filter(Boolean)
-  const values = [...loadedValues, ...currentValues]
+  const values = [...categoryCandidates.value, ...currentValues]
   return [...new Set([...presetCategories, ...values])]
-})
-
-const itemNameOptions = computed(() => {
-  const loadedValues = templates.value.flatMap((template) => (
-    template.items?.map((item) => item.name).filter(Boolean) || []
-  ))
-  const currentValues = templateItems.value.map((item) => item.name).filter(Boolean)
-  const values = [...loadedValues, ...currentValues]
-  return [...new Set(values)].sort((left, right) => left.localeCompare(right, 'ja'))
 })
 
 const getItemTypeLabel = (type: CaseChecklistItemType) => (
   itemTypeOptions.find((option) => option.value === type)?.label || type
 )
 
-const fetchTemplates = async () => {
+const normalizeOptionText = (value: string) => value.trim().replace(/\s+/g, ' ')
+
+const fetchItemOptions = async () => {
+  try {
+    const data = await listCaseChecklistItemOptions()
+    categoryCandidates.value = data.categories
+  } catch {
+    ElMessage.error('項目候補の取得に失敗しました。')
+  }
+}
+
+const queryItemNameSuggestions = async (
+  query: string,
+  callback: (suggestions: ItemNameSuggestion[]) => void,
+) => {
+  try {
+    const suggestions = await listCaseChecklistItemNameSuggestions({ q: query || undefined })
+    callback(suggestions)
+  } catch {
+    callback([])
+  }
+}
+
+const fetchTemplates = async (page = templateCurrentPage.value) => {
+  const requestId = ++templateRequestId
   loading.value = true
   try {
     const data = await listCaseChecklistTemplates({
+      page,
+      page_size: templatePageSize.value,
       search: templateSearch.value || undefined,
       is_active: templateActiveFilter.value || undefined,
+      ordering: 'sort_order',
     })
+    if (requestId !== templateRequestId) return
     templates.value = data.results
+    templateTotal.value = data.count
+    templateCurrentPage.value = page
     if (selectedTemplateId.value && !data.results.some((template) => template.id === selectedTemplateId.value)) {
       selectedTemplateId.value = null
       templateItems.value = []
+      itemTotal.value = 0
     }
     if (!selectedTemplateId.value && data.results.length) {
       selectedTemplateId.value = data.results[0].id
@@ -159,31 +199,111 @@ const fetchTemplates = async () => {
       await fetchTemplateItems(selectedTemplateId.value)
     }
   } catch {
-    ElMessage.error('案件事項テンプレートの取得に失敗しました。')
+    if (requestId === templateRequestId) {
+      ElMessage.error('案件事項テンプレートの取得に失敗しました。')
+    }
   } finally {
-    loading.value = false
+    if (requestId === templateRequestId) {
+      loading.value = false
+    }
   }
 }
 
-const fetchDeletionHistory = async () => {
+const fetchDeletionHistory = async (page = deletionCurrentPage.value) => {
+  const requestId = ++deletionHistoryRequestId
   deletionHistoryLoading.value = true
   try {
-    deletionHistory.value = await listCaseChecklistDeletionHistory()
+    const data = await listCaseChecklistDeletionHistory({
+      page,
+      page_size: deletionPageSize.value,
+    })
+    if (requestId !== deletionHistoryRequestId) return
+    deletionHistory.value = data.results
+    deletionTotal.value = data.count
+    latestDeletedAt.value = data.latest_deleted_at
+    deletionCurrentPage.value = page
   } catch {
-    ElMessage.error('削除履歴の取得に失敗しました。')
+    if (requestId === deletionHistoryRequestId) {
+      ElMessage.error('削除履歴の取得に失敗しました。')
+    }
   } finally {
-    deletionHistoryLoading.value = false
+    if (requestId === deletionHistoryRequestId) {
+      deletionHistoryLoading.value = false
+    }
   }
 }
 
-const fetchTemplateItems = async (templateId: number) => {
-  const data = await listCaseChecklistTemplateItems({ template: templateId })
+const fetchTemplateItems = async (templateId: number, page = itemCurrentPage.value) => {
+  const requestId = ++templateItemRequestId
+  const data = await listCaseChecklistTemplateItems({
+    template: templateId,
+    page,
+    page_size: itemPageSize.value,
+    ordering: 'sort_order',
+  })
+  if (requestId !== templateItemRequestId) return
   templateItems.value = data.results
+  itemTotal.value = data.count
+  itemCurrentPage.value = page
 }
 
 const selectTemplate = async (template: CaseChecklistTemplate) => {
   selectedTemplateId.value = template.id
-  await fetchTemplateItems(template.id)
+  itemCurrentPage.value = 1
+  await fetchTemplateItems(template.id, 1)
+}
+
+const searchTemplates = async () => {
+  templateCurrentPage.value = 1
+  await fetchTemplates(1)
+}
+
+const handleTemplatePageSizeChange = async (size: number) => {
+  templatePageSize.value = size
+  templateCurrentPage.value = 1
+  await fetchTemplates(1)
+}
+
+const handleTemplatePageChange = async (page: number) => {
+  await fetchTemplates(page)
+}
+
+const handleItemPageSizeChange = async (size: number) => {
+  itemPageSize.value = size
+  itemCurrentPage.value = 1
+  if (selectedTemplateId.value) {
+    await fetchTemplateItems(selectedTemplateId.value, 1)
+  }
+}
+
+const handleItemPageChange = async (page: number) => {
+  if (selectedTemplateId.value) {
+    await fetchTemplateItems(selectedTemplateId.value, page)
+  }
+}
+
+const fetchTemplateItemPageByPosition = async (position: number) => {
+  if (!selectedTemplateId.value) return
+  const targetPage = Math.max(1, Math.ceil(position / itemPageSize.value))
+  await fetchTemplateItems(selectedTemplateId.value, targetPage)
+}
+
+const handleDeletionPageSizeChange = async (size: number) => {
+  deletionPageSize.value = size
+  deletionCurrentPage.value = 1
+  await fetchDeletionHistory(1)
+}
+
+const handleDeletionPageChange = async (page: number) => {
+  await fetchDeletionHistory(page)
+}
+
+const refreshCurrentTemplateItems = async () => {
+  if (!selectedTemplateId.value) return
+  await fetchTemplateItems(selectedTemplateId.value, itemCurrentPage.value)
+  if (!templateItems.value.length && itemCurrentPage.value > 1) {
+    await fetchTemplateItems(selectedTemplateId.value, itemCurrentPage.value - 1)
+  }
 }
 
 const resetTemplateForm = () => {
@@ -230,7 +350,7 @@ const submitTemplate = async () => {
       ElMessage.success('テンプレートを追加しました。')
     }
     templateDialogVisible.value = false
-    await fetchTemplates()
+    await fetchTemplates(editingTemplateId.value ? templateCurrentPage.value : 1)
   } catch {
     ElMessage.error(editingTemplateId.value ? 'テンプレートの更新に失敗しました。' : 'テンプレートの追加に失敗しました。')
   } finally {
@@ -254,7 +374,7 @@ const setTemplateActive = async (template: CaseChecklistTemplate, isActive: bool
   try {
     await updateCaseChecklistTemplate(template.id, { is_active: isActive })
     ElMessage.success(isActive ? '有効にしました。' : '無効にしました。')
-    await fetchTemplates()
+    await fetchTemplates(templateCurrentPage.value)
   } catch {
     ElMessage.error('テンプレート状態の更新に失敗しました。')
   }
@@ -327,23 +447,40 @@ const submitItem = async () => {
   const valid = await itemFormRef.value.validate().catch(() => false)
   if (!valid) return
 
+  const category = normalizeOptionText(itemForm.value.category || '')
+  const name = normalizeOptionText(itemForm.value.name || '')
+  if (!category || !name) {
+    ElMessage.warning('分類と項目名を入力してください。')
+    return
+  }
   itemSubmitting.value = true
   try {
     const payload = {
       ...itemForm.value,
       template: selectedTemplateId.value,
+      category,
+      name,
       quantity: itemForm.value.quantity || null,
     }
+    const isEditing = Boolean(editingItemId.value)
     if (editingItemId.value) {
       await updateCaseChecklistTemplateItem(editingItemId.value, payload)
-      ElMessage.success('項目を更新しました。')
+      ElMessage.success('更新しました。')
     } else {
       await createCaseChecklistTemplateItem(payload)
-      ElMessage.success('項目を追加しました。')
+      ElMessage.success('追加しました。')
     }
     itemDialogVisible.value = false
-    await fetchTemplateItems(selectedTemplateId.value)
-    await fetchTemplates()
+    if (category && !categoryCandidates.value.includes(category)) {
+      categoryCandidates.value = [...categoryCandidates.value, category]
+    }
+    if (isEditing) {
+      await refreshCurrentTemplateItems()
+    } else if (selectedTemplateId.value) {
+      const lastPage = Math.max(1, Math.ceil((itemTotal.value + 1) / itemPageSize.value))
+      await fetchTemplateItems(selectedTemplateId.value, lastPage)
+    }
+    await fetchTemplates(templateCurrentPage.value)
   } catch {
     ElMessage.error(editingItemId.value ? '項目の更新に失敗しました。' : '項目の追加に失敗しました。')
   } finally {
@@ -367,7 +504,7 @@ const setItemActive = async (item: CaseChecklistTemplateItem, isActive: boolean)
   try {
     await updateCaseChecklistTemplateItem(item.id, { is_active: isActive })
     ElMessage.success(isActive ? '有効にしました。' : '無効にしました。')
-    if (selectedTemplateId.value) await fetchTemplateItems(selectedTemplateId.value)
+    await refreshCurrentTemplateItems()
   } catch {
     ElMessage.error('項目状態の更新に失敗しました。')
   }
@@ -400,15 +537,18 @@ const handleItemActionCommand = (item: CaseChecklistTemplateItem, command: strin
 }
 
 const moveItem = async (item: CaseChecklistTemplateItem, direction: -1 | 1) => {
-  const currentIndex = sortedItems.value.findIndex((row) => row.id === item.id)
-  const target = sortedItems.value[currentIndex + direction]
-  if (!target) return
   try {
-    await Promise.all([
-      updateCaseChecklistTemplateItem(item.id, { sort_order: target.sort_order }),
-      updateCaseChecklistTemplateItem(target.id, { sort_order: item.sort_order }),
-    ])
-    if (selectedTemplateId.value) await fetchTemplateItems(selectedTemplateId.value)
+    const result = direction < 0
+      ? await moveCaseChecklistTemplateItemUp(item.id)
+      : await moveCaseChecklistTemplateItemDown(item.id)
+    if (result.message) {
+      if (result.success) {
+        ElMessage.success(result.message)
+      } else {
+        ElMessage.info(result.message)
+      }
+    }
+    await fetchTemplateItemPageByPosition(result.position)
   } catch {
     ElMessage.error('並び順の更新に失敗しました。')
   }
@@ -427,8 +567,11 @@ const deleteTemplate = async (template: CaseChecklistTemplate) => {
       selectedTemplateId.value = null
       templateItems.value = []
     }
-    await fetchTemplates()
-    await fetchDeletionHistory()
+    await fetchTemplates(templateCurrentPage.value)
+    if (!templates.value.length && templateCurrentPage.value > 1) {
+      await fetchTemplates(templateCurrentPage.value - 1)
+    }
+    await fetchDeletionHistory(deletionCurrentPage.value)
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('削除に失敗しました。')
@@ -445,8 +588,8 @@ const deleteItem = async (item: CaseChecklistTemplateItem) => {
     )
     await softDeleteCaseChecklistTemplateItem(item.id)
     ElMessage.success('削除しました。')
-    if (selectedTemplateId.value) await fetchTemplateItems(selectedTemplateId.value)
-    await fetchDeletionHistory()
+    await refreshCurrentTemplateItems()
+    await fetchDeletionHistory(deletionCurrentPage.value)
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('削除に失敗しました。')
@@ -462,9 +605,13 @@ const restoreDeletedItem = async (row: CaseChecklistDeletionHistoryItem) => {
       await restoreCaseChecklistTemplateItem(row.id)
     }
     ElMessage.success('復元しました。')
-    await fetchTemplates()
-    await fetchDeletionHistory()
-    if (selectedTemplateId.value) await fetchTemplateItems(selectedTemplateId.value)
+    await fetchTemplates(templateCurrentPage.value)
+    await fetchDeletionHistory(deletionCurrentPage.value)
+    if (!deletionHistory.value.length && deletionCurrentPage.value > 1) {
+      await fetchDeletionHistory(deletionCurrentPage.value - 1)
+    }
+    await refreshCurrentTemplateItems()
+    await fetchItemOptions()
   } catch (error) {
     ElMessage.error('復元に失敗しました。所属テンプレートが削除されている場合は、先にテンプレートを復元してください。')
   }
@@ -489,7 +636,10 @@ const generateDemoData = async () => {
   try {
     const result = await seedStandardCaseChecklistTemplates()
     selectedTemplateId.value = result.template_ids[0] || null
-    await fetchTemplates()
+    templateCurrentPage.value = 1
+    itemCurrentPage.value = 1
+    await fetchItemOptions()
+    await fetchTemplates(1)
     const skippedMessage = result.templates_skipped_deleted || result.template_items_skipped_deleted
       ? `、削除履歴内のためスキップ：テンプレート${result.templates_skipped_deleted}件・項目${result.template_items_skipped_deleted}件`
       : ''
@@ -505,6 +655,7 @@ const generateDemoData = async () => {
 }
 
 onMounted(() => {
+  fetchItemOptions()
   fetchTemplates()
   fetchDeletionHistory()
 })
@@ -530,15 +681,15 @@ onMounted(() => {
           v-model="templateSearch"
           clearable
           placeholder="テンプレート名で検索"
-          @keyup.enter="fetchTemplates"
-          @clear="fetchTemplates"
+          @keyup.enter="searchTemplates"
+          @clear="searchTemplates"
         />
-        <el-select v-model="templateActiveFilter" class="status-filter" @change="fetchTemplates">
+        <el-select v-model="templateActiveFilter" class="status-filter" @change="searchTemplates">
           <el-option label="すべて" value="" />
           <el-option label="有効" value="true" />
           <el-option label="無効" value="false" />
         </el-select>
-        <el-button type="primary" @click="fetchTemplates">検索</el-button>
+        <el-button type="primary" @click="searchTemplates">検索</el-button>
       </div>
     </el-card>
 
@@ -580,6 +731,18 @@ onMounted(() => {
           </el-table-column>
         </el-table>
         <p v-if="!templates.length" class="empty-text">テンプレートがありません</p>
+        <div v-if="templateTotal" class="table-footer">
+          <el-pagination
+            background
+            v-model:current-page="templateCurrentPage"
+            v-model:page-size="templatePageSize"
+            :page-sizes="[20, 50, 100]"
+            :total="templateTotal"
+            layout="total, sizes, prev, pager, next"
+            @current-change="handleTemplatePageChange"
+            @size-change="handleTemplatePageSizeChange"
+          />
+        </div>
       </el-card>
 
       <el-card shadow="never">
@@ -591,7 +754,7 @@ onMounted(() => {
         </template>
         <el-table :data="sortedItems" stripe row-key="id">
           <el-table-column label="順番" width="70">
-            <template #default="{ $index }">{{ $index + 1 }}</template>
+            <template #default="{ $index }">{{ (itemCurrentPage - 1) * itemPageSize + $index + 1 }}</template>
           </el-table-column>
           <el-table-column prop="category" label="分類" min-width="110">
             <template #default="{ row }">{{ row.category || '-' }}</template>
@@ -625,8 +788,8 @@ onMounted(() => {
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="edit">編集</el-dropdown-item>
-                    <el-dropdown-item command="move-up">上へ</el-dropdown-item>
-                    <el-dropdown-item command="move-down">下へ</el-dropdown-item>
+                    <el-dropdown-item command="move-up" :disabled="!row.can_move_up">上へ</el-dropdown-item>
+                    <el-dropdown-item command="move-down" :disabled="!row.can_move_down">下へ</el-dropdown-item>
                     <el-dropdown-item v-if="row.is_active" command="deactivate" divided>無効化</el-dropdown-item>
                     <el-dropdown-item v-else command="activate" divided>有効化</el-dropdown-item>
                     <el-dropdown-item command="delete" divided class="danger-item">削除</el-dropdown-item>
@@ -636,31 +799,43 @@ onMounted(() => {
             </template>
           </el-table-column>
         </el-table>
-        <p v-if="selectedTemplateId && !templateItems.length" class="empty-text">項目がありません</p>
+        <p v-if="selectedTemplateId && !templateItems.length" class="empty-text">項目が登録されていません。</p>
         <p v-if="!selectedTemplateId" class="empty-text">テンプレートを選択してください</p>
+        <div v-if="selectedTemplateId && itemTotal" class="table-footer">
+          <el-pagination
+            background
+            v-model:current-page="itemCurrentPage"
+            v-model:page-size="itemPageSize"
+            :page-sizes="[20, 50, 100]"
+            :total="itemTotal"
+            layout="total, sizes, prev, pager, next"
+            @current-change="handleItemPageChange"
+            @size-change="handleItemPageSizeChange"
+          />
+        </div>
       </el-card>
     </div>
 
-    <el-card shadow="never" class="deletion-history-card">
-      <template #header>削除履歴</template>
-      <el-table v-loading="deletionHistoryLoading" :data="deletionHistory" stripe row-key="id">
-        <el-table-column label="種別" width="130">
-          <template #default="{ row }">{{ row.object_type === 'template' ? 'テンプレート' : 'テンプレート項目' }}</template>
-        </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="180" />
-        <el-table-column label="所属テンプレート" min-width="180">
-          <template #default="{ row }">{{ row.template_name || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="削除日時" width="170">
-          <template #default="{ row }">{{ formatDateTime(row.deleted_at) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right" align="center">
-          <template #default="{ row }">
-            <el-button text type="primary" :disabled="!row.can_restore" @click="restoreDeletedItem(row)">復元</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <p v-if="!deletionHistory.length" class="empty-text">削除履歴がありません</p>
+    <el-card shadow="never" class="deletion-history-summary-card">
+      <div class="deletion-history-summary">
+        <div>
+          <h2>削除履歴</h2>
+          <p>最近削除されたテンプレートと項目を確認・復元できます。</p>
+        </div>
+        <div class="deletion-history-meta">
+          <span>削除件数：{{ deletionTotal }}</span>
+          <span>最終削除：{{ latestDeletedAt ? formatDateTime(latestDeletedAt) : '-' }}</span>
+        </div>
+        <el-button
+          plain
+          :disabled="!deletionTotal"
+          :loading="deletionHistoryLoading"
+          @click="deletionHistoryDialogVisible = true"
+        >
+          履歴を確認
+        </el-button>
+      </div>
+      <p v-if="!deletionTotal" class="empty-text compact-empty-text">削除履歴はありません。</p>
     </el-card>
 
     <el-dialog
@@ -700,21 +875,31 @@ onMounted(() => {
       @closed="resetItemForm"
     >
       <el-form ref="itemFormRef" :model="itemForm" :rules="itemRules" label-position="top">
+        <el-form-item label="分類" prop="category">
+          <el-select
+            v-model="itemForm.category"
+            allow-create
+            clearable
+            default-first-option
+            filterable
+            placeholder="分類を選択または入力"
+            class="form-control"
+          >
+            <el-option v-for="category in categoryOptions" :key="category" :label="category" :value="category" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="項目名" prop="name">
+          <el-autocomplete
+            v-model="itemForm.name"
+            :fetch-suggestions="queryItemNameSuggestions"
+            clearable
+            placeholder="項目名を入力"
+            value-key="value"
+            class="form-control"
+          />
+        </el-form-item>
         <div class="form-grid">
-          <el-form-item label="分類" prop="category">
-            <el-select
-              v-model="itemForm.category"
-              allow-create
-              clearable
-              default-first-option
-              filterable
-              placeholder="選択または入力してください"
-              class="form-control"
-            >
-              <el-option v-for="category in categoryOptions" :key="category" :label="category" :value="category" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="項目タイプ" prop="item_type">
+          <el-form-item label="種別" prop="item_type">
             <el-select v-model="itemForm.item_type" class="form-control">
               <el-option
                 v-for="option in itemTypeOptions"
@@ -724,29 +909,11 @@ onMounted(() => {
               />
             </el-select>
           </el-form-item>
-        </div>
-        <el-form-item label="項目名" prop="name">
-          <el-select
-            v-model="itemForm.name"
-            allow-create
-            clearable
-            default-first-option
-            filterable
-            placeholder="選択または入力してください"
-            class="form-control"
-          >
-            <el-option v-for="name in itemNameOptions" :key="name" :label="name" :value="name" />
-          </el-select>
-        </el-form-item>
-        <div class="form-grid">
           <el-form-item label="数量" prop="quantity">
             <el-input-number v-model="itemForm.quantity" :min="1" class="form-control" />
           </el-form-item>
           <el-form-item label="単位" prop="unit">
             <el-input v-model="itemForm.unit" placeholder="通、份、部など" />
-          </el-form-item>
-          <el-form-item label="表示順" prop="sort_order">
-            <el-input-number v-model="itemForm.sort_order" :min="1" :step="1" class="form-control" />
           </el-form-item>
         </div>
         <div class="form-grid">
@@ -768,6 +935,40 @@ onMounted(() => {
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="deletionHistoryDialogVisible" title="削除履歴" width="70%" class="deletion-history-dialog">
+      <el-table v-loading="deletionHistoryLoading" :data="deletionHistory" stripe row-key="id" size="small">
+        <el-table-column label="種別" width="130">
+          <template #default="{ row }">{{ row.object_type === 'template' ? 'テンプレート' : 'テンプレート項目' }}</template>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" min-width="180" />
+        <el-table-column label="所属テンプレート" min-width="180">
+          <template #default="{ row }">{{ row.template_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="削除日時" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.deleted_at) }}</template>
+        </el-table-column>
+        <el-table-column label="復元" width="90" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button text type="primary" :disabled="!row.can_restore" @click="restoreDeletedItem(row)">復元</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <p v-if="!deletionHistory.length" class="empty-text">削除履歴はありません。</p>
+      <div v-if="deletionTotal" class="table-footer">
+        <el-pagination
+          background
+          v-model:current-page="deletionCurrentPage"
+          v-model:page-size="deletionPageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="deletionTotal"
+          layout="total, sizes, prev, pager, next"
+          @current-change="handleDeletionPageChange"
+          @size-change="handleDeletionPageSizeChange"
+        />
+      </div>
+    </el-dialog>
+
   </section>
 </template>
 
@@ -778,8 +979,38 @@ onMounted(() => {
   gap: 16px;
 }
 
-.deletion-history-card {
+.deletion-history-summary-card {
   margin-top: 16px;
+}
+
+.deletion-history-summary {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.deletion-history-summary h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.deletion-history-summary p {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.deletion-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+
+.compact-empty-text {
+  margin: 8px 0 0;
 }
 
 .filter-row {
@@ -801,4 +1032,21 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
+
+.table-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 14px;
+}
+
+@media (max-width: 768px) {
+  .deletion-history-summary {
+    grid-template-columns: 1fr;
+  }
+
+  :deep(.deletion-history-dialog) {
+    width: 95% !important;
+  }
+}
+
 </style>

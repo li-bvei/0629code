@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -25,6 +26,18 @@ from .serializers import (
     CaseChecklistTemplateSerializer,
     CaseSerializer,
 )
+
+
+class CaseChecklistPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class CaseChecklistDeletionHistoryPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 50
 
 
 def add_months(target_date, month_delta):
@@ -302,6 +315,7 @@ class CaseViewSet(ModelViewSet):
 class CaseChecklistTemplateViewSet(ModelViewSet):
     queryset = CaseChecklistTemplate.objects.prefetch_related('items')
     serializer_class = CaseChecklistTemplateSerializer
+    pagination_class = CaseChecklistPagination
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -314,6 +328,9 @@ class CaseChecklistTemplateViewSet(ModelViewSet):
             queryset = queryset.filter(is_active=True)
         if is_active in ['false', '0']:
             queryset = queryset.filter(is_active=False)
+        ordering = self.request.query_params.get('ordering')
+        if ordering in ['sort_order', '-sort_order', 'name', '-name', 'updated_at', '-updated_at']:
+            queryset = queryset.order_by(ordering, 'id')
         return queryset
 
     def perform_destroy(self, instance):
@@ -362,6 +379,7 @@ class CaseChecklistTemplateViewSet(ModelViewSet):
 class CaseChecklistTemplateItemViewSet(ModelViewSet):
     queryset = CaseChecklistTemplateItem.objects.select_related('template')
     serializer_class = CaseChecklistTemplateItemSerializer
+    pagination_class = CaseChecklistPagination
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -369,15 +387,169 @@ class CaseChecklistTemplateItemViewSet(ModelViewSet):
         template_id = self.request.query_params.get('template')
         if template_id:
             queryset = queryset.filter(template_id=template_id)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        category = self.request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category=category)
         is_active = self.request.query_params.get('is_active')
         if is_active in ['true', '1']:
             queryset = queryset.filter(is_active=True)
         if is_active in ['false', '0']:
             queryset = queryset.filter(is_active=False)
+        ordering = self.request.query_params.get('ordering')
+        if ordering in ['sort_order', '-sort_order', 'category', '-category', 'name', '-name', 'updated_at', '-updated_at']:
+            queryset = queryset.order_by(ordering, 'id')
         return queryset
+
+    def perform_create(self, serializer):
+        template = serializer.validated_data['template']
+        max_sort_order = (
+            CaseChecklistTemplateItem.objects
+            .filter(template=template, deleted_at__isnull=True)
+            .order_by('-sort_order', '-id')
+            .values_list('sort_order', flat=True)
+            .first()
+        ) or 0
+        item = serializer.save(sort_order=max_sort_order + 1)
+        normalize_template_item_orders(template)
+        item.refresh_from_db()
+
+    @action(detail=False, methods=['get'])
+    def options(self, request):
+        queryset = CaseChecklistTemplateItem.objects.filter(
+            deleted_at__isnull=True,
+            template__deleted_at__isnull=True,
+        )
+        category = request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category=category)
+
+        categories = list(
+            queryset.exclude(category='')
+            .order_by('category')
+            .values_list('category', flat=True)
+            .distinct()
+        )
+        names_queryset = queryset.exclude(name='').order_by('category', 'name').values('category', 'name').distinct()
+        names = [
+            {'category': row['category'] or '', 'name': row['name']}
+            for row in names_queryset
+        ]
+        return Response({'categories': categories, 'items': names})
+
+    @action(detail=False, methods=['get'], url_path='name-suggestions')
+    def name_suggestions(self, request):
+        query = (request.query_params.get('q') or '').strip()
+        queryset = CaseChecklistTemplateItem.objects.filter(
+            deleted_at__isnull=True,
+            template__deleted_at__isnull=True,
+        ).exclude(name='')
+        if query:
+            queryset = queryset.filter(name__icontains=query)
+
+        names = []
+        seen = set()
+        for name in queryset.order_by('-updated_at').values_list('name', flat=True)[:200]:
+            normalized = ' '.join(name.split())
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            names.append(normalized)
+
+        if query:
+            query_lower = query.lower()
+
+            def sort_key(name):
+                name_lower = name.lower()
+                if name_lower == query_lower:
+                    rank = 0
+                elif name_lower.startswith(query_lower):
+                    rank = 1
+                else:
+                    rank = 2
+                return (rank, name_lower)
+
+            names = sorted(names, key=sort_key)
+
+        return Response([{'value': name} for name in names[:20]])
 
     def perform_destroy(self, instance):
         self._delete_item(instance)
+
+    def _normalize_and_get_position(self, items, item_id):
+        now = timezone.now()
+        updates = []
+        position = 1
+        for index, item in enumerate(items, start=1):
+            if item.id == item_id:
+                position = index
+            if item.sort_order != index:
+                item.sort_order = index
+                item.updated_at = now
+                updates.append(item)
+        if updates:
+            CaseChecklistTemplateItem.objects.bulk_update(updates, ['sort_order', 'updated_at'])
+        return position
+
+    def _move_item(self, instance, direction):
+        with transaction.atomic():
+            items = list(
+                CaseChecklistTemplateItem.objects
+                .select_for_update()
+                .filter(template=instance.template, deleted_at__isnull=True)
+                .order_by('sort_order', 'id')
+            )
+            current_index = next((index for index, item in enumerate(items) if item.id == instance.id), None)
+            if current_index is None:
+                return {
+                    'success': False,
+                    'message': '対象項目が見つかりません。',
+                    'position': 1,
+                    'total': len(items),
+                }
+
+            target_index = current_index + direction
+            if target_index < 0:
+                position = self._normalize_and_get_position(items, instance.id)
+                return {
+                    'success': False,
+                    'message': 'これ以上上へ移動できません。',
+                    'position': position,
+                    'total': len(items),
+                }
+            if target_index >= len(items):
+                position = self._normalize_and_get_position(items, instance.id)
+                return {
+                    'success': False,
+                    'message': 'これ以上下へ移動できません。',
+                    'position': position,
+                    'total': len(items),
+                }
+
+            item = items.pop(current_index)
+            items.insert(target_index, item)
+            position = self._normalize_and_get_position(items, instance.id)
+            return {
+                'success': True,
+                'message': '上へ移動しました。' if direction < 0 else '下へ移動しました。',
+                'position': position,
+                'total': len(items),
+            }
+
+    @action(detail=True, methods=['post'], url_path='move-up')
+    def move_up(self, request, pk=None):
+        item = self.get_object()
+        return Response(self._move_item(item, -1))
+
+    @action(detail=True, methods=['post'], url_path='move-down')
+    def move_down(self, request, pk=None):
+        item = self.get_object()
+        return Response(self._move_item(item, 1))
 
     def _delete_item(self, instance):
         instance.deleted_at = timezone.now()
@@ -410,12 +582,27 @@ class CaseChecklistTemplateItemViewSet(ModelViewSet):
 class CaseChecklistItemViewSet(ModelViewSet):
     queryset = CaseChecklistItem.objects.select_related('case', 'source_template_item', 'completed_by')
     serializer_class = CaseChecklistItemSerializer
+    pagination_class = CaseChecklistPagination
 
     def get_queryset(self):
         queryset = super().get_queryset()
         case_id = self.request.query_params.get('case')
         if case_id:
             queryset = queryset.filter(case_id=case_id)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        category = self.request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category=category)
+        status_value = self.request.query_params.get('status')
+        if status_value == 'completed':
+            queryset = queryset.filter(is_completed=True)
+        if status_value == 'pending':
+            queryset = queryset.filter(is_completed=False)
+        ordering = self.request.query_params.get('ordering')
+        if ordering in ['sort_order', '-sort_order', 'category', '-category', 'name', '-name', 'updated_at', '-updated_at']:
+            queryset = queryset.order_by(ordering, 'id')
         return queryset
 
 
@@ -450,5 +637,10 @@ def case_checklist_deletion_history(request):
         for item in CaseChecklistTemplateItem.objects.select_related('template').filter(deleted_at__isnull=False)
     ]
     rows = sorted([*templates, *items], key=lambda row: row['deleted_at'], reverse=True)
-    serializer = CaseChecklistDeletionHistorySerializer(rows, many=True)
-    return Response(serializer.data)
+    latest_deleted_at = rows[0]['deleted_at'] if rows else None
+    paginator = CaseChecklistDeletionHistoryPagination()
+    page = paginator.paginate_queryset(rows, request)
+    serializer = CaseChecklistDeletionHistorySerializer(page, many=True)
+    response = paginator.get_paginated_response(serializer.data)
+    response.data['latest_deleted_at'] = latest_deleted_at
+    return response

@@ -7,7 +7,11 @@ export interface PaginatedResponse<T> {
 
 export interface ListParams {
   page?: number
+  page_size?: number
   search?: string
+  status?: string
+  category?: string
+  ordering?: string
   residence_status?: string
   customer?: number
   company?: number
@@ -211,6 +215,8 @@ export interface CaseChecklistTemplateItem {
   description: string
   sort_order: number
   is_active: boolean
+  can_move_up: boolean
+  can_move_down: boolean
   deleted_at: string | null
   deleted_with_template: boolean
   created_at: string
@@ -228,6 +234,20 @@ export interface CaseChecklistTemplateItemPayload {
   description?: string
   sort_order?: number
   is_active?: boolean
+}
+
+export interface CaseChecklistItemOption {
+  category: string
+  name: string
+}
+
+export interface CaseChecklistItemOptionsResponse {
+  categories: string[]
+  items: CaseChecklistItemOption[]
+}
+
+export interface ItemNameSuggestion {
+  value: string
 }
 
 export interface CaseChecklistTemplate {
@@ -307,6 +327,17 @@ export interface CaseChecklistDeletionHistoryItem {
   template_name: string
   deleted_at: string
   can_restore: boolean
+}
+
+export interface CaseChecklistDeletionHistoryResponse extends PaginatedResponse<CaseChecklistDeletionHistoryItem> {
+  latest_deleted_at: string | null
+}
+
+export interface CaseChecklistTemplateItemMoveResult {
+  success: boolean
+  message: string
+  position: number
+  total: number
 }
 
 export interface DashboardDeadline {
