@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
@@ -457,10 +458,20 @@ onMounted(() => {
         <el-table-column label="精算済み" width="110">
           <template #default="{ row }">{{ formatBoolean(row.is_reimbursed) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="router.push(`/accounting/expenses/${row.id}/edit`)">編集</el-button>
-            <el-button text type="danger" @click="confirmDelete(row)">削除</el-button>
+            <el-dropdown trigger="click">
+              <el-button text type="primary" class="table-action-trigger">
+                操作
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="router.push(`/accounting/expenses/${row.id}/edit`)">編集</el-dropdown-item>
+                  <el-dropdown-item divided class="danger-item" @click="confirmDelete(row)">削除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>

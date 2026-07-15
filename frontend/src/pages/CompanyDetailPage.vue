@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { listCases } from '../api/cases'
@@ -259,10 +260,18 @@ onMounted(() => {
           <div v-for="staff in staffMembers" :key="staff.id" class="staff-member-block">
             <div class="staff-member-header">
               <strong>{{ displayValue(staff.name) }}</strong>
-              <div>
-                <el-button text type="primary" @click="openEditStaffDialog(staff)">編集</el-button>
-                <el-button text type="danger" @click="confirmDeleteStaff(staff)">削除</el-button>
-              </div>
+              <el-dropdown trigger="click">
+                <el-button text type="primary" class="table-action-trigger">
+                  操作
+                  <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="openEditStaffDialog(staff)">編集</el-dropdown-item>
+                    <el-dropdown-item divided class="danger-item" @click="confirmDeleteStaff(staff)">削除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
             <el-descriptions :column="2" border>
               <el-descriptions-item label="フリガナ" :span="2">{{ displayValue(staff.name_kana) }}</el-descriptions-item>

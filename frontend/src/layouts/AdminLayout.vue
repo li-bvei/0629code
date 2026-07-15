@@ -4,12 +4,23 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Briefcase,
-  CirclePlus,
+  Checked,
+  Coin,
+  DataAnalysis,
   Document,
+  EditPen,
+  Files,
+  List,
   Menu,
   OfficeBuilding,
+  Money,
+  Notebook,
+  Reading,
   Setting,
+  Tickets,
   User,
+  UserFilled,
+  Van,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 
@@ -55,12 +66,22 @@ const handleLogout = async () => {
             <el-icon><Briefcase /></el-icon>
             <span>案件業務</span>
           </template>
-          <el-menu-item index="/dashboard">ダッシュボード</el-menu-item>
+          <el-menu-item index="/dashboard">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>ダッシュボード</span>
+          </el-menu-item>
           <el-menu-item index="/reception/new">
-            <el-icon><CirclePlus /></el-icon>
+            <el-icon><EditPen /></el-icon>
             <span>新規受付</span>
           </el-menu-item>
-          <el-menu-item index="/cases">案件一覧</el-menu-item>
+          <el-menu-item index="/cases">
+            <el-icon><Tickets /></el-icon>
+            <span>案件一覧</span>
+          </el-menu-item>
+          <el-menu-item index="/case-checklists">
+            <el-icon><List /></el-icon>
+            <span>案件事項管理</span>
+          </el-menu-item>
           <el-menu-item index="/customers">
             <el-icon><User /></el-icon>
             <span>顧客管理</span>
@@ -69,20 +90,45 @@ const handleLogout = async () => {
             <el-icon><OfficeBuilding /></el-icon>
             <span>会社管理</span>
           </el-menu-item>
-          <el-menu-item index="/employees">担当者管理</el-menu-item>
-          <el-menu-item index="/tasks">タスク一覧</el-menu-item>
+          <el-menu-item index="/employees">
+            <el-icon><UserFilled /></el-icon>
+            <span>担当者管理</span>
+          </el-menu-item>
+          <el-menu-item index="/tasks">
+            <el-icon><Checked /></el-icon>
+            <span>タスク一覧</span>
+          </el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="accounting">
           <template #title>
+            <el-icon><Coin /></el-icon>
             <span>会計管理</span>
           </template>
-          <el-menu-item index="/accounting">会計ダッシュボード</el-menu-item>
-          <el-menu-item index="/accounting/expenses">支出記録</el-menu-item>
-          <el-menu-item index="/accounting/expense-categories">支出カテゴリ</el-menu-item>
-          <el-menu-item index="/accounting/income-sources">収入元</el-menu-item>
-          <el-menu-item index="/accounting/vehicle-usages">車両使用記録</el-menu-item>
-          <el-menu-item index="/accounting/projects">プロジェクト収支表</el-menu-item>
+          <el-menu-item index="/accounting">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>会計ダッシュボード</span>
+          </el-menu-item>
+          <el-menu-item index="/accounting/expenses">
+            <el-icon><Money /></el-icon>
+            <span>支出記録</span>
+          </el-menu-item>
+          <el-menu-item index="/accounting/expense-categories">
+            <el-icon><List /></el-icon>
+            <span>支出カテゴリ</span>
+          </el-menu-item>
+          <el-menu-item index="/accounting/income-sources">
+            <el-icon><Coin /></el-icon>
+            <span>収入元</span>
+          </el-menu-item>
+          <el-menu-item index="/accounting/vehicle-usages">
+            <el-icon><Van /></el-icon>
+            <span>車両使用記録</span>
+          </el-menu-item>
+          <el-menu-item index="/accounting/projects">
+            <el-icon><Notebook /></el-icon>
+            <span>プロジェクト収支表</span>
+          </el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="vouchers">
@@ -90,26 +136,40 @@ const handleLogout = async () => {
             <el-icon><Document /></el-icon>
             <span>帳票管理</span>
           </template>
-          <el-menu-item index="/vouchers/invoices">請求書・領収書</el-menu-item>
-          <el-menu-item index="/vouchers/visa-return">返签 visa 表</el-menu-item>
-          <el-menu-item index="/vouchers/tax-renewal">税务证明更新用</el-menu-item>
+          <el-menu-item index="/vouchers/invoices">
+            <el-icon><Document /></el-icon>
+            <span>請求書・領収書</span>
+          </el-menu-item>
+          <el-menu-item index="/vouchers/visa-return">
+            <el-icon><Files /></el-icon>
+            <span>返签 visa 表</span>
+          </el-menu-item>
+          <el-menu-item index="/vouchers/tax-renewal">
+            <el-icon><Reading /></el-icon>
+            <span>税务证明更新用</span>
+          </el-menu-item>
           <el-menu-item index="/vouchers/seifu-notice">
+            <el-icon><Document /></el-icon>
             <span>清風合格通知書</span>
             <el-tag size="small" type="info">暂停</el-tag>
           </el-menu-item>
           <el-menu-item index="/vouchers/estimates">
+            <el-icon><Document /></el-icon>
             <span>見積書</span>
             <el-tag size="small" type="info">準備中</el-tag>
           </el-menu-item>
           <el-menu-item index="/vouchers/contracts">
+            <el-icon><Document /></el-icon>
             <span>契約書</span>
             <el-tag size="small" type="info">準備中</el-tag>
           </el-menu-item>
           <el-menu-item index="/vouchers/certificates">
+            <el-icon><Document /></el-icon>
             <span>証明書</span>
             <el-tag size="small" type="info">準備中</el-tag>
           </el-menu-item>
           <el-menu-item index="/vouchers/others">
+            <el-icon><Document /></el-icon>
             <span>その他帳票</span>
             <el-tag size="small" type="info">準備中</el-tag>
           </el-menu-item>

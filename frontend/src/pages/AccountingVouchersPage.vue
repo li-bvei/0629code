@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createVoucherItemTemplate,
@@ -695,16 +696,16 @@ onMounted(() => {
         <el-table-column label="操作" width="100" fixed="right" align="center">
           <template #default="{ row }">
             <el-dropdown trigger="click" @command="handleVoucherActionCommand(row, $event)">
-              <el-button text type="primary">
+              <el-button text type="primary" class="table-action-trigger">
                 操作
-                <span class="operation-caret">▼</span>
+                <el-icon><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="edit">編集</el-dropdown-item>
                   <el-dropdown-item command="pdf-no-seal">PDF（印章なし）</el-dropdown-item>
                   <el-dropdown-item command="pdf-seal">PDF（印章あり）</el-dropdown-item>
-                  <el-dropdown-item command="delete" divided>削除</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided class="danger-item">削除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -952,10 +953,20 @@ onMounted(() => {
               <el-switch v-model="row.is_active" />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
-              <el-button text type="primary" @click="saveManagedItemTemplate(row)">保存</el-button>
-              <el-button text type="danger" @click="confirmDeleteItemTemplate(row)">削除</el-button>
+              <el-dropdown trigger="click">
+                <el-button text type="primary" class="table-action-trigger">
+                  操作
+                  <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="saveManagedItemTemplate(row)">保存</el-dropdown-item>
+                    <el-dropdown-item divided class="danger-item" @click="confirmDeleteItemTemplate(row)">削除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
         </el-table>

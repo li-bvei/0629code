@@ -415,9 +415,36 @@ button {
 
 .page-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 12px;
+  flex-wrap: wrap;
   margin-top: 20px;
+}
+
+.page-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.table-action-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.danger-item {
+  color: var(--el-color-danger);
 }
 
 .text-link {
@@ -573,5 +600,15 @@ button {
 
   .page-actions {
     flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .page-action-buttons,
+  .dialog-footer {
+    width: 100%;
+  }
+
+  .dialog-footer .el-button {
+    flex: 1;
   }
 }

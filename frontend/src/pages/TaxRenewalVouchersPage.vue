@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listCompanies } from '../api/companies'
 import { listCustomers } from '../api/customers'
@@ -895,20 +896,30 @@ onMounted(async () => {
         <el-table-column label="更新时间" width="190">
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="330" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" :loading="generatingId === row.id" @click="generatePdf(row)">PDF生成</el-button>
-            <el-button
-              v-if="hasSocialInsuranceTemplate(row)"
-              size="small"
-              type="primary"
-              :loading="generatingId === row.id"
-              @click="downloadSocialInsurancePdf(row)"
-            >
-              社会保険PDF
-            </el-button>
-            <el-button size="small" type="danger" :loading="deletingId === row.id" @click="deleteRecord(row)">删除</el-button>
+            <el-dropdown trigger="click">
+              <el-button text type="primary" class="table-action-trigger">
+                操作
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="openEdit(row)">编辑</el-dropdown-item>
+                  <el-dropdown-item :disabled="generatingId === row.id" @click="generatePdf(row)">PDF生成</el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="hasSocialInsuranceTemplate(row)"
+                    :disabled="generatingId === row.id"
+                    @click="downloadSocialInsurancePdf(row)"
+                  >
+                    社会保険PDF
+                  </el-dropdown-item>
+                  <el-dropdown-item divided class="danger-item" :disabled="deletingId === row.id" @click="deleteRecord(row)">
+                    删除
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -929,7 +940,7 @@ onMounted(async () => {
         <el-form label-position="top">
           <div class="tax-section-title">
             <span>基本信息</span>
-            <el-button size="small" type="success" @click="applySocialInsuranceTestData">
+            <el-button plain @click="applySocialInsuranceTestData">
               テストデータ入力
             </el-button>
           </div>
@@ -1060,7 +1071,7 @@ onMounted(async () => {
             >
               <div class="tax-section-title">
                 <span>代理人模板</span>
-                <el-button size="small" @click="openAgentDialog">代理人模板管理</el-button>
+                <el-button plain @click="openAgentDialog">代理人模板管理</el-button>
               </div>
               <el-row :gutter="12">
                 <el-col :xs="24" :md="8">
@@ -1154,7 +1165,7 @@ onMounted(async () => {
             >
               <div class="tax-section-title">
                 <span>抚养人信息</span>
-                <el-button size="small" @click="addDependent">追加</el-button>
+                <el-button plain @click="addDependent">追加</el-button>
               </div>
               <div v-for="(dependent, index) in form.form_data.dependents" :key="index" class="dependent-row">
                 <el-input v-model="dependent.name" placeholder="姓名" />
@@ -1198,10 +1209,22 @@ onMounted(async () => {
             <el-table-column prop="name" label="模板名称" min-width="150" />
             <el-table-column prop="agent_name" label="代理人" min-width="120" />
             <el-table-column prop="agent_phone" label="电话" width="130" />
-            <el-table-column label="操作" width="150">
+            <el-table-column label="操作" width="100">
               <template #default="{ row }">
-                <el-button size="small" @click="editAgentTemplate(row)">编辑</el-button>
-                <el-button size="small" type="danger" :loading="deletingAgentId === row.id" @click="deleteAgentTemplate(row)">停用</el-button>
+                <el-dropdown trigger="click">
+                  <el-button text type="primary" class="table-action-trigger">
+                    操作
+                    <el-icon><ArrowDown /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click="editAgentTemplate(row)">编辑</el-dropdown-item>
+                      <el-dropdown-item divided class="danger-item" :disabled="deletingAgentId === row.id" @click="deleteAgentTemplate(row)">
+                        停用
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>

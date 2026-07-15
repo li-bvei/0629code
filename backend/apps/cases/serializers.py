@@ -2,11 +2,11 @@ from rest_framework import serializers
 
 from apps.tasks.models import Task
 
-from .models import Case
+from .models import Case, CaseChecklistItem, CaseChecklistTemplate, CaseChecklistTemplateItem
 
 
 class CaseSerializer(serializers.ModelSerializer):
-    case_number = serializers.CharField(required=False, allow_blank=True)
+    case_number = serializers.CharField(read_only=True)
     status = serializers.CharField()
     customer_name = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
@@ -42,6 +42,7 @@ class CaseSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id',
+            'case_number',
             'customer_name',
             'company_name',
             'responsible_employee_name',
@@ -97,3 +98,109 @@ class CaseSerializer(serializers.ModelSerializer):
         if task is None or task.responsible_employee is None:
             return ''
         return task.responsible_employee.name
+
+
+class CaseChecklistTemplateItemSerializer(serializers.ModelSerializer):
+    template_name = serializers.CharField(source='template.name', read_only=True)
+    item_type_display = serializers.CharField(source='get_item_type_display', read_only=True)
+
+    class Meta:
+        model = CaseChecklistTemplateItem
+        fields = [
+            'id',
+            'template',
+            'template_name',
+            'category',
+            'name',
+            'item_type',
+            'item_type_display',
+            'quantity',
+            'unit',
+            'is_required',
+            'description',
+            'sort_order',
+            'is_active',
+            'deleted_at',
+            'deleted_with_template',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'template_name', 'item_type_display', 'deleted_at', 'deleted_with_template', 'created_at', 'updated_at']
+
+
+class CaseChecklistTemplateSerializer(serializers.ModelSerializer):
+    items = CaseChecklistTemplateItemSerializer(many=True, read_only=True)
+    item_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CaseChecklistTemplate
+        fields = [
+            'id',
+            'name',
+            'description',
+            'is_active',
+            'sort_order',
+            'deleted_at',
+            'items',
+            'item_count',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'deleted_at', 'items', 'item_count', 'created_at', 'updated_at']
+
+    def get_item_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'items' in obj._prefetched_objects_cache:
+            return len([item for item in obj.items.all() if item.is_active])
+        return obj.items.filter(is_active=True).count()
+
+
+class CaseChecklistItemSerializer(serializers.ModelSerializer):
+    case_number = serializers.CharField(source='case.case_number', read_only=True)
+    completed_by_name = serializers.SerializerMethodField()
+    item_type_display = serializers.CharField(source='get_item_type_display', read_only=True)
+
+    class Meta:
+        model = CaseChecklistItem
+        fields = [
+            'id',
+            'case',
+            'case_number',
+            'source_template_item',
+            'category',
+            'name',
+            'item_type',
+            'item_type_display',
+            'quantity',
+            'unit',
+            'is_required',
+            'is_completed',
+            'completed_at',
+            'completed_by',
+            'completed_by_name',
+            'note',
+            'sort_order',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'case_number',
+            'completed_by_name',
+            'item_type_display',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_completed_by_name(self, obj):
+        if obj.completed_by is None:
+            return ''
+        return obj.completed_by.name
+
+
+class CaseChecklistDeletionHistorySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    object_type = serializers.CharField()
+    name = serializers.CharField()
+    template_name = serializers.CharField(allow_blank=True)
+    deleted_at = serializers.DateTimeField()
+    can_restore = serializers.BooleanField()

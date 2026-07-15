@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -503,10 +504,20 @@ onMounted(() => {
           <el-table-column prop="income_target" label="対象" min-width="160" />
           <el-table-column label="金額" width="130" align="right" header-align="right"><template #default="{ row }">{{ formatYen(row.amount) }}</template></el-table-column>
           <el-table-column prop="note" label="備考" min-width="220" show-overflow-tooltip />
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
-              <el-button text type="primary" @click="openIncomeDialog(row)">編集</el-button>
-              <el-button text type="danger" @click="confirmDeleteIncome(row)">削除</el-button>
+              <el-dropdown trigger="click">
+                <el-button text type="primary" class="table-action-trigger">
+                  操作
+                  <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="openIncomeDialog(row)">編集</el-dropdown-item>
+                    <el-dropdown-item divided class="danger-item" @click="confirmDeleteIncome(row)">削除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
         </el-table>
@@ -532,10 +543,20 @@ onMounted(() => {
           <el-table-column prop="payment_method" label="支払方法" min-width="120" />
           <el-table-column prop="expense_target" label="費用対象" min-width="150" />
           <el-table-column prop="note" label="備考" min-width="220" show-overflow-tooltip />
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
-              <el-button text type="primary" @click="openExpenseDialog(row)">編集</el-button>
-              <el-button text type="danger" @click="confirmDeleteExpense(row)">削除</el-button>
+              <el-dropdown trigger="click">
+                <el-button text type="primary" class="table-action-trigger">
+                  操作
+                  <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="openExpenseDialog(row)">編集</el-dropdown-item>
+                    <el-dropdown-item divided class="danger-item" @click="confirmDeleteExpense(row)">削除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
         </el-table>

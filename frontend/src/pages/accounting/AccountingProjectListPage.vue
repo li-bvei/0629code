@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { deleteAccountingProject, listAccountingProjects } from '../../api/accounting'
@@ -114,11 +115,21 @@ onMounted(() => {
         <el-table-column label="作成日時" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="router.push(`/accounting/projects/${row.id}`)">詳細</el-button>
-            <el-button text type="primary" @click="router.push(`/accounting/projects/${row.id}/edit`)">編集</el-button>
-            <el-button text type="danger" @click="confirmDelete(row)">削除</el-button>
+            <el-dropdown trigger="click">
+              <el-button text type="primary" class="table-action-trigger">
+                操作
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="router.push(`/accounting/projects/${row.id}`)">詳細</el-dropdown-item>
+                  <el-dropdown-item @click="router.push(`/accounting/projects/${row.id}/edit`)">編集</el-dropdown-item>
+                  <el-dropdown-item divided class="danger-item" @click="confirmDelete(row)">削除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>

@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timedelta
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
@@ -10,8 +11,20 @@ from rest_framework.viewsets import ModelViewSet
 from apps.reminders.models import Reminder
 from apps.timelines.models import Timeline
 
-from .models import Case
-from .serializers import CaseSerializer
+from .demo_data import (
+    normalize_template_item_orders,
+    normalize_template_orders,
+    seed_case_checklist_demo_data,
+    seed_standard_case_checklist_templates,
+)
+from .models import Case, CaseChecklistItem, CaseChecklistTemplate, CaseChecklistTemplateItem
+from .serializers import (
+    CaseChecklistItemSerializer,
+    CaseChecklistDeletionHistorySerializer,
+    CaseChecklistTemplateItemSerializer,
+    CaseChecklistTemplateSerializer,
+    CaseSerializer,
+)
 
 
 def add_months(target_date, month_delta):
@@ -233,3 +246,209 @@ class CaseViewSet(ModelViewSet):
             'skipped_count': skipped_count,
             'reminders': created_ids,
         }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='apply-checklist-template')
+    def apply_checklist_template(self, request, pk=None):
+        case = self.get_object()
+        template_id = request.data.get('template_id')
+
+        if not template_id:
+            return Response(
+                {'template_id': 'テンプレートを選択してください。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            template = CaseChecklistTemplate.objects.prefetch_related('items').get(
+                pk=template_id,
+                is_active=True,
+            )
+        except CaseChecklistTemplate.DoesNotExist:
+            return Response(
+                {'template_id': 'テンプレートが見つかりません。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        template_items = list(template.items.filter(is_active=True, deleted_at__isnull=True).order_by('sort_order', 'id'))
+        current_max_order = (
+            CaseChecklistItem.objects
+            .filter(case=case)
+            .order_by('-sort_order')
+            .values_list('sort_order', flat=True)
+            .first()
+            or 0
+        )
+
+        created_items = []
+        with transaction.atomic():
+            for index, template_item in enumerate(template_items, start=1):
+                created_items.append(CaseChecklistItem.objects.create(
+                    case=case,
+                    source_template_item=template_item,
+                    category=template_item.category,
+                    name=template_item.name,
+                    item_type=template_item.item_type,
+                    quantity=template_item.quantity,
+                    unit=template_item.unit,
+                    is_required=template_item.is_required,
+                    note=template_item.description,
+                    sort_order=current_max_order + index,
+                ))
+
+        serializer = CaseChecklistItemSerializer(created_items, many=True)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class CaseChecklistTemplateViewSet(ModelViewSet):
+    queryset = CaseChecklistTemplate.objects.prefetch_related('items')
+    serializer_class = CaseChecklistTemplateSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        queryset = queryset.filter(deleted_at__isnull=True)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        is_active = self.request.query_params.get('is_active')
+        if is_active in ['true', '1']:
+            queryset = queryset.filter(is_active=True)
+        if is_active in ['false', '0']:
+            queryset = queryset.filter(is_active=False)
+        return queryset
+
+    def perform_destroy(self, instance):
+        self._delete_template(instance)
+
+    def _delete_template(self, instance):
+        now = timezone.now()
+        with transaction.atomic():
+            instance.deleted_at = now
+            instance.save(update_fields=['deleted_at', 'updated_at'])
+            instance.items.filter(deleted_at__isnull=True).update(
+                deleted_at=now,
+                deleted_with_template=True,
+                updated_at=now,
+            )
+            normalize_template_orders()
+
+    @action(detail=True, methods=['post'], url_path='delete')
+    def soft_delete(self, request, pk=None):
+        template = self.get_object()
+        self._delete_template(template)
+        return Response({'detail': '削除しました。'})
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        template = CaseChecklistTemplate.objects.get(pk=pk)
+        with transaction.atomic():
+            template.deleted_at = None
+            template.save(update_fields=['deleted_at', 'updated_at'])
+            template.items.filter(deleted_with_template=True).update(
+                deleted_at=None,
+                deleted_with_template=False,
+                updated_at=timezone.now(),
+            )
+            normalize_template_item_orders(template)
+            normalize_template_orders()
+        serializer = self.get_serializer(template)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='seed-standard')
+    def seed_standard(self, request):
+        result = seed_standard_case_checklist_templates()
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class CaseChecklistTemplateItemViewSet(ModelViewSet):
+    queryset = CaseChecklistTemplateItem.objects.select_related('template')
+    serializer_class = CaseChecklistTemplateItemSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        queryset = queryset.filter(deleted_at__isnull=True, template__deleted_at__isnull=True)
+        template_id = self.request.query_params.get('template')
+        if template_id:
+            queryset = queryset.filter(template_id=template_id)
+        is_active = self.request.query_params.get('is_active')
+        if is_active in ['true', '1']:
+            queryset = queryset.filter(is_active=True)
+        if is_active in ['false', '0']:
+            queryset = queryset.filter(is_active=False)
+        return queryset
+
+    def perform_destroy(self, instance):
+        self._delete_item(instance)
+
+    def _delete_item(self, instance):
+        instance.deleted_at = timezone.now()
+        instance.deleted_with_template = False
+        instance.save(update_fields=['deleted_at', 'deleted_with_template', 'updated_at'])
+        normalize_template_item_orders(instance.template)
+
+    @action(detail=True, methods=['post'], url_path='delete')
+    def soft_delete(self, request, pk=None):
+        item = self.get_object()
+        self._delete_item(item)
+        return Response({'detail': '削除しました。'})
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        item = CaseChecklistTemplateItem.objects.select_related('template').get(pk=pk)
+        if item.template.deleted_at:
+            return Response(
+                {'detail': '所属テンプレートが削除されています。先にテンプレートを復元してください。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        item.deleted_at = None
+        item.deleted_with_template = False
+        item.save(update_fields=['deleted_at', 'deleted_with_template', 'updated_at'])
+        normalize_template_item_orders(item.template)
+        serializer = self.get_serializer(item)
+        return Response(serializer.data)
+
+
+class CaseChecklistItemViewSet(ModelViewSet):
+    queryset = CaseChecklistItem.objects.select_related('case', 'source_template_item', 'completed_by')
+    serializer_class = CaseChecklistItemSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        case_id = self.request.query_params.get('case')
+        if case_id:
+            queryset = queryset.filter(case_id=case_id)
+        return queryset
+
+
+@api_view(['POST'])
+def seed_case_checklist_demo_view(request):
+    result = seed_case_checklist_demo_data()
+    return Response(result, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+def case_checklist_deletion_history(request):
+    templates = [
+        {
+            'id': template.id,
+            'object_type': 'template',
+            'name': template.name,
+            'template_name': '',
+            'deleted_at': template.deleted_at,
+            'can_restore': True,
+        }
+        for template in CaseChecklistTemplate.objects.filter(deleted_at__isnull=False)
+    ]
+    items = [
+        {
+            'id': item.id,
+            'object_type': 'template_item',
+            'name': item.name,
+            'template_name': item.template.name,
+            'deleted_at': item.deleted_at,
+            'can_restore': item.template.deleted_at is None,
+        }
+        for item in CaseChecklistTemplateItem.objects.select_related('template').filter(deleted_at__isnull=False)
+    ]
+    rows = sorted([*templates, *items], key=lambda row: row['deleted_at'], reverse=True)
+    serializer = CaseChecklistDeletionHistorySerializer(rows, many=True)
+    return Response(serializer.data)

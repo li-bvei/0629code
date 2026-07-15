@@ -195,6 +195,120 @@ export interface GenerateRemindersResponse {
   reminders: number[]
 }
 
+export type CaseChecklistItemType = 'task' | 'document' | 'confirmation'
+
+export interface CaseChecklistTemplateItem {
+  id: number
+  template: number
+  template_name: string
+  category: string
+  name: string
+  item_type: CaseChecklistItemType
+  item_type_display: string
+  quantity: number | null
+  unit: string
+  is_required: boolean
+  description: string
+  sort_order: number
+  is_active: boolean
+  deleted_at: string | null
+  deleted_with_template: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseChecklistTemplateItemPayload {
+  template: number
+  category?: string
+  name: string
+  item_type: CaseChecklistItemType
+  quantity?: number | null
+  unit?: string
+  is_required?: boolean
+  description?: string
+  sort_order?: number
+  is_active?: boolean
+}
+
+export interface CaseChecklistTemplate {
+  id: number
+  name: string
+  description: string
+  is_active: boolean
+  sort_order: number
+  deleted_at: string | null
+  items: CaseChecklistTemplateItem[]
+  item_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseChecklistTemplatePayload {
+  name: string
+  description?: string
+  is_active?: boolean
+  sort_order?: number
+}
+
+export interface CaseChecklistItem {
+  id: number
+  case: number
+  case_number: string
+  source_template_item: number | null
+  category: string
+  name: string
+  item_type: CaseChecklistItemType
+  item_type_display: string
+  quantity: number | null
+  unit: string
+  is_required: boolean
+  is_completed: boolean
+  completed_at: string | null
+  completed_by: number | null
+  completed_by_name: string
+  note: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseChecklistItemPayload {
+  case: number
+  source_template_item?: number | null
+  category?: string
+  name: string
+  item_type: CaseChecklistItemType
+  quantity?: number | null
+  unit?: string
+  is_required?: boolean
+  is_completed?: boolean
+  completed_at?: string | null
+  completed_by?: number | null
+  note?: string
+  sort_order?: number
+}
+
+export interface CaseChecklistDemoSeedResult {
+  success: boolean
+  message: string
+  templates_created: number
+  templates_updated: number
+  templates_skipped_deleted?: number
+  template_items_created: number
+  template_items_updated: number
+  template_items_skipped_deleted?: number
+  template_ids: number[]
+}
+
+export interface CaseChecklistDeletionHistoryItem {
+  id: number
+  object_type: 'template' | 'template_item'
+  name: string
+  template_name: string
+  deleted_at: string
+  can_restore: boolean
+}
+
 export interface DashboardDeadline {
   type: string
   target_type: string

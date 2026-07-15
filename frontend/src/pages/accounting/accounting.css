@@ -382,11 +382,6 @@
   white-space: normal;
 }
 
-.operation-caret {
-  margin-left: 4px;
-  font-size: 10px;
-}
-
 .voucher-item-manager {
   display: flex;
   flex-direction: column;

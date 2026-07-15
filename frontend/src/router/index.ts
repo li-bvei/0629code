@@ -14,6 +14,7 @@ import IncomeSourceListPage from '../pages/accounting/IncomeSourceListPage.vue'
 import VehicleUsageFormPage from '../pages/accounting/VehicleUsageFormPage.vue'
 import VehicleUsageListPage from '../pages/accounting/VehicleUsageListPage.vue'
 import CaseDetailPage from '../pages/CaseDetailPage.vue'
+import CaseChecklistTemplatesPage from '../pages/CaseChecklistTemplatesPage.vue'
 import CasesPage from '../pages/CasesPage.vue'
 import CompanyDetailPage from '../pages/CompanyDetailPage.vue'
 import CompaniesPage from '../pages/CompaniesPage.vue'
@@ -67,6 +68,11 @@ const router = createRouter({
           path: 'cases/:id',
           name: 'case-detail',
           component: CaseDetailPage,
+        },
+        {
+          path: 'case-checklists',
+          name: 'case-checklists',
+          component: CaseChecklistTemplatesPage,
         },
         {
           path: 'customers',

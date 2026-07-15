@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createVisaGuarantorTemplate,
@@ -647,13 +648,16 @@ onMounted(() => {
         <el-table-column label="操作" width="100" fixed="right" align="center">
           <template #default="{ row }">
             <el-dropdown trigger="click" @command="handleActionCommand(row, $event)">
-              <el-button text type="primary">操作 ▼</el-button>
+              <el-button text type="primary" class="table-action-trigger">
+                操作
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="detail">詳細</el-dropdown-item>
                   <el-dropdown-item command="edit">編集</el-dropdown-item>
                   <el-dropdown-item command="pdf">PDF下载</el-dropdown-item>
-                  <el-dropdown-item command="delete" divided>削除</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided class="danger-item">削除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -680,7 +684,7 @@ onMounted(() => {
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="accounting-toolbar visa-return-test-toolbar">
-          <el-button type="success" plain @click="fillPdfTestData">PDFテストデータ入力</el-button>
+          <el-button plain @click="fillPdfTestData">PDFテストデータ入力</el-button>
         </div>
         <div class="visa-return-form">
           <div class="form-section-title visa-return-full">申請人情報</div>
@@ -997,10 +1001,20 @@ onMounted(() => {
                 <el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '停止' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" text type="primary" @click="editTemplate(row)">編集</el-button>
-                <el-button size="small" text type="danger" :disabled="!row.is_active" @click="deleteTemplate(row)">停止</el-button>
+                <el-dropdown trigger="click">
+                  <el-button text type="primary" class="table-action-trigger">
+                    操作
+                    <el-icon><ArrowDown /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click="editTemplate(row)">編集</el-dropdown-item>
+                      <el-dropdown-item divided class="danger-item" :disabled="!row.is_active" @click="deleteTemplate(row)">停止</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createCompany,
@@ -206,10 +207,20 @@ const confirmDeleteCompany = async (company: Company) => {
         <el-table-column label="更新日時" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openEditDialog(row)">編集</el-button>
-            <el-button text type="danger" @click="confirmDeleteCompany(row)">削除</el-button>
+            <el-dropdown trigger="click">
+              <el-button text type="primary" class="table-action-trigger">
+                操作
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="openEditDialog(row)">編集</el-dropdown-item>
+                  <el-dropdown-item divided class="danger-item" @click="confirmDeleteCompany(row)">削除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>

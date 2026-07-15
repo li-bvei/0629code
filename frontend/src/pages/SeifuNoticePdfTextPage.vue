@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createSeifuNoticeRecord,
@@ -430,12 +431,22 @@ onBeforeUnmount(() => {
         <el-table-column label="更新时间" width="190">
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" :loading="generatingId === row.id" @click="generateRecordPdf(row)">PDF生成</el-button>
-            <el-button size="small" :loading="duplicatingId === row.id" @click="duplicateRecord(row)">复制</el-button>
-            <el-button size="small" type="danger" :loading="deletingId === row.id" @click="deleteRecord(row)">删除</el-button>
+            <el-dropdown trigger="click">
+              <el-button text type="primary" class="table-action-trigger">
+                操作
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="openEdit(row)">编辑</el-dropdown-item>
+                  <el-dropdown-item :disabled="duplicatingId === row.id" @click="duplicateRecord(row)">复制</el-dropdown-item>
+                  <el-dropdown-item :disabled="generatingId === row.id" @click="generateRecordPdf(row)">PDF生成</el-dropdown-item>
+                  <el-dropdown-item divided class="danger-item" :disabled="deletingId === row.id" @click="deleteRecord(row)">删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -510,7 +521,7 @@ onBeforeUnmount(() => {
             <div v-for="item in form.text_items" :key="item.id" class="seifu-editor-item">
               <div class="seifu-editor-header">
                 <strong>文字 {{ item.id }}</strong>
-                <el-button size="small" text type="danger" @click="removeItem(item.id as string | number)">削除</el-button>
+                <el-button text type="danger" @click="removeItem(item.id as string | number)">削除</el-button>
               </div>
               <el-input v-model="item.text" placeholder="追加する文字" />
               <div class="seifu-editor-grid">
