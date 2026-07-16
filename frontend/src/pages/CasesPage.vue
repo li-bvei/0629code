@@ -10,7 +10,13 @@ import { listCustomers } from '../api/customers'
 import { listEmployees } from '../api/employees'
 import { caseTypeOptions } from '../constants/options'
 import type { Case, CasePayload, Company, Customer, Employee } from '../types/api'
-import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
+import {
+  caseRegistrationStatusOptions,
+  getCaseDisplayStatus,
+  getCaseDisplayStatusTagType,
+  getCaseRegistrationStatusLabel,
+  getCaseRegistrationStatusTagType,
+} from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const router = useRouter()
@@ -27,10 +33,12 @@ const pageSize = 20
 const dialogVisible = ref(false)
 const editingCaseId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
+const filters = ref({
+  registration_status: 'active',
+})
 const caseForm = ref<CasePayload>({
   case_number: '',
   case_type: '',
-  status: '',
   customer: null,
   company: null,
   responsible_employee: null,
@@ -40,18 +48,8 @@ const caseForm = ref<CasePayload>({
   completed_at: null,
 })
 
-const statusOptions = [
-  '受付中',
-  '準備中',
-  '申請中',
-  '補正対応中',
-  '完了',
-  '中止',
-]
-
 const rules: FormRules<CasePayload> = {
   case_type: [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
-  status: [{ required: true, message: 'ステータスを選択してください。', trigger: 'change' }],
   customer: [{ required: true, message: '顧客を選択してください。', trigger: 'change' }],
 }
 
@@ -59,7 +57,11 @@ const fetchCases = async (page = currentPage.value) => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const data = await listCases({ page })
+    const params = { page } as { page: number; registration_status?: string }
+    if (['active', 'inactive', 'archived'].includes(filters.value.registration_status)) {
+      params.registration_status = filters.value.registration_status
+    }
+    const data = await listCases(params)
     cases.value = data.results
     total.value = data.count
     currentPage.value = page
@@ -95,7 +97,6 @@ const resetForm = () => {
   caseForm.value = {
     case_number: '',
     case_type: '',
-    status: '',
     customer: null,
     company: null,
     responsible_employee: null,
@@ -117,7 +118,6 @@ const openEditDialog = (caseItem: Case) => {
   caseForm.value = {
     case_number: caseItem.case_number,
     case_type: caseItem.case_type,
-    status: caseItem.status,
     customer: caseItem.customer,
     company: caseItem.company,
     responsible_employee: caseItem.responsible_employee,
@@ -140,7 +140,6 @@ const submitCase = async () => {
   try {
     const payload: CasePayload = {
       case_type: caseForm.value.case_type,
-      status: caseForm.value.status,
       customer: caseForm.value.customer,
       company: caseForm.value.company || null,
       responsible_employee: caseForm.value.responsible_employee || null,
@@ -197,19 +196,67 @@ const confirmDeleteCase = async (caseItem: Case) => {
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
 
     <el-card shadow="never">
+      <div class="case-list-filter-row">
+        <el-select v-model="filters.registration_status" class="case-registration-filter" @change="fetchCases(1)">
+          <el-option label="すべて" value="" />
+          <el-option
+            v-for="option in caseRegistrationStatusOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </div>
       <el-table v-loading="loading" :data="cases" stripe>
-        <el-table-column prop="case_number" label="案件番号" min-width="150" />
+        <el-table-column label="案件番号" min-width="190" show-overflow-tooltip>
+          <template #default="{ row }">
+            <button class="entity-link" type="button" :title="row.case_number" @click="router.push(`/cases/${row.id}`)">
+              {{ row.case_number }}
+            </button>
+          </template>
+        </el-table-column>
         <el-table-column prop="case_type" label="案件種別" min-width="150" />
         <el-table-column label="現在の進捗" width="140">
           <template #default="{ row }">
-            <el-tag :type="getCaseDisplayStatusTagType(getCaseDisplayStatus(row))">
-              {{ getCaseDisplayStatus(row) }}
+            <el-tag :type="getCaseDisplayStatusTagType(row.status)">
+              {{ getCaseDisplayStatus(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="customer_name" label="顧客名" min-width="150" />
+        <el-table-column label="登録状態" width="110">
+          <template #default="{ row }">
+            <el-tag :type="getCaseRegistrationStatusTagType(row.registration_status)" effect="plain">
+              {{ getCaseRegistrationStatusLabel(row.registration_status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="顧客名" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <button
+              v-if="row.customer"
+              class="entity-link"
+              type="button"
+              :title="row.customer_name"
+              @click="router.push(`/customers/${row.customer}`)"
+            >
+              {{ row.customer_name }}
+            </button>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="company_name" label="会社名" min-width="180">
-          <template #default="{ row }">{{ row.company_name || '-' }}</template>
+          <template #default="{ row }">
+            <button
+              v-if="row.company"
+              class="entity-link"
+              type="button"
+              :title="row.company_name"
+              @click="router.push(`/companies/${row.company}`)"
+            >
+              {{ row.company_name || '-' }}
+            </button>
+            <span v-else>-</span>
+          </template>
         </el-table-column>
         <el-table-column prop="responsible_employee_name" label="担当者" min-width="140">
           <template #default="{ row }">{{ row.responsible_employee_name || '-' }}</template>
@@ -242,7 +289,7 @@ const confirmDeleteCase = async (caseItem: Case) => {
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item @click="router.push(`/cases/${row.id}`)">詳細</el-dropdown-item>
+                  <el-dropdown-item @click="router.push(`/cases/${row.id}`)">詳細を見る</el-dropdown-item>
                   <el-dropdown-item @click="openEditDialog(row)">編集</el-dropdown-item>
                   <el-dropdown-item divided class="danger-item" @click="confirmDeleteCase(row)">削除</el-dropdown-item>
                 </el-dropdown-menu>
@@ -287,16 +334,6 @@ const confirmDeleteCase = async (caseItem: Case) => {
                 :key="caseType"
                 :label="caseType"
                 :value="caseType"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="ステータス" prop="status">
-            <el-select v-model="caseForm.status" placeholder="選択してください" class="form-control">
-              <el-option
-                v-for="status in statusOptions"
-                :key="status"
-                :label="status"
-                :value="status"
               />
             </el-select>
           </el-form-item>
@@ -389,3 +426,33 @@ const confirmDeleteCase = async (caseItem: Case) => {
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.entity-link {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+
+.entity-link:hover {
+  color: var(--el-color-primary-light-3);
+  text-decoration: underline;
+}
+
+.case-list-filter-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.case-registration-filter {
+  width: 160px;
+}
+</style>

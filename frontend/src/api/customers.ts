@@ -2,6 +2,7 @@ import http from '../services/http'
 import type {
   CreateCustomerPayload,
   Customer,
+  CustomerDetail,
   ListParams,
   PaginatedResponse,
   UpdateCustomerPayload,
@@ -13,7 +14,7 @@ export const listCustomers = async (params?: ListParams) => {
 }
 
 export const getCustomer = async (id: number) => {
-  const response = await http.get<Customer>(`/customers/${id}/`)
+  const response = await http.get<CustomerDetail>(`/customers/${id}/`)
   return response.data
 }
 

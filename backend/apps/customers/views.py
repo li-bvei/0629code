@@ -2,7 +2,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.filters import SearchFilter
 
 from .models import Customer, FamilyMember
-from .serializers import CustomerSerializer, FamilyMemberSerializer
+from .serializers import CustomerDetailSerializer, CustomerSerializer, FamilyMemberSerializer
 
 
 class CustomerViewSet(ModelViewSet):
@@ -10,6 +10,11 @@ class CustomerViewSet(ModelViewSet):
     serializer_class = CustomerSerializer
     filter_backends = [SearchFilter]
     search_fields = ['name', 'phone', 'email', 'address']
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return CustomerDetailSerializer
+        return super().get_serializer_class()
 
     def get_queryset(self):
         queryset = super().get_queryset()

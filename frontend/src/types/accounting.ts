@@ -159,6 +159,11 @@ export interface AccountingProject {
   end_date?: string | null
   is_active: boolean
   note?: string
+  income_total?: number | string
+  expense_total?: number | string
+  balance?: number | string
+  income_count?: number
+  expense_count?: number
   created_at?: string
   updated_at?: string
 }

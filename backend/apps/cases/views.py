@@ -26,6 +26,12 @@ from .serializers import (
     CaseChecklistTemplateSerializer,
     CaseSerializer,
 )
+from .status_service import (
+    CaseStatusChangeError,
+    change_case_registration_status,
+    change_case_status,
+    get_required_checklist_progress,
+)
 
 
 class CaseChecklistPagination(PageNumberPagination):
@@ -67,6 +73,13 @@ class CaseViewSet(ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        registration_status = self.request.query_params.get('registration_status')
+        if registration_status in {
+            Case.REGISTRATION_STATUS_ACTIVE,
+            Case.REGISTRATION_STATUS_INACTIVE,
+            Case.REGISTRATION_STATUS_ARCHIVED,
+        }:
+            queryset = queryset.filter(registration_status=registration_status)
         customer_id = self.request.query_params.get('customer')
         if customer_id:
             queryset = queryset.filter(customer_id=customer_id)
@@ -75,12 +88,69 @@ class CaseViewSet(ModelViewSet):
             queryset = queryset.filter(company_id=company_id)
         return queryset
 
+    def _status_change_response(self, result):
+        return Response({
+            'case_id': result.case_id,
+            'previous_status': result.previous_status,
+            'new_status': result.new_status,
+            'warnings': result.warnings,
+            'timeline_created': result.timeline_created,
+            'forced': result.forced,
+            'event': result.event,
+        })
+
+    def _status_change_error_response(self, exc):
+        payload = {
+            'detail': exc.detail,
+            'warnings': exc.warnings,
+            'requires_force': exc.requires_force,
+        }
+        return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='change-status')
+    def change_status(self, request, pk=None):
+        case = self.get_object()
+        try:
+            result = change_case_status(
+                case,
+                request.data.get('new_status'),
+                changed_by=request.user,
+                change_date=request.data.get('change_date'),
+                note=request.data.get('note') or '',
+                force=bool(request.data.get('force')),
+                source='manual',
+            )
+        except (CaseStatusChangeError, ValueError) as exc:
+            if isinstance(exc, CaseStatusChangeError):
+                return self._status_change_error_response(exc)
+            return Response({'detail': '変更日が正しくありません。'}, status=status.HTTP_400_BAD_REQUEST)
+        return self._status_change_response(result)
+
+    @action(detail=True, methods=['post'], url_path='change-registration-status')
+    def change_registration_status(self, request, pk=None):
+        case = self.get_object()
+        try:
+            result = change_case_registration_status(
+                case,
+                request.data.get('new_status'),
+                changed_by=request.user,
+                change_date=request.data.get('change_date'),
+                note=request.data.get('note') or '',
+                force=bool(request.data.get('force')),
+                source='manual',
+            )
+        except (CaseStatusChangeError, ValueError) as exc:
+            if isinstance(exc, CaseStatusChangeError):
+                return self._status_change_error_response(exc)
+            return Response({'detail': '変更日が正しくありません。'}, status=status.HTTP_400_BAD_REQUEST)
+        return self._status_change_response(result)
+
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
         case = self.get_object()
         reason = (request.data.get('reason') or '').strip()
 
-        if case.status in ['中止', '完了', Case.STATUS_COMPLETED]:
+        if case.status in [Case.STATUS_WITHDRAWN, Case.STATUS_COMPLETED]:
             return Response(
                 {'detail': 'この案件は中止できません。'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -92,15 +162,16 @@ class CaseViewSet(ModelViewSet):
             )
 
         with transaction.atomic():
-            case.status = '中止'
-            case.save(update_fields=['status', 'updated_at'])
-            Timeline.objects.create(
-                case=case,
-                title='案件中止',
-                content=f'案件を中止しました。理由：{reason}',
-                is_visible_to_client=False,
+            change_case_status(
+                case,
+                Case.STATUS_WITHDRAWN,
+                changed_by=request.user,
+                note=reason,
+                force=True,
+                source='cancel',
             )
 
+        case.refresh_from_db()
         serializer = self.get_serializer(case)
         return Response(serializer.data)
 
@@ -305,6 +376,13 @@ class CaseViewSet(ModelViewSet):
                     unit=template_item.unit,
                     is_required=template_item.is_required,
                     note=template_item.description,
+                    responsible_party=template_item.responsible_party,
+                    acquisition_place=template_item.acquisition_place,
+                    required_details=template_item.required_details,
+                    internal_note=template_item.internal_note,
+                    customer_note=template_item.customer_note,
+                    is_visible_to_customer=template_item.is_visible_to_customer,
+                    importance_level=template_item.importance_level,
                     sort_order=current_max_order + index,
                 ))
 
@@ -604,6 +682,36 @@ class CaseChecklistItemViewSet(ModelViewSet):
         if ordering in ['sort_order', '-sort_order', 'category', '-category', 'name', '-name', 'updated_at', '-updated_at']:
             queryset = queryset.order_by(ordering, 'id')
         return queryset
+
+    def _progress_payload(self, case):
+        progress = get_required_checklist_progress(case)
+        return {
+            'required_items_total': progress['required_items_total'],
+            'required_items_completed': progress['required_items_completed'],
+            'required_items_remaining': progress['required_items_remaining'],
+            'required_items_progress_percent': progress['required_items_progress_percent'],
+            'all_required_items_completed': progress['all_required_items_completed'],
+            'suggested_case_status': progress['suggested_case_status'],
+            'suggestion_message': progress['suggestion_message'],
+        }
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        item = CaseChecklistItem.objects.get(pk=response.data['id'])
+        response.data['progress_summary'] = self._progress_payload(item.case)
+        return response
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        item = CaseChecklistItem.objects.get(pk=response.data['id'])
+        response.data['progress_summary'] = self._progress_payload(item.case)
+        return response
+
+    def partial_update(self, request, *args, **kwargs):
+        response = super().partial_update(request, *args, **kwargs)
+        item = CaseChecklistItem.objects.get(pk=response.data['id'])
+        response.data['progress_summary'] = self._progress_payload(item.case)
+        return response
 
 
 @api_view(['POST'])

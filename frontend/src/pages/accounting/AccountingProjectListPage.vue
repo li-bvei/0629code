@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { deleteAccountingProject, getAccountingProjectReport, listAccountingProjects } from '../../api/accounting'
-import type { AccountingListParams, AccountingProject, AccountingProjectReport } from '../../types/accounting'
+import { deleteAccountingProject, listAccountingProjects, updateAccountingProject } from '../../api/accounting'
+import type { AccountingListParams, AccountingProject } from '../../types/accounting'
 import { formatAccountingNumber, toAccountingNumber } from '../../utils/accountingFormat'
 import { formatDate, formatDateTime } from '../../utils/date'
 import './accounting.css'
@@ -13,16 +13,6 @@ const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
 const projects = ref<AccountingProject[]>([])
-const report = ref<AccountingProjectReport>({
-  summary: {
-    total_income: 0,
-    project_count: 0,
-    total_expense: 0,
-    balance: 0,
-  },
-  project_chart: [],
-  expense_category_chart: [],
-})
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 20
@@ -34,24 +24,6 @@ const boolOptions = [
   { label: '有効', value: 'true' },
   { label: '無効', value: 'false' },
 ]
-
-const summaryCards = computed(() => [
-  { label: '収入合計', value: formatAccountingNumber(report.value.summary.total_income) },
-  { label: '対象件数', value: `${report.value.summary.project_count.toLocaleString()}件` },
-  { label: '支出合計', value: formatAccountingNumber(report.value.summary.total_expense) },
-  {
-    label: '残高',
-    value: formatAccountingNumber(report.value.summary.balance),
-    negative: toAccountingNumber(report.value.summary.balance) < 0,
-  },
-])
-
-const formatPeriod = (project: AccountingProject) => {
-  const start = formatDate(project.start_date)
-  const end = formatDate(project.end_date)
-  if (start === '-' && end === '-') return '-'
-  return `${start} - ${end}`
-}
 
 const fetchProjects = async (page = currentPage.value) => {
   loading.value = true
@@ -68,17 +40,8 @@ const fetchProjects = async (page = currentPage.value) => {
   }
 }
 
-const fetchReport = async () => {
-  try {
-    report.value = await getAccountingProjectReport(filters.value)
-  } catch {
-    ElMessage.error('プロジェクト収支集計の取得に失敗しました。')
-  }
-}
-
 const searchProjects = () => {
   fetchProjects(1)
-  fetchReport()
 }
 
 const clearFilters = () => {
@@ -103,9 +66,18 @@ const confirmDelete = async (project: AccountingProject) => {
   }
 }
 
+const setProjectActive = async (project: AccountingProject, isActive: boolean) => {
+  try {
+    await updateAccountingProject(project.id, { is_active: isActive })
+    ElMessage.success(isActive ? '有効化しました。' : '無効化しました。')
+    await fetchProjects(currentPage.value)
+  } catch {
+    ElMessage.error('状態の更新に失敗しました。')
+  }
+}
+
 onMounted(() => {
   fetchProjects()
-  fetchReport()
 })
 </script>
 
@@ -139,24 +111,41 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="accounting-summary-grid project-summary-grid">
-        <div v-for="card in summaryCards" :key="card.label" class="accounting-summary-card compact-summary-card">
-          <div class="accounting-summary-label">{{ card.label }}</div>
-          <div class="accounting-summary-value accounting-number" :class="{ 'is-negative': card.negative }">
-            {{ card.value }}
-          </div>
-        </div>
-      </div>
+      <div class="project-list-count">{{ total.toLocaleString() }}件</div>
 
       <el-table v-loading="loading" :data="projects" stripe>
-        <el-table-column prop="name" label="项目名称" min-width="180" />
-        <el-table-column label="期间" min-width="180">
-          <template #default="{ row }">{{ formatPeriod(row) }}</template>
+        <el-table-column label="プロジェクト名" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            <button class="entity-link" type="button" :title="row.name" @click="router.push(`/accounting/projects/${row.id}`)">
+              {{ row.name }}
+            </button>
+          </template>
+        </el-table-column>
+        <el-table-column label="開始日" width="120">
+          <template #default="{ row }">{{ formatDate(row.start_date) }}</template>
+        </el-table-column>
+        <el-table-column label="終了日" width="120">
+          <template #default="{ row }">{{ formatDate(row.end_date) }}</template>
+        </el-table-column>
+        <el-table-column label="収入" width="130" align="right" header-align="right">
+          <template #default="{ row }"><span class="accounting-number">{{ formatAccountingNumber(row.income_total || 0) }}</span></template>
+        </el-table-column>
+        <el-table-column label="支出" width="130" align="right" header-align="right">
+          <template #default="{ row }"><span class="accounting-number">{{ formatAccountingNumber(row.expense_total || 0) }}</span></template>
+        </el-table-column>
+        <el-table-column label="残高" width="130" align="right" header-align="right">
+          <template #default="{ row }">
+            <span class="accounting-number" :class="{ 'is-negative': toAccountingNumber(row.balance || 0) < 0 }">
+              {{ formatAccountingNumber(row.balance || 0) }}
+            </span>
+          </template>
         </el-table-column>
         <el-table-column label="有効" width="90">
-          <template #default="{ row }">{{ row.is_active ? '有効' : '無効' }}</template>
+          <template #default="{ row }">
+            <el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '無効' }}</el-tag>
+          </template>
         </el-table-column>
-        <el-table-column prop="note" label="备注" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="note" label="備考" min-width="220" show-overflow-tooltip />
         <el-table-column label="作成日時" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
@@ -171,6 +160,8 @@ onMounted(() => {
                 <el-dropdown-menu>
                   <el-dropdown-item @click="router.push(`/accounting/projects/${row.id}`)">詳細</el-dropdown-item>
                   <el-dropdown-item @click="router.push(`/accounting/projects/${row.id}/edit`)">編集</el-dropdown-item>
+                  <el-dropdown-item v-if="row.is_active" divided @click="setProjectActive(row, false)">無効化</el-dropdown-item>
+                  <el-dropdown-item v-else divided @click="setProjectActive(row, true)">有効化</el-dropdown-item>
                   <el-dropdown-item divided class="danger-item" @click="confirmDelete(row)">削除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>

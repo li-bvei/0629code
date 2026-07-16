@@ -96,6 +96,35 @@ const itemTypeOptions = [
   { label: '確認事項', value: 'confirmation' },
 ] as const
 
+const responsiblePartyOptions = [
+  { label: '未設定', value: '' },
+  { label: '顧客本人', value: 'customer' },
+  { label: '会社', value: 'company' },
+  { label: '本公司代办', value: 'our_company' },
+  { label: '行政書士', value: 'gyousei' },
+  { label: '税理士', value: 'tax_accountant' },
+  { label: 'その他', value: 'other' },
+] as const
+
+const importanceLevelOptions = [
+  { label: '通常', value: 'normal', type: 'info' },
+  { label: '重要', value: 'important', type: 'warning' },
+  { label: '要注意', value: 'warning', type: 'danger' },
+] as const
+
+type NoticeLanguage = 'zh' | 'ja'
+type NoticeType = 'initial' | 'additional' | 'reminder'
+
+const materialNoticeDialogVisible = ref(false)
+const materialNoticeText = ref('')
+const materialNoticeOptions = ref({
+  noticeType: 'initial' as NoticeType,
+  language: 'zh' as NoticeLanguage,
+  showPlace: true,
+  showRequiredDetails: true,
+  showCustomerNote: true,
+})
+
 const templateForm = ref<CaseChecklistTemplatePayload>({
   name: '',
   description: '',
@@ -112,6 +141,13 @@ const itemForm = ref<CaseChecklistTemplateItemPayload>({
   unit: '',
   is_required: true,
   description: '',
+  responsible_party: '',
+  acquisition_place: '',
+  required_details: '',
+  internal_note: '',
+  customer_note: '',
+  is_visible_to_customer: true,
+  importance_level: 'normal',
   sort_order: 0,
   is_active: true,
 })
@@ -148,6 +184,12 @@ const categoryOptions = computed(() => {
 const getItemTypeLabel = (type: CaseChecklistItemType) => (
   itemTypeOptions.find((option) => option.value === type)?.label || type
 )
+
+const getImportanceOption = (level: string) => (
+  importanceLevelOptions.find((option) => option.value === level) || importanceLevelOptions[0]
+)
+
+const getImportanceLabel = (level: string) => getImportanceOption(level).label
 
 const normalizeOptionText = (value: string) => value.trim().replace(/\s+/g, ' ')
 
@@ -409,6 +451,13 @@ const resetItemForm = () => {
     unit: '',
     is_required: true,
     description: '',
+    responsible_party: '',
+    acquisition_place: '',
+    required_details: '',
+    internal_note: '',
+    customer_note: '',
+    is_visible_to_customer: true,
+    importance_level: 'normal',
     sort_order: (templateItems.value.filter((item) => !item.deleted_at).reduce((max, item) => Math.max(max, item.sort_order || 0), 0) || 0) + 1,
     is_active: true,
   }
@@ -435,6 +484,13 @@ const openEditItemDialog = (item: CaseChecklistTemplateItem) => {
     unit: item.unit,
     is_required: item.is_required,
     description: item.description,
+    responsible_party: item.responsible_party || '',
+    acquisition_place: item.acquisition_place || '',
+    required_details: item.required_details || '',
+    internal_note: item.internal_note || '',
+    customer_note: item.customer_note || '',
+    is_visible_to_customer: item.is_visible_to_customer,
+    importance_level: item.importance_level || 'normal',
     sort_order: item.sort_order,
     is_active: item.is_active,
   }
@@ -485,6 +541,104 @@ const submitItem = async () => {
     ElMessage.error(editingItemId.value ? '項目の更新に失敗しました。' : '項目の追加に失敗しました。')
   } finally {
     itemSubmitting.value = false
+  }
+}
+
+const fetchAllTemplateItemsForNotice = async () => {
+  if (!selectedTemplateId.value) return []
+  const rows: CaseChecklistTemplateItem[] = []
+  let page = 1
+  while (true) {
+    const data = await listCaseChecklistTemplateItems({
+      template: selectedTemplateId.value,
+      page,
+      page_size: 100,
+      ordering: 'sort_order',
+      is_active: true,
+    })
+    rows.push(...data.results)
+    if (rows.length >= data.count || !data.results.length) break
+    page += 1
+  }
+  return rows
+    .filter((item) => item.is_active && item.is_visible_to_customer)
+    .sort((left, right) => (left.sort_order || 0) - (right.sort_order || 0) || left.id - right.id)
+}
+
+const buildMaterialNoticeText = (items: CaseChecklistTemplateItem[]) => {
+  const language = materialNoticeOptions.value.language
+  const noticeType = materialNoticeOptions.value.noticeType
+  const opening = language === 'zh'
+    ? {
+        initial: '感谢您的信任，并委托我们办理本次手续。\n\n关于本次申请，请您准备以下材料：',
+        additional: '关于本次手续，还需要您补充准备以下材料：',
+        reminder: '关于本次手续，以下材料尚未确认收到，请您准备完成后发送给我们：',
+      }[noticeType]
+    : {
+        initial: 'この度は弊社へご依頼いただき、誠にありがとうございます。\n\n本件のお手続きにあたり、以下の資料をご準備ください。',
+        additional: '本件のお手続きにあたり、追加で以下の資料をご準備ください。',
+        reminder: '本件のお手続きにあたり、以下の未完了資料をご確認ください。',
+      }[noticeType]
+  const closing = language === 'zh'
+    ? '材料准备完成后，请拍照或扫描发送给我们确认。\n如有不清楚的地方，请随时联系我们。'
+    : 'ご準備ができましたら、写真またはスキャンデータをお送りください。\nご不明な点がございましたら、いつでもご連絡ください。'
+  const body = items.map((item, index) => {
+    const lines = [`${index + 1}. ${item.name}`]
+    if (materialNoticeOptions.value.showPlace && item.acquisition_place) {
+      lines.push(language === 'zh' ? `开具地点：${item.acquisition_place}` : `取得場所：${item.acquisition_place}`)
+    }
+    if (materialNoticeOptions.value.showRequiredDetails && item.required_details) {
+      lines.push(language === 'zh' ? `具体要求：${item.required_details}` : `必要内容：${item.required_details}`)
+    }
+    if (materialNoticeOptions.value.showCustomerNote && item.customer_note) {
+      lines.push(language === 'zh' ? `注意事项：${item.customer_note}` : `注意事項：${item.customer_note}`)
+    }
+    return lines.join('\n')
+  }).join('\n\n')
+  return [opening, body, closing].filter(Boolean).join('\n\n')
+}
+
+const openMaterialNoticeDialog = async () => {
+  if (!selectedTemplateId.value) {
+    ElMessage.warning('先にテンプレートを選択してください。')
+    return
+  }
+  try {
+    const items = await fetchAllTemplateItemsForNotice()
+    if (!items.length) {
+      ElMessage.warning('顧客向けに表示できる項目がありません。')
+      return
+    }
+    materialNoticeText.value = buildMaterialNoticeText(items)
+    materialNoticeDialogVisible.value = true
+  } catch {
+    ElMessage.error('材料案内の作成に失敗しました。')
+  }
+}
+
+const refreshMaterialNoticeText = async () => {
+  const items = await fetchAllTemplateItemsForNotice()
+  materialNoticeText.value = buildMaterialNoticeText(items)
+}
+
+const copyMaterialNoticeText = async () => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(materialNoticeText.value)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = materialNoticeText.value
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    ElMessage.success('コピーしました。')
+  } catch {
+    ElMessage.error('コピーに失敗しました。文案を手動で選択してください。')
   }
 }
 
@@ -749,7 +903,10 @@ onMounted(() => {
         <template #header>
           <div class="card-header-row">
             <span>{{ selectedTemplate?.name || 'テンプレート項目' }}</span>
-            <el-button type="primary" :disabled="!selectedTemplateId" @click="openCreateItemDialog">項目追加</el-button>
+            <div class="header-actions">
+              <el-button :disabled="!selectedTemplateId" @click="openMaterialNoticeDialog">顧客向け材料案内</el-button>
+              <el-button type="primary" :disabled="!selectedTemplateId" @click="openCreateItemDialog">項目追加</el-button>
+            </div>
           </div>
         </template>
         <el-table :data="sortedItems" stripe row-key="id">
@@ -759,9 +916,28 @@ onMounted(() => {
           <el-table-column prop="category" label="分類" min-width="110">
             <template #default="{ row }">{{ row.category || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="name" label="項目名" min-width="180" />
+          <el-table-column prop="name" label="事項名" min-width="180" />
           <el-table-column label="タイプ" width="110">
             <template #default="{ row }">{{ getItemTypeLabel(row.item_type) }}</template>
+          </el-table-column>
+          <el-table-column label="手続先" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.acquisition_place || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="必要内容" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.required_details || row.description || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="顧客注意" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.customer_note || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="重要" width="90">
+            <template #default="{ row }">
+              <el-tag :type="getImportanceOption(row.importance_level).type">
+                {{ getImportanceLabel(row.importance_level) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="顧客表示" width="100">
+            <template #default="{ row }">{{ row.is_visible_to_customer ? '表示' : '非表示' }}</template>
           </el-table-column>
           <el-table-column label="数量" width="90">
             <template #default="{ row }">
@@ -875,29 +1051,32 @@ onMounted(() => {
       @closed="resetItemForm"
     >
       <el-form ref="itemFormRef" :model="itemForm" :rules="itemRules" label-position="top">
-        <el-form-item label="分類" prop="category">
-          <el-select
-            v-model="itemForm.category"
-            allow-create
-            clearable
-            default-first-option
-            filterable
-            placeholder="分類を選択または入力"
-            class="form-control"
-          >
-            <el-option v-for="category in categoryOptions" :key="category" :label="category" :value="category" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="項目名" prop="name">
-          <el-autocomplete
-            v-model="itemForm.name"
-            :fetch-suggestions="queryItemNameSuggestions"
-            clearable
-            placeholder="項目名を入力"
-            value-key="value"
-            class="form-control"
-          />
-        </el-form-item>
+        <h3 class="form-section-title">基本情報</h3>
+        <div class="form-grid">
+          <el-form-item label="分類" prop="category">
+            <el-select
+              v-model="itemForm.category"
+              allow-create
+              clearable
+              default-first-option
+              filterable
+              placeholder="分類を選択または入力"
+              class="form-control"
+            >
+              <el-option v-for="category in categoryOptions" :key="category" :label="category" :value="category" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="事項名" prop="name">
+            <el-autocomplete
+              v-model="itemForm.name"
+              :fetch-suggestions="queryItemNameSuggestions"
+              clearable
+              placeholder="事項名を入力"
+              value-key="value"
+              class="form-control"
+            />
+          </el-form-item>
+        </div>
         <div class="form-grid">
           <el-form-item label="種別" prop="item_type">
             <el-select v-model="itemForm.item_type" class="form-control">
@@ -916,16 +1095,56 @@ onMounted(() => {
             <el-input v-model="itemForm.unit" placeholder="通、份、部など" />
           </el-form-item>
         </div>
+        <h3 class="form-section-title">办理情報</h3>
+        <div class="form-grid">
+          <el-form-item label="準備者／担当区分" prop="responsible_party">
+            <el-select v-model="itemForm.responsible_party" class="form-control">
+              <el-option
+                v-for="option in responsiblePartyOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="手続先・取得場所" prop="acquisition_place">
+            <el-input v-model="itemForm.acquisition_place" placeholder="大阪南税務署、本人準備など" />
+          </el-form-item>
+        </div>
+        <el-form-item label="必要内容" prop="required_details">
+          <el-input v-model="itemForm.required_details" type="textarea" :rows="3" />
+        </el-form-item>
+        <h3 class="form-section-title">顧客通知</h3>
+        <el-form-item label="顧客向け注意事項" prop="customer_note">
+          <el-input v-model="itemForm.customer_note" type="textarea" :rows="3" />
+        </el-form-item>
         <div class="form-grid">
           <el-form-item label="必須" prop="is_required">
             <el-switch v-model="itemForm.is_required" active-text="必須" inactive-text="任意" />
+          </el-form-item>
+          <el-form-item label="顧客表示" prop="is_visible_to_customer">
+            <el-switch v-model="itemForm.is_visible_to_customer" active-text="表示" inactive-text="非表示" />
+          </el-form-item>
+          <el-form-item label="重要レベル" prop="importance_level">
+            <el-select v-model="itemForm.importance_level" class="form-control">
+              <el-option
+                v-for="option in importanceLevelOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
           </el-form-item>
           <el-form-item label="状態" prop="is_active">
             <el-switch v-model="itemForm.is_active" active-text="有効" inactive-text="無効" />
           </el-form-item>
         </div>
-        <el-form-item label="説明" prop="description">
+        <h3 class="form-section-title">内部管理</h3>
+        <el-form-item label="普通説明" prop="description">
           <el-input v-model="itemForm.description" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="内部備考" prop="internal_note">
+          <el-input v-model="itemForm.internal_note" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -967,6 +1186,35 @@ onMounted(() => {
           @size-change="handleDeletionPageSizeChange"
         />
       </div>
+    </el-dialog>
+
+    <el-dialog v-model="materialNoticeDialogVisible" title="顧客向け材料案内" width="760px" class="material-notice-dialog">
+      <div class="notice-option-grid">
+        <el-form-item label="文案タイプ">
+          <el-select v-model="materialNoticeOptions.noticeType" class="form-control" @change="refreshMaterialNoticeText">
+            <el-option label="初回材料案内" value="initial" />
+            <el-option label="追加資料案内" value="additional" />
+            <el-option label="未完了資料リマインド" value="reminder" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="言語">
+          <el-select v-model="materialNoticeOptions.language" class="form-control" @change="refreshMaterialNoticeText">
+            <el-option label="中文" value="zh" />
+            <el-option label="日本語" value="ja" />
+          </el-select>
+        </el-form-item>
+      </div>
+      <div class="notice-switches">
+        <el-checkbox v-model="materialNoticeOptions.showPlace" @change="refreshMaterialNoticeText">取得場所</el-checkbox>
+        <el-checkbox v-model="materialNoticeOptions.showRequiredDetails" @change="refreshMaterialNoticeText">必要内容</el-checkbox>
+        <el-checkbox v-model="materialNoticeOptions.showCustomerNote" @change="refreshMaterialNoticeText">注意事項</el-checkbox>
+      </div>
+      <el-input v-model="materialNoticeText" type="textarea" :rows="18" />
+      <template #footer>
+        <el-button @click="materialNoticeDialogVisible = false">閉じる</el-button>
+        <el-button @click="refreshMaterialNoticeText">自動生成に戻す</el-button>
+        <el-button type="primary" @click="copyMaterialNoticeText">コピー</el-button>
+      </template>
     </el-dialog>
 
   </section>
@@ -1024,6 +1272,7 @@ onMounted(() => {
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -1039,6 +1288,25 @@ onMounted(() => {
   padding-top: 14px;
 }
 
+.form-section-title {
+  margin: 16px 0 10px;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.notice-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.notice-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+}
+
 @media (max-width: 768px) {
   .deletion-history-summary {
     grid-template-columns: 1fr;
@@ -1046,6 +1314,14 @@ onMounted(() => {
 
   :deep(.deletion-history-dialog) {
     width: 95% !important;
+  }
+
+  :deep(.material-notice-dialog) {
+    width: 95% !important;
+  }
+
+  .notice-option-grid {
+    grid-template-columns: 1fr;
   }
 }
 

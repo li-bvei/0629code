@@ -7,6 +7,8 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   applyCaseChecklistTemplate,
   cancelCase,
+  changeCaseRegistrationStatus,
+  changeCaseStatus,
   createCaseChecklistItem,
   deleteCaseChecklistItem,
   getCase,
@@ -30,7 +32,14 @@ import type {
   Timeline,
   TimelinePayload,
 } from '../types/api'
-import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
+import {
+  caseRegistrationStatusOptions,
+  caseStatusOptions,
+  getCaseDisplayStatus,
+  getCaseDisplayStatusTagType,
+  getCaseRegistrationStatusLabel,
+  getCaseRegistrationStatusTagType,
+} from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -54,6 +63,12 @@ const editingTimelineId = ref<number | null>(null)
 const timelineFormRef = ref<FormInstance>()
 const caseDateSubmitting = ref(false)
 const caseDateDialogVisible = ref(false)
+const statusDialogVisible = ref(false)
+const registrationStatusDialogVisible = ref(false)
+const statusChanging = ref(false)
+const registrationStatusChanging = ref(false)
+const statusWarnings = ref<Array<{ code: string, message: string }>>([])
+const registrationStatusWarnings = ref<Array<{ code: string, message: string }>>([])
 const cancelSubmitting = ref(false)
 const cancelDialogVisible = ref(false)
 const cancelFormRef = ref<FormInstance>()
@@ -66,10 +81,10 @@ const selectedChecklistTemplateId = ref<number | null>(null)
 const applyingChecklistTemplate = ref(false)
 
 const caseId = computed(() => Number(route.params.id))
-const displayStatus = computed(() => getCaseDisplayStatus(caseDetail.value))
+const displayStatus = computed(() => getCaseDisplayStatus(caseDetail.value?.status))
 const canCancelCase = computed(() => (
   caseDetail.value
-  && !['完了', '中止', 'completed', 'closed'].includes(caseDetail.value.status)
+  && !['withdrawn', 'completed'].includes(caseDetail.value.status)
 ))
 
 const taskStatusOptions = [
@@ -101,6 +116,39 @@ const checklistItemTypeOptions = [
   { label: '確認事項', value: 'confirmation' },
 ] as const
 
+const responsiblePartyOptions = [
+  { label: '未設定', value: '' },
+  { label: '顧客本人', value: 'customer' },
+  { label: '会社', value: 'company' },
+  { label: '本公司代办', value: 'our_company' },
+  { label: '行政書士', value: 'gyousei' },
+  { label: '税理士', value: 'tax_accountant' },
+  { label: 'その他', value: 'other' },
+] as const
+
+const importanceLevelOptions = [
+  { label: '通常', value: 'normal', type: 'info' },
+  { label: '重要', value: 'important', type: 'warning' },
+  { label: '要注意', value: 'warning', type: 'danger' },
+] as const
+
+type NoticeLanguage = 'zh' | 'ja'
+type NoticeType = 'initial' | 'additional' | 'reminder'
+
+const customerNoticeDialogVisible = ref(false)
+const customerNoticeText = ref('')
+const customerNoticeOptions = ref({
+  noticeType: 'initial' as NoticeType,
+  language: 'zh' as NoticeLanguage,
+  showCustomerName: true,
+  showCaseType: true,
+  showCaseNumber: true,
+  showPlace: true,
+  showRequiredDetails: true,
+  showCustomerNote: true,
+  onlyIncomplete: false,
+})
+
 const taskForm = ref<TaskPayload>({
   case: 0,
   title: '',
@@ -124,6 +172,18 @@ const caseDateForm = ref({
   result_notified_at: null as string | null,
   completed_at: null as string | null,
 })
+const statusForm = ref({
+  new_status: '',
+  change_date: '',
+  note: '',
+  force: false,
+})
+const registrationStatusForm = ref({
+  new_status: '',
+  change_date: '',
+  note: '',
+  force: false,
+})
 const cancelForm = ref({
   reason: '',
 })
@@ -140,6 +200,13 @@ const checklistItemForm = ref<CaseChecklistItemPayload>({
   completed_at: null,
   completed_by: null,
   note: '',
+  responsible_party: '',
+  acquisition_place: '',
+  required_details: '',
+  internal_note: '',
+  customer_note: '',
+  is_visible_to_customer: true,
+  importance_level: 'normal',
   sort_order: 0,
 })
 
@@ -179,6 +246,12 @@ const getTaskStatusTagType = (status: string) => (
 const getChecklistItemTypeLabel = (type: CaseChecklistItemType) => (
   checklistItemTypeOptions.find((option) => option.value === type)?.label || type
 )
+
+const getImportanceOption = (level: string) => (
+  importanceLevelOptions.find((option) => option.value === level) || importanceLevelOptions[0]
+)
+
+const getImportanceLabel = (level: string) => getImportanceOption(level).label
 
 const isFinishedTask = (task: Task) => ['completed', 'cancelled'].includes(task.status)
 
@@ -251,6 +324,12 @@ const checklistProgressPercentage = computed(() => {
   return Math.round((completed / checklistItems.value.length) * 100)
 })
 
+const visibleNoticeItems = computed(() => (
+  sortedChecklistItems.value.filter((item) => (
+    item.is_visible_to_customer && (!customerNoticeOptions.value.onlyIncomplete || !item.is_completed)
+  ))
+))
+
 const nextTask = computed(() => sortedTasks.value.find((task) => !isFinishedTask(task)) || null)
 
 const taskEmployeeOptions = computed(() => {
@@ -313,6 +392,7 @@ const fetchTimelines = async () => {
 const fetchChecklistItems = async () => {
   const data = await listCaseChecklistItems({ case: caseId.value })
   checklistItems.value = data.results
+  caseDetail.value = await getCase(caseId.value)
 }
 
 const resetTaskForm = () => {
@@ -367,6 +447,13 @@ const resetChecklistItemForm = () => {
     completed_at: null,
     completed_by: null,
     note: '',
+    responsible_party: '',
+    acquisition_place: '',
+    required_details: '',
+    internal_note: '',
+    customer_note: '',
+    is_visible_to_customer: true,
+    importance_level: 'normal',
     sort_order: nextSortOrder,
   }
   checklistItemFormRef.value?.clearValidate()
@@ -423,6 +510,30 @@ const openCaseDateDialog = () => {
   caseDateDialogVisible.value = true
 }
 
+const openStatusDialog = (suggestedStatus?: string) => {
+  if (!caseDetail.value) return
+  statusWarnings.value = []
+  statusForm.value = {
+    new_status: suggestedStatus || caseDetail.value.status,
+    change_date: getTodayDate(),
+    note: '',
+    force: false,
+  }
+  statusDialogVisible.value = true
+}
+
+const openRegistrationStatusDialog = () => {
+  if (!caseDetail.value) return
+  registrationStatusWarnings.value = []
+  registrationStatusForm.value = {
+    new_status: caseDetail.value.registration_status,
+    change_date: getTodayDate(),
+    note: '',
+    force: false,
+  }
+  registrationStatusDialogVisible.value = true
+}
+
 const openCancelDialog = () => {
   if (!canCancelCase.value) return
   resetCancelForm()
@@ -449,6 +560,13 @@ const openEditChecklistItemDialog = (item: CaseChecklistItem) => {
     completed_at: item.completed_at,
     completed_by: item.completed_by,
     note: item.note,
+    responsible_party: item.responsible_party || '',
+    acquisition_place: item.acquisition_place || '',
+    required_details: item.required_details || '',
+    internal_note: item.internal_note || '',
+    customer_note: item.customer_note || '',
+    is_visible_to_customer: item.is_visible_to_customer,
+    importance_level: item.importance_level || 'normal',
     sort_order: item.sort_order,
   }
   checklistItemFormRef.value?.clearValidate()
@@ -458,6 +576,151 @@ const openEditChecklistItemDialog = (item: CaseChecklistItem) => {
 const openApplyTemplateDialog = () => {
   selectedChecklistTemplateId.value = checklistTemplates.value[0]?.id || null
   applyTemplateDialogVisible.value = true
+}
+
+const submitStatusChange = async () => {
+  if (!statusForm.value.new_status) {
+    ElMessage.warning('新しい状態を選択してください。')
+    return
+  }
+  if (statusForm.value.force && !statusForm.value.note.trim()) {
+    ElMessage.warning('強制変更する場合は備考を入力してください。')
+    return
+  }
+  statusChanging.value = true
+  try {
+    await changeCaseStatus(caseId.value, {
+      new_status: statusForm.value.new_status,
+      change_date: statusForm.value.change_date,
+      note: statusForm.value.note,
+      force: statusForm.value.force,
+    })
+    ElMessage.success('案件状態を変更しました。')
+    statusDialogVisible.value = false
+    await Promise.all([fetchCaseDetail(), fetchTimelines()])
+  } catch (error: any) {
+    const data = error?.response?.data
+    if (data?.warnings?.length) {
+      statusWarnings.value = data.warnings
+      statusForm.value.force = true
+      ElMessage.warning('確認が必要な警告があります。')
+    } else {
+      ElMessage.error(data?.detail || '案件状態の変更に失敗しました。')
+    }
+  } finally {
+    statusChanging.value = false
+  }
+}
+
+const submitRegistrationStatusChange = async () => {
+  if (!registrationStatusForm.value.new_status) {
+    ElMessage.warning('新しい登録状態を選択してください。')
+    return
+  }
+  if (registrationStatusForm.value.force && !registrationStatusForm.value.note.trim()) {
+    ElMessage.warning('強制変更する場合は備考を入力してください。')
+    return
+  }
+  registrationStatusChanging.value = true
+  try {
+    await changeCaseRegistrationStatus(caseId.value, {
+      new_status: registrationStatusForm.value.new_status,
+      change_date: registrationStatusForm.value.change_date,
+      note: registrationStatusForm.value.note,
+      force: registrationStatusForm.value.force,
+    })
+    ElMessage.success('登録状態を変更しました。')
+    registrationStatusDialogVisible.value = false
+    await Promise.all([fetchCaseDetail(), fetchTimelines()])
+  } catch (error: any) {
+    const data = error?.response?.data
+    if (data?.warnings?.length) {
+      registrationStatusWarnings.value = data.warnings
+      registrationStatusForm.value.force = true
+      ElMessage.warning('確認が必要な警告があります。')
+    } else {
+      ElMessage.error(data?.detail || '登録状態の変更に失敗しました。')
+    }
+  } finally {
+    registrationStatusChanging.value = false
+  }
+}
+
+const buildCustomerNoticeText = () => {
+  const language = customerNoticeOptions.value.language
+  const noticeType = customerNoticeOptions.value.noticeType
+  const headerLines: string[] = []
+  if (customerNoticeOptions.value.showCustomerName && caseDetail.value?.customer_name) {
+    headerLines.push(language === 'zh' ? `${caseDetail.value.customer_name} 您好：` : `${caseDetail.value.customer_name} 様`)
+  }
+  if (customerNoticeOptions.value.showCaseType && caseDetail.value?.case_type) {
+    headerLines.push(language === 'zh' ? `案件类型：${caseDetail.value.case_type}` : `案件種別：${caseDetail.value.case_type}`)
+  }
+  if (customerNoticeOptions.value.showCaseNumber && caseDetail.value?.case_number) {
+    headerLines.push(language === 'zh' ? `案件编号：${caseDetail.value.case_number}` : `案件番号：${caseDetail.value.case_number}`)
+  }
+  const opening = language === 'zh'
+    ? {
+        initial: '感谢您的信任，并委托我们办理本次手续。\n\n关于本次申请，请您准备以下材料：',
+        additional: '关于本次手续，还需要您补充准备以下材料：',
+        reminder: '关于本次手续，以下材料尚未确认收到，请您准备完成后发送给我们：',
+      }[noticeType]
+    : {
+        initial: 'この度は弊社へご依頼いただき、誠にありがとうございます。\n\n本件のお手続きにあたり、以下の資料をご準備ください。',
+        additional: '本件のお手続きにあたり、追加で以下の資料をご準備ください。',
+        reminder: '本件のお手続きにあたり、以下の未完了資料をご確認ください。',
+      }[noticeType]
+  const body = visibleNoticeItems.value.map((item, index) => {
+    const lines = [`${index + 1}. ${item.name}`]
+    if (customerNoticeOptions.value.showPlace && item.acquisition_place) {
+      lines.push(language === 'zh' ? `开具地点：${item.acquisition_place}` : `取得場所：${item.acquisition_place}`)
+    }
+    if (customerNoticeOptions.value.showRequiredDetails && item.required_details) {
+      lines.push(language === 'zh' ? `具体要求：${item.required_details}` : `必要内容：${item.required_details}`)
+    }
+    if (customerNoticeOptions.value.showCustomerNote && item.customer_note) {
+      lines.push(language === 'zh' ? `注意事项：${item.customer_note}` : `注意事項：${item.customer_note}`)
+    }
+    return lines.join('\n')
+  }).join('\n\n')
+  const closing = language === 'zh'
+    ? '材料准备完成后，请拍照或扫描发送给我们确认。\n如有不清楚的地方，请随时联系我们。'
+    : 'ご準備ができましたら、写真またはスキャンデータをお送りください。\nご不明な点がございましたら、いつでもご連絡ください。'
+  return [headerLines.join('\n'), opening, body, closing].filter(Boolean).join('\n\n')
+}
+
+const openCustomerNoticeDialog = () => {
+  if (!visibleNoticeItems.value.length) {
+    ElMessage.warning('顧客向けに表示できる案件事項がありません。')
+    return
+  }
+  customerNoticeText.value = buildCustomerNoticeText()
+  customerNoticeDialogVisible.value = true
+}
+
+const refreshCustomerNoticeText = () => {
+  customerNoticeText.value = buildCustomerNoticeText()
+}
+
+const copyCustomerNoticeText = async () => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(customerNoticeText.value)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = customerNoticeText.value
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    ElMessage.success('コピーしました。')
+  } catch {
+    ElMessage.error('コピーに失敗しました。文案を手動で選択してください。')
+  }
 }
 
 const submitTask = async () => {
@@ -766,7 +1029,12 @@ onMounted(() => {
         <el-descriptions v-if="caseDetail" :column="2" border>
           <el-descriptions-item label="案件番号">{{ displayValue(caseDetail.case_number) }}</el-descriptions-item>
           <el-descriptions-item label="案件種別">{{ displayValue(caseDetail.case_type) }}</el-descriptions-item>
-          <el-descriptions-item label="登録ステータス">{{ displayValue(caseDetail.status) }}</el-descriptions-item>
+          <el-descriptions-item label="登録ステータス">
+            <el-tag :type="getCaseRegistrationStatusTagType(caseDetail.registration_status)" effect="plain">
+              {{ getCaseRegistrationStatusLabel(caseDetail.registration_status) }}
+            </el-tag>
+            <el-button text type="primary" @click="openRegistrationStatusDialog">登録状態変更</el-button>
+          </el-descriptions-item>
           <el-descriptions-item label="顧客名">{{ displayValue(caseDetail.customer_name) }}</el-descriptions-item>
           <el-descriptions-item label="会社名">{{ displayValue(caseDetail.company_name) }}</el-descriptions-item>
           <el-descriptions-item label="担当者">
@@ -779,12 +1047,15 @@ onMounted(() => {
         <template #header>
           <div class="card-header-row">
             <span>現在の状態</span>
-            <el-button @click="openCaseDateDialog">日付を編集</el-button>
+            <div class="header-actions">
+              <el-button type="primary" @click="openStatusDialog()">状態変更</el-button>
+              <el-button @click="openCaseDateDialog">日付を編集</el-button>
+            </div>
           </div>
         </template>
         <el-descriptions v-if="caseDetail" :column="2" border>
           <el-descriptions-item label="現在の進捗">
-            <el-tag :type="getCaseDisplayStatusTagType(displayStatus)">
+            <el-tag :type="getCaseDisplayStatusTagType(caseDetail.status)">
               {{ displayStatus }}
             </el-tag>
           </el-descriptions-item>
@@ -807,6 +1078,7 @@ onMounted(() => {
           <div class="card-header-row">
             <span>案件進捗・必要資料</span>
             <div class="header-actions">
+              <el-button plain @click="openCustomerNoticeDialog">顧客通知文案</el-button>
               <el-button plain @click="openApplyTemplateDialog">テンプレートから追加</el-button>
               <el-button type="primary" @click="openCreateChecklistItemDialog">項目追加</el-button>
             </div>
@@ -815,7 +1087,26 @@ onMounted(() => {
         <div class="checklist-summary">
           <span>案件事項：{{ checklistProgressText }}</span>
           <span>完了率：{{ checklistProgressPercentage }}%</span>
+          <span>必須事項：{{ caseDetail?.required_items_completed || 0 }} / {{ caseDetail?.required_items_total || 0 }} 完了</span>
         </div>
+        <el-progress
+          v-if="caseDetail?.required_items_total"
+          :percentage="caseDetail.required_items_progress_percent"
+          class="checklist-required-progress"
+        />
+        <el-alert
+          v-if="caseDetail?.suggested_case_status && caseDetail?.suggestion_message"
+          :title="caseDetail.suggestion_message"
+          type="success"
+          show-icon
+          class="checklist-suggestion-alert"
+        >
+          <template #default>
+            <el-button size="small" type="primary" @click="openStatusDialog(caseDetail?.suggested_case_status)">
+              状態を変更
+            </el-button>
+          </template>
+        </el-alert>
         <el-empty v-if="!checklistItems.length" description="案件事項がありません" />
         <div v-else class="checklist-groups">
           <section v-for="group in checklistGroups" :key="group.category" class="checklist-group">
@@ -824,7 +1115,7 @@ onMounted(() => {
               v-for="item in group.items"
               :key="item.id"
               class="checklist-item"
-              :class="{ 'is-completed': item.is_completed }"
+              :class="[`importance-${item.importance_level || 'normal'}`, { 'is-completed': item.is_completed }]"
             >
               <el-checkbox
                 :model-value="item.is_completed"
@@ -838,8 +1129,29 @@ onMounted(() => {
                   </span>
                   <el-tag v-if="item.is_required" size="small" type="danger">必須</el-tag>
                   <el-tag size="small" type="info">{{ getChecklistItemTypeLabel(item.item_type) }}</el-tag>
+                  <el-tag size="small" :type="getImportanceOption(item.importance_level).type">
+                    {{ getImportanceLabel(item.importance_level) }}
+                  </el-tag>
                   <el-tag v-if="item.is_completed" size="small" type="success">完了</el-tag>
                   <span v-else class="muted-text">未完了</span>
+                </div>
+                <div class="checklist-detail-grid">
+                  <span v-if="item.acquisition_place">手続先：{{ item.acquisition_place }}</span>
+                  <span v-if="item.responsible_party">
+                    準備者：{{ responsiblePartyOptions.find((option) => option.value === item.responsible_party)?.label || item.responsible_party }}
+                  </span>
+                </div>
+                <div v-if="item.required_details" class="checklist-note-box normal">
+                  <strong>必要内容</strong>
+                  <p>{{ item.required_details }}</p>
+                </div>
+                <div v-if="item.customer_note" class="checklist-note-box" :class="item.importance_level === 'warning' ? 'warning' : 'important'">
+                  <strong>{{ item.importance_level === 'warning' ? '要注意' : '顧客向け注意事項' }}</strong>
+                  <p>{{ item.customer_note }}</p>
+                </div>
+                <div v-if="item.internal_note" class="checklist-note-box internal">
+                  <strong>内部備考</strong>
+                  <p>{{ item.internal_note }}</p>
                 </div>
                 <div class="checklist-item-meta">
                   <span v-if="item.completed_at">完了日時：{{ formatDateTime(item.completed_at) }}</span>
@@ -955,6 +1267,102 @@ onMounted(() => {
       </el-card>
     </div>
 
+    <el-dialog v-model="statusDialogVisible" title="案件状態変更" width="560px">
+      <el-form :model="statusForm" label-position="top">
+        <el-form-item label="現在の状態">
+          <el-input :model-value="getCaseDisplayStatus(caseDetail?.status)" disabled />
+        </el-form-item>
+        <el-form-item label="新しい状態">
+          <el-select v-model="statusForm.new_status" class="form-control">
+            <el-option
+              v-for="option in caseStatusOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="変更日">
+          <el-date-picker
+            v-model="statusForm.change_date"
+            type="date"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            class="form-control"
+          />
+        </el-form-item>
+        <el-alert
+          v-if="statusWarnings.length"
+          type="warning"
+          show-icon
+          :closable="false"
+          class="status-warning-alert"
+        >
+          <template #title>確認が必要です</template>
+          <ul class="status-warning-list">
+            <li v-for="warning in statusWarnings" :key="warning.code">{{ warning.message }}</li>
+          </ul>
+        </el-alert>
+        <el-form-item label="備考">
+          <el-input v-model="statusForm.note" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-checkbox v-if="statusWarnings.length" v-model="statusForm.force">警告を確認して強制変更する</el-checkbox>
+      </el-form>
+      <template #footer>
+        <el-button @click="statusDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="statusChanging" @click="submitStatusChange">変更</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="registrationStatusDialogVisible" title="登録状態変更" width="560px">
+      <el-form :model="registrationStatusForm" label-position="top">
+        <el-form-item label="現在の登録状態">
+          <el-input :model-value="getCaseRegistrationStatusLabel(caseDetail?.registration_status)" disabled />
+        </el-form-item>
+        <el-form-item label="新しい登録状態">
+          <el-select v-model="registrationStatusForm.new_status" class="form-control">
+            <el-option
+              v-for="option in caseRegistrationStatusOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="変更日">
+          <el-date-picker
+            v-model="registrationStatusForm.change_date"
+            type="date"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            class="form-control"
+          />
+        </el-form-item>
+        <el-alert
+          v-if="registrationStatusWarnings.length"
+          type="warning"
+          show-icon
+          :closable="false"
+          class="status-warning-alert"
+        >
+          <template #title>確認が必要です</template>
+          <ul class="status-warning-list">
+            <li v-for="warning in registrationStatusWarnings" :key="warning.code">{{ warning.message }}</li>
+          </ul>
+        </el-alert>
+        <el-form-item label="備考">
+          <el-input v-model="registrationStatusForm.note" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-checkbox v-if="registrationStatusWarnings.length" v-model="registrationStatusForm.force">
+          警告を確認して強制変更する
+        </el-checkbox>
+      </el-form>
+      <template #footer>
+        <el-button @click="registrationStatusDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="registrationStatusChanging" @click="submitRegistrationStatusChange">変更</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog
       v-model="caseDateDialogVisible"
       title="案件日付情報を編集"
@@ -1023,6 +1431,7 @@ onMounted(() => {
         :rules="checklistItemRules"
         label-position="top"
       >
+        <h3 class="form-section-title">基本情報</h3>
         <div class="form-grid">
           <el-form-item label="分類" prop="category">
             <el-input v-model="checklistItemForm.category" placeholder="本人資料、会社資料など" />
@@ -1052,6 +1461,29 @@ onMounted(() => {
             <el-input-number v-model="checklistItemForm.sort_order" :min="0" :step="10" class="form-control" />
           </el-form-item>
         </div>
+        <h3 class="form-section-title">办理情報</h3>
+        <div class="form-grid">
+          <el-form-item label="準備者／担当区分" prop="responsible_party">
+            <el-select v-model="checklistItemForm.responsible_party" class="form-control">
+              <el-option
+                v-for="option in responsiblePartyOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="手続先・取得場所" prop="acquisition_place">
+            <el-input v-model="checklistItemForm.acquisition_place" placeholder="大阪南税務署、本人準備など" />
+          </el-form-item>
+        </div>
+        <el-form-item label="必要内容" prop="required_details">
+          <el-input v-model="checklistItemForm.required_details" type="textarea" :rows="3" />
+        </el-form-item>
+        <h3 class="form-section-title">顧客通知</h3>
+        <el-form-item label="顧客向け注意事項" prop="customer_note">
+          <el-input v-model="checklistItemForm.customer_note" type="textarea" :rows="3" />
+        </el-form-item>
         <div class="form-grid">
           <el-form-item label="必須" prop="is_required">
             <el-switch v-model="checklistItemForm.is_required" active-text="必須" inactive-text="任意" />
@@ -1059,9 +1491,26 @@ onMounted(() => {
           <el-form-item label="完了" prop="is_completed">
             <el-switch v-model="checklistItemForm.is_completed" active-text="完了" inactive-text="未完了" />
           </el-form-item>
+          <el-form-item label="顧客表示" prop="is_visible_to_customer">
+            <el-switch v-model="checklistItemForm.is_visible_to_customer" active-text="表示" inactive-text="非表示" />
+          </el-form-item>
+          <el-form-item label="重要レベル" prop="importance_level">
+            <el-select v-model="checklistItemForm.importance_level" class="form-control">
+              <el-option
+                v-for="option in importanceLevelOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </el-form-item>
         </div>
-        <el-form-item label="備考" prop="note">
+        <h3 class="form-section-title">内部管理</h3>
+        <el-form-item label="普通備考" prop="note">
           <el-input v-model="checklistItemForm.note" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="内部備考" prop="internal_note">
+          <el-input v-model="checklistItemForm.internal_note" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
 
@@ -1070,6 +1519,39 @@ onMounted(() => {
         <el-button type="primary" :loading="checklistItemSubmitting" @click="submitChecklistItem">
           {{ editingChecklistItemId ? '保存' : '追加' }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="customerNoticeDialogVisible" title="顧客通知文案" width="780px" class="material-notice-dialog">
+      <div class="notice-option-grid">
+        <el-form-item label="文案タイプ">
+          <el-select v-model="customerNoticeOptions.noticeType" class="form-control" @change="refreshCustomerNoticeText">
+            <el-option label="初回材料案内" value="initial" />
+            <el-option label="追加資料案内" value="additional" />
+            <el-option label="未完了資料リマインド" value="reminder" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="言語">
+          <el-select v-model="customerNoticeOptions.language" class="form-control" @change="refreshCustomerNoticeText">
+            <el-option label="中文" value="zh" />
+            <el-option label="日本語" value="ja" />
+          </el-select>
+        </el-form-item>
+      </div>
+      <div class="notice-switches">
+        <el-checkbox v-model="customerNoticeOptions.showCustomerName" @change="refreshCustomerNoticeText">顧客名</el-checkbox>
+        <el-checkbox v-model="customerNoticeOptions.showCaseType" @change="refreshCustomerNoticeText">案件種別</el-checkbox>
+        <el-checkbox v-model="customerNoticeOptions.showCaseNumber" @change="refreshCustomerNoticeText">案件番号</el-checkbox>
+        <el-checkbox v-model="customerNoticeOptions.showPlace" @change="refreshCustomerNoticeText">取得場所</el-checkbox>
+        <el-checkbox v-model="customerNoticeOptions.showRequiredDetails" @change="refreshCustomerNoticeText">必要内容</el-checkbox>
+        <el-checkbox v-model="customerNoticeOptions.showCustomerNote" @change="refreshCustomerNoticeText">注意事項</el-checkbox>
+        <el-checkbox v-model="customerNoticeOptions.onlyIncomplete" @change="refreshCustomerNoticeText">未完了のみ</el-checkbox>
+      </div>
+      <el-input v-model="customerNoticeText" type="textarea" :rows="18" />
+      <template #footer>
+        <el-button @click="customerNoticeDialogVisible = false">閉じる</el-button>
+        <el-button @click="refreshCustomerNoticeText">自動生成に戻す</el-button>
+        <el-button type="primary" @click="copyCustomerNoticeText">コピー</el-button>
       </template>
     </el-dialog>
 
@@ -1266,10 +1748,28 @@ onMounted(() => {
 
 .checklist-summary {
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
   margin-bottom: 16px;
   color: var(--el-text-color-primary);
   font-weight: 600;
+}
+
+.checklist-required-progress {
+  margin-bottom: 12px;
+}
+
+.checklist-suggestion-alert {
+  margin-bottom: 12px;
+}
+
+.status-warning-alert {
+  margin-bottom: 12px;
+}
+
+.status-warning-list {
+  padding-left: 18px;
+  margin: 6px 0 0;
 }
 
 .checklist-groups {
@@ -1287,13 +1787,30 @@ onMounted(() => {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: flex-start;
-  padding: 10px 0;
+  padding: 12px;
   border-top: 1px solid var(--el-border-color-lighter);
+  border-left: 4px solid transparent;
+  border-radius: 8px;
+  background: #f8fbfd;
+}
+
+.checklist-item.importance-important {
+  border-left-color: #e6a23c;
+  background: #fff8e8;
+}
+
+.checklist-item.importance-warning {
+  border-left-color: #f56c6c;
+  background: #fff1f0;
 }
 
 .checklist-item.is-completed .checklist-item-title > span:first-child {
   color: var(--el-text-color-secondary);
   text-decoration: line-through;
+}
+
+.checklist-item.is-completed {
+  opacity: 0.72;
 }
 
 .checklist-item-title {
@@ -1312,6 +1829,55 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.checklist-detail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.checklist-note-box {
+  padding: 8px 10px;
+  margin-top: 8px;
+  border-radius: 6px;
+  line-height: 1.55;
+}
+
+.checklist-note-box strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.checklist-note-box p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: pre-line;
+}
+
+.checklist-note-box.normal {
+  background: #eef6fb;
+}
+
+.checklist-note-box.important {
+  border-left: 3px solid #e6a23c;
+  background: #fff8e8;
+}
+
+.checklist-note-box.warning {
+  border-left: 3px solid #f56c6c;
+  background: #fff1f0;
+}
+
+.checklist-note-box.internal {
+  background: #f4f4f5;
+  color: var(--el-text-color-secondary);
+}
+
 .checklist-item-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1327,5 +1893,42 @@ onMounted(() => {
 .dialog-note {
   margin-top: 0;
   color: var(--el-text-color-secondary);
+}
+
+.form-section-title {
+  margin: 16px 0 10px;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.notice-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.notice-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 760px) {
+  :deep(.material-notice-dialog) {
+    width: 95% !important;
+  }
+
+  .notice-option-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .checklist-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .checklist-item-actions {
+    grid-column: 2;
+  }
 }
 </style>

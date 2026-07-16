@@ -4,8 +4,6 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { listCases } from '../api/cases'
-import { getCompany } from '../api/companies'
 import { getCustomer, updateCustomer } from '../api/customers'
 import { residenceStatusOptions } from '../constants/options'
 import {
@@ -210,20 +208,14 @@ const fetchCustomerDetail = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [customerData, familyMemberData, caseData] = await Promise.all([
+    const [customerData, familyMemberData] = await Promise.all([
       getCustomer(customerId.value),
       listFamilyMembers({ customer: customerId.value }),
-      listCases({ customer: customerId.value }),
     ])
     customer.value = customerData
     familyMembers.value = familyMemberData.results
-    cases.value = caseData.results
-    const companyIds = Array.from(new Set(
-      caseData.results
-        .map((caseItem) => caseItem.company)
-        .filter((companyId): companyId is number => companyId !== null),
-    ))
-    relatedCompanies.value = await Promise.all(companyIds.map((companyId) => getCompany(companyId)))
+    cases.value = customerData.related_cases
+    relatedCompanies.value = customerData.related_companies
   } catch {
     errorMessage.value = '顧客詳細の取得に失敗しました。'
   } finally {

@@ -12,6 +12,7 @@ export interface ListParams {
   status?: string
   category?: string
   ordering?: string
+  registration_status?: string
   residence_status?: string
   customer?: number
   company?: number
@@ -39,6 +40,11 @@ export interface Customer {
   cases_count: number
   created_at: string
   updated_at: string
+}
+
+export interface CustomerDetail extends Customer {
+  related_cases: Case[]
+  related_companies: Company[]
 }
 
 export interface CreateCustomerPayload {
@@ -161,7 +167,10 @@ export interface Case {
   id: number
   case_number: string
   case_type: string
-  status: string
+  registration_status: CaseRegistrationStatus
+  registration_status_display: string
+  status: CaseStatus
+  status_display: string
   customer: number
   customer_name: string
   company: number | null
@@ -176,6 +185,13 @@ export interface Case {
   task_completed_count: number
   next_task_title: string
   next_task_responsible_employee_name: string
+  required_items_total: number
+  required_items_completed: number
+  required_items_remaining: number
+  required_items_progress_percent: number
+  all_required_items_completed: boolean
+  suggested_case_status: CaseStatus | ''
+  suggestion_message: string
   created_at: string
   updated_at: string
 }
@@ -183,7 +199,8 @@ export interface Case {
 export interface CasePayload {
   case_number?: string
   case_type: string
-  status: string
+  status?: CaseStatus
+  registration_status?: CaseRegistrationStatus
   customer: number | null
   company?: number | null
   responsible_employee?: number | null
@@ -193,6 +210,52 @@ export interface CasePayload {
   completed_at?: string | null
 }
 
+export type CaseRegistrationStatus = 'active' | 'inactive' | 'archived'
+
+export type CaseStatus =
+  | 'consultation'
+  | 'accepted'
+  | 'collecting_documents'
+  | 'preparing_documents'
+  | 'ready_to_apply'
+  | 'applied'
+  | 'under_review'
+  | 'additional_documents'
+  | 'approved'
+  | 'rejected'
+  | 'withdrawn'
+  | 'completed'
+
+export interface CaseStatusChangeWarning {
+  code: string
+  message: string
+}
+
+export interface CaseStatusChangePayload {
+  new_status: string
+  change_date?: string | null
+  note?: string
+  force?: boolean
+}
+
+export interface CaseStatusChangeResponse {
+  case_id: number
+  previous_status: string
+  new_status: string
+  warnings: CaseStatusChangeWarning[]
+  timeline_created: boolean
+  forced: boolean
+  event: {
+    event_type: string
+    case_id: number
+    previous_status: string
+    new_status: string
+    changed_by: number | null
+    changed_at: string
+    metadata: Record<string, unknown>
+  }
+}
+
 export interface GenerateRemindersResponse {
   created_count: number
   skipped_count: number
@@ -200,6 +263,15 @@ export interface GenerateRemindersResponse {
 }
 
 export type CaseChecklistItemType = 'task' | 'document' | 'confirmation'
+export type CaseChecklistResponsibleParty =
+  | ''
+  | 'customer'
+  | 'company'
+  | 'our_company'
+  | 'gyousei'
+  | 'tax_accountant'
+  | 'other'
+export type CaseChecklistImportanceLevel = 'normal' | 'important' | 'warning'
 
 export interface CaseChecklistTemplateItem {
   id: number
@@ -213,6 +285,13 @@ export interface CaseChecklistTemplateItem {
   unit: string
   is_required: boolean
   description: string
+  responsible_party: CaseChecklistResponsibleParty
+  acquisition_place: string
+  required_details: string
+  internal_note: string
+  customer_note: string
+  is_visible_to_customer: boolean
+  importance_level: CaseChecklistImportanceLevel
   sort_order: number
   is_active: boolean
   can_move_up: boolean
@@ -232,6 +311,13 @@ export interface CaseChecklistTemplateItemPayload {
   unit?: string
   is_required?: boolean
   description?: string
+  responsible_party?: CaseChecklistResponsibleParty
+  acquisition_place?: string
+  required_details?: string
+  internal_note?: string
+  customer_note?: string
+  is_visible_to_customer?: boolean
+  importance_level?: CaseChecklistImportanceLevel
   sort_order?: number
   is_active?: boolean
 }
@@ -287,6 +373,13 @@ export interface CaseChecklistItem {
   completed_by: number | null
   completed_by_name: string
   note: string
+  responsible_party: CaseChecklistResponsibleParty
+  acquisition_place: string
+  required_details: string
+  internal_note: string
+  customer_note: string
+  is_visible_to_customer: boolean
+  importance_level: CaseChecklistImportanceLevel
   sort_order: number
   created_at: string
   updated_at: string
@@ -305,6 +398,13 @@ export interface CaseChecklistItemPayload {
   completed_at?: string | null
   completed_by?: number | null
   note?: string
+  responsible_party?: CaseChecklistResponsibleParty
+  acquisition_place?: string
+  required_details?: string
+  internal_note?: string
+  customer_note?: string
+  is_visible_to_customer?: boolean
+  importance_level?: CaseChecklistImportanceLevel
   sort_order?: number
 }
 

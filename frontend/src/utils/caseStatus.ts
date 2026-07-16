@@ -1,23 +1,38 @@
-import type { Case } from '../types/api'
+import type { CaseRegistrationStatus, CaseStatus } from '../types/api'
 
-type CaseStatusSource = Pick<
-  Case,
-  'status' | 'accepted_at' | 'applied_at' | 'result_notified_at' | 'completed_at'
->
+export const caseStatusOptions: Array<{ label: string, value: CaseStatus, type: 'info' | 'success' | 'warning' | 'danger' | 'primary' }> = [
+  { label: '相談中', value: 'consultation', type: 'info' },
+  { label: '受任済み', value: 'accepted', type: 'primary' },
+  { label: '資料準備中', value: 'collecting_documents', type: 'warning' },
+  { label: '書類作成中', value: 'preparing_documents', type: 'warning' },
+  { label: '申請準備完了', value: 'ready_to_apply', type: 'success' },
+  { label: '申請済み', value: 'applied', type: 'warning' },
+  { label: '審査中', value: 'under_review', type: 'warning' },
+  { label: '追加資料対応中', value: 'additional_documents', type: 'warning' },
+  { label: '許可', value: 'approved', type: 'success' },
+  { label: '不許可', value: 'rejected', type: 'danger' },
+  { label: '取下げ', value: 'withdrawn', type: 'info' },
+  { label: '完了', value: 'completed', type: 'success' },
+]
 
-export const getCaseDisplayStatus = (caseItem?: CaseStatusSource | null) => {
-  if (!caseItem) return '-'
-  if (caseItem.status === '中止') return '中止'
-  if (caseItem.completed_at) return '完了'
-  if (caseItem.result_notified_at) return '結果通知済'
-  if (caseItem.applied_at) return '申請中'
-  if (caseItem.accepted_at) return '受任中'
-  return '準備中'
-}
+export const caseRegistrationStatusOptions: Array<{ label: string, value: CaseRegistrationStatus, type: 'info' | 'success' | 'warning' }> = [
+  { label: '有効', value: 'active', type: 'success' },
+  { label: '無効', value: 'inactive', type: 'info' },
+  { label: 'アーカイブ', value: 'archived', type: 'warning' },
+]
 
-export const getCaseDisplayStatusTagType = (status: string) => {
-  if (status === '中止') return 'danger'
-  if (['結果通知済', '完了'].includes(status)) return 'success'
-  if (status === '申請中') return 'warning'
-  return 'info'
-}
+export const getCaseDisplayStatus = (status?: string | null) => (
+  caseStatusOptions.find((option) => option.value === status)?.label || status || '-'
+)
+
+export const getCaseDisplayStatusTagType = (status?: string | null) => (
+  caseStatusOptions.find((option) => option.value === status)?.type || 'info'
+)
+
+export const getCaseRegistrationStatusLabel = (status?: string | null) => (
+  caseRegistrationStatusOptions.find((option) => option.value === status)?.label || status || '-'
+)
+
+export const getCaseRegistrationStatusTagType = (status?: string | null) => (
+  caseRegistrationStatusOptions.find((option) => option.value === status)?.type || 'info'
+)

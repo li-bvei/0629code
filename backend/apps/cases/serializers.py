@@ -3,11 +3,14 @@ from rest_framework import serializers
 from apps.tasks.models import Task
 
 from .models import Case, CaseChecklistItem, CaseChecklistTemplate, CaseChecklistTemplateItem
+from .status_service import get_required_checklist_progress
 
 
 class CaseSerializer(serializers.ModelSerializer):
     case_number = serializers.CharField(read_only=True)
     status = serializers.CharField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    registration_status_display = serializers.CharField(source='get_registration_status_display', read_only=True)
     customer_name = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
     responsible_employee_name = serializers.SerializerMethodField()
@@ -15,6 +18,13 @@ class CaseSerializer(serializers.ModelSerializer):
     task_completed_count = serializers.SerializerMethodField()
     next_task_title = serializers.SerializerMethodField()
     next_task_responsible_employee_name = serializers.SerializerMethodField()
+    required_items_total = serializers.SerializerMethodField()
+    required_items_completed = serializers.SerializerMethodField()
+    required_items_remaining = serializers.SerializerMethodField()
+    required_items_progress_percent = serializers.SerializerMethodField()
+    all_required_items_completed = serializers.SerializerMethodField()
+    suggested_case_status = serializers.SerializerMethodField()
+    suggestion_message = serializers.SerializerMethodField()
 
     class Meta:
         model = Case
@@ -22,7 +32,10 @@ class CaseSerializer(serializers.ModelSerializer):
             'id',
             'case_number',
             'case_type',
+            'registration_status',
+            'registration_status_display',
             'status',
+            'status_display',
             'customer',
             'customer_name',
             'company',
@@ -37,12 +50,23 @@ class CaseSerializer(serializers.ModelSerializer):
             'task_completed_count',
             'next_task_title',
             'next_task_responsible_employee_name',
+            'required_items_total',
+            'required_items_completed',
+            'required_items_remaining',
+            'required_items_progress_percent',
+            'all_required_items_completed',
+            'suggested_case_status',
+            'suggestion_message',
             'created_at',
             'updated_at',
         ]
         read_only_fields = [
             'id',
             'case_number',
+            'registration_status',
+            'registration_status_display',
+            'status',
+            'status_display',
             'customer_name',
             'company_name',
             'responsible_employee_name',
@@ -50,9 +74,24 @@ class CaseSerializer(serializers.ModelSerializer):
             'task_completed_count',
             'next_task_title',
             'next_task_responsible_employee_name',
+            'required_items_total',
+            'required_items_completed',
+            'required_items_remaining',
+            'required_items_progress_percent',
+            'all_required_items_completed',
+            'suggested_case_status',
+            'suggestion_message',
             'created_at',
             'updated_at',
         ]
+
+    def get_required_progress(self, obj):
+        cached_name = '_case_serializer_required_progress'
+        if hasattr(obj, cached_name):
+            return getattr(obj, cached_name)
+        progress = get_required_checklist_progress(obj)
+        setattr(obj, cached_name, progress)
+        return progress
 
     def get_customer_name(self, obj):
         return obj.customer.name
@@ -99,6 +138,27 @@ class CaseSerializer(serializers.ModelSerializer):
             return ''
         return task.responsible_employee.name
 
+    def get_required_items_total(self, obj):
+        return self.get_required_progress(obj)['required_items_total']
+
+    def get_required_items_completed(self, obj):
+        return self.get_required_progress(obj)['required_items_completed']
+
+    def get_required_items_remaining(self, obj):
+        return self.get_required_progress(obj)['required_items_remaining']
+
+    def get_required_items_progress_percent(self, obj):
+        return self.get_required_progress(obj)['required_items_progress_percent']
+
+    def get_all_required_items_completed(self, obj):
+        return self.get_required_progress(obj)['all_required_items_completed']
+
+    def get_suggested_case_status(self, obj):
+        return self.get_required_progress(obj)['suggested_case_status']
+
+    def get_suggestion_message(self, obj):
+        return self.get_required_progress(obj)['suggestion_message']
+
 
 class CaseChecklistTemplateItemSerializer(serializers.ModelSerializer):
     template_name = serializers.CharField(source='template.name', read_only=True)
@@ -120,6 +180,13 @@ class CaseChecklistTemplateItemSerializer(serializers.ModelSerializer):
             'unit',
             'is_required',
             'description',
+            'responsible_party',
+            'acquisition_place',
+            'required_details',
+            'internal_note',
+            'customer_note',
+            'is_visible_to_customer',
+            'importance_level',
             'sort_order',
             'is_active',
             'can_move_up',
@@ -215,6 +282,13 @@ class CaseChecklistItemSerializer(serializers.ModelSerializer):
             'completed_by',
             'completed_by_name',
             'note',
+            'responsible_party',
+            'acquisition_place',
+            'required_details',
+            'internal_note',
+            'customer_note',
+            'is_visible_to_customer',
+            'importance_level',
             'sort_order',
             'created_at',
             'updated_at',

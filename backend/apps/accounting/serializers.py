@@ -48,9 +48,47 @@ class VehicleUsageSerializer(serializers.ModelSerializer):
 
 
 class AccountingProjectSerializer(serializers.ModelSerializer):
+    income_total = serializers.SerializerMethodField()
+    expense_total = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
+    income_count = serializers.SerializerMethodField()
+    expense_count = serializers.SerializerMethodField()
+
     class Meta:
         model = AccountingProject
         fields = '__all__'
+
+    def decimal_to_number(self, value):
+        if value is None:
+            return 0
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+
+    def get_income_total(self, obj):
+        if not obj.pk:
+            return 0
+        total = sum((income.amount for income in obj.project_incomes.all()), Decimal('0'))
+        return self.decimal_to_number(total)
+
+    def get_expense_total(self, obj):
+        if not obj.pk:
+            return 0
+        total = sum((expense.amount for expense in obj.project_expenses.all()), Decimal('0'))
+        return self.decimal_to_number(total)
+
+    def get_balance(self, obj):
+        return self.get_income_total(obj) - self.get_expense_total(obj)
+
+    def get_income_count(self, obj):
+        if not obj.pk:
+            return 0
+        return len(obj.project_incomes.all())
+
+    def get_expense_count(self, obj):
+        if not obj.pk:
+            return 0
+        return len(obj.project_expenses.all())
 
 
 class AccountingProjectDetailSerializer(serializers.ModelSerializer):

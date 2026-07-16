@@ -534,7 +534,7 @@ onMounted(async () => {
             </el-form-item>
             <el-form-item label="担当者" prop="case.responsible_employee">
               <el-select v-model="form.case.responsible_employee" clearable filterable placeholder="選択してください" class="form-control">
-                <el-option label="未設定" :value="null" />
+                <el-option label="未設定" value="" />
                 <el-option
                   v-for="employee in employees"
                   :key="employee.id"

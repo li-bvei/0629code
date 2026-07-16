@@ -540,10 +540,10 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="project-chart-grid">
+      <div class="project-chart-stack">
         <el-card shadow="never" class="accounting-card">
           <template #header>プロジェクト別収支比較</template>
-          <p class="accounting-chart-description">表示件数：上位10件を表示</p>
+          <p class="accounting-chart-description">現在のプロジェクトの収入・支出・残高を比較します。</p>
           <div v-if="projectComparisonRows.length" class="project-bar-chart">
             <div v-for="row in projectComparisonRows" :key="row.label" class="project-bar-row">
               <span class="project-bar-label">{{ row.label }}</span>
@@ -561,12 +561,22 @@ onMounted(() => {
         </el-card>
 
         <el-card shadow="never" class="accounting-card">
-          <template #header>支出構成</template>
-          <p class="accounting-chart-description">支出カテゴリ別構成</p>
-          <div v-if="expenseCategoryChartItems.length" class="accounting-chart-layout compact-chart-layout">
-            <div class="accounting-donut" :style="{ background: donutBackground }" />
+          <template #header>支出分類分析</template>
+          <p class="accounting-chart-description">支出カテゴリ別の金額と構成比を確認できます。</p>
+          <div v-if="expenseCategoryChartItems.length" class="accounting-chart-layout project-expense-analysis">
+            <div class="accounting-donut project-expense-donut" :style="{ background: donutBackground }" :title="`支出合計：${formatAmount(expenseCategoryTotal)}`">
+              <div class="accounting-donut-center">
+                <span>支出合計</span>
+                <strong class="accounting-number">{{ formatAmount(expenseCategoryTotal) }}</strong>
+              </div>
+            </div>
             <div class="accounting-chart-list">
-              <div v-for="(item, index) in expenseCategoryChartItems" :key="item.name" class="accounting-chart-row">
+              <div
+                v-for="(item, index) in expenseCategoryChartItems"
+                :key="item.name"
+                class="accounting-chart-row"
+                :title="`${item.name}：${formatAmount(item.amount)}（${chartPercent(item.amount)}）`"
+              >
                 <span class="accounting-chart-dot" :style="{ backgroundColor: chartColors[index % chartColors.length] }" />
                 <span class="accounting-chart-name">{{ item.name }}（{{ chartPercent(item.amount) }}）</span>
                 <span class="accounting-chart-amount accounting-number">{{ formatAmount(item.amount) }}</span>

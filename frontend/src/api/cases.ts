@@ -12,6 +12,8 @@ import type {
   CaseChecklistTemplateItemMoveResult,
   CaseChecklistTemplatePayload,
   CasePayload,
+  CaseStatusChangePayload,
+  CaseStatusChangeResponse,
   GenerateRemindersResponse,
   ItemNameSuggestion,
   ListParams,
@@ -56,6 +58,16 @@ export const deleteCase = async (id: number) => {
 
 export const cancelCase = async (id: number, reason: string) => {
   const response = await http.post<Case>(`/cases/${id}/cancel/`, { reason })
+  return response.data
+}
+
+export const changeCaseStatus = async (id: number, payload: CaseStatusChangePayload) => {
+  const response = await http.post<CaseStatusChangeResponse>(`/cases/${id}/change-status/`, payload)
+  return response.data
+}
+
+export const changeCaseRegistrationStatus = async (id: number, payload: CaseStatusChangePayload) => {
+  const response = await http.post<CaseStatusChangeResponse>(`/cases/${id}/change-registration-status/`, payload)
   return response.data
 }
 
