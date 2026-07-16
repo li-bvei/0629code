@@ -17,6 +17,7 @@ import type {
   ExpenseCategory,
   ExpenseCategoryPayload,
   ExpensePayload,
+  ExpenseSummary,
   IncomeSource,
   IncomeSourcePayload,
   SeifuNoticeGeneratePayload,
@@ -54,6 +55,13 @@ export const getAccountingDashboard = async () => {
 
 export const listAccountingExpenses = async (params?: AccountingListParams) => {
   const response = await http.get<AccountingPaginatedResponse<Expense>>('/accounting/expenses/', {
+    params: cleanParams(params),
+  })
+  return response.data
+}
+
+export const getAccountingExpenseSummary = async (params?: AccountingListParams) => {
+  const response = await http.get<ExpenseSummary>('/accounting/expenses/summary/', {
     params: cleanParams(params),
   })
   return response.data

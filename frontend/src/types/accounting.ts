@@ -68,6 +68,13 @@ export interface ExpensePayload {
   is_exported: boolean
 }
 
+export interface ExpenseSummary {
+  target_count: number
+  total_income: number | string
+  total_expense: number | string
+  balance: number | string
+}
+
 export interface ExpenseTargetChartItem {
   name: string
   amount: number | string

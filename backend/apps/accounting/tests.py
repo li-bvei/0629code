@@ -3,10 +3,116 @@ from decimal import Decimal
 from io import BytesIO
 from types import SimpleNamespace
 
-from django.test import SimpleTestCase
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
 from openpyxl import load_workbook
+from rest_framework.test import APIClient
 
 from .excel import ACCOUNTING_NUMBER_FORMAT, build_expenses_excel, build_project_excel
+from .models import Expense, IncomeSource
+
+
+class ExpenseSummaryApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username='accounting-summary-test',
+            password='password',
+        )
+        self.client.force_authenticate(self.user)
+
+    def test_expense_summary_returns_zero_without_rows(self):
+        response = self.client.get('/api/accounting/expenses/summary/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            'target_count': 0,
+            'total_income': 0,
+            'total_expense': 0,
+            'balance': 0,
+        })
+
+    def test_expense_summary_uses_database_totals_and_balance(self):
+        Expense.objects.create(
+            expense_date=date(2026, 7, 1),
+            place='役所',
+            category='証明書',
+            amount=Decimal('1200'),
+            payment_method='现金',
+            expense_target='王小明',
+        )
+        Expense.objects.create(
+            expense_date=date(2026, 7, 2),
+            place='交通',
+            category='交通費',
+            amount=Decimal('500'),
+            payment_method='ICOCA',
+            expense_target='王小明',
+        )
+        IncomeSource.objects.create(
+            source_date=date(2026, 7, 3),
+            source_target='王小明',
+            amount=Decimal('5000'),
+        )
+
+        response = self.client.get('/api/accounting/expenses/summary/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['target_count'], 2)
+        self.assertEqual(response.json()['total_expense'], 1700)
+        self.assertEqual(response.json()['total_income'], 5000)
+        self.assertEqual(response.json()['balance'], 3300)
+
+    def test_expense_summary_applies_date_filter_to_income_and_expense(self):
+        Expense.objects.create(
+            expense_date=date(2026, 7, 1),
+            category='証明書',
+            amount=Decimal('1200'),
+        )
+        Expense.objects.create(
+            expense_date=date(2026, 8, 1),
+            category='証明書',
+            amount=Decimal('900'),
+        )
+        IncomeSource.objects.create(source_date=date(2026, 7, 10), amount=Decimal('3000'))
+        IncomeSource.objects.create(source_date=date(2026, 8, 10), amount=Decimal('4000'))
+
+        response = self.client.get('/api/accounting/expenses/summary/', {
+            'start_date': '2026-07-01',
+            'end_date': '2026-07-31',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['target_count'], 1)
+        self.assertEqual(response.json()['total_expense'], 1200)
+        self.assertEqual(response.json()['total_income'], 3000)
+        self.assertEqual(response.json()['balance'], 1800)
+
+    def test_expense_only_filters_do_not_filter_income(self):
+        Expense.objects.create(
+            expense_date=date(2026, 7, 1),
+            category='証明書',
+            amount=Decimal('1200'),
+            is_reimbursed=False,
+        )
+        Expense.objects.create(
+            expense_date=date(2026, 7, 2),
+            category='交通費',
+            amount=Decimal('500'),
+            is_reimbursed=True,
+        )
+        IncomeSource.objects.create(source_date=date(2026, 7, 3), amount=Decimal('5000'))
+
+        response = self.client.get('/api/accounting/expenses/summary/', {
+            'category': '証明書',
+            'is_reimbursed': 'false',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['target_count'], 1)
+        self.assertEqual(response.json()['total_expense'], 1200)
+        self.assertEqual(response.json()['total_income'], 5000)
+        self.assertEqual(response.json()['balance'], 3800)
 
 
 class ProjectExcelExportTests(SimpleTestCase):

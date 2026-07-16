@@ -1,7 +1,7 @@
 from django.db import transaction
 from decimal import Decimal
 
-from django.db.models import DecimalField, Q, Sum, Value
+from django.db.models import Count, DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status
@@ -72,6 +72,21 @@ def sum_decimal(queryset, field_name, decimal_places=0):
             output_field=DecimalField(max_digits=12, decimal_places=decimal_places),
         )
     )['total']
+
+
+def build_income_source_queryset_for_expense_summary(params):
+    queryset = IncomeSource.objects.all()
+    if params.get('start_date'):
+        queryset = queryset.filter(source_date__gte=params['start_date'])
+    if params.get('end_date'):
+        queryset = queryset.filter(source_date__lte=params['end_date'])
+    is_exported = parse_bool(params.get('is_exported'))
+    if is_exported is not None:
+        queryset = queryset.filter(is_exported=is_exported)
+    if params.get('search'):
+        keyword = params['search']
+        queryset = queryset.filter(Q(source_target__icontains=keyword) | Q(note__icontains=keyword))
+    return queryset
 
 
 def build_expense_chart(group_field):
@@ -205,6 +220,29 @@ class ExpenseViewSet(ModelViewSet):
             filters=self.build_excel_filter_summary(),
             generated_at=timezone.localtime(timezone.now()),
         )
+
+    @action(detail=False, methods=['get'], url_path='summary')
+    def summary(self, request):
+        expense_summary = self.get_queryset().order_by().aggregate(
+            target_count=Count('id'),
+            total_expense=Coalesce(
+                Sum('amount'),
+                Value(0),
+                output_field=DecimalField(max_digits=12, decimal_places=0),
+            ),
+        )
+        total_income = sum_decimal(
+            build_income_source_queryset_for_expense_summary(request.query_params).order_by(),
+            'amount',
+        )
+        total_expense = expense_summary['total_expense'] or Decimal('0')
+
+        return Response({
+            'target_count': expense_summary['target_count'] or 0,
+            'total_income': decimal_to_number(total_income),
+            'total_expense': decimal_to_number(total_expense),
+            'balance': decimal_to_number(total_income - total_expense),
+        })
 
 
 class IncomeSourceViewSet(ModelViewSet):

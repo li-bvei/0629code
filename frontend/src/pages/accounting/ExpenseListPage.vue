@@ -9,6 +9,7 @@ import {
   createAccountingExpense,
   deleteAccountingExpense,
   downloadAccountingExpensesExcel,
+  getAccountingExpenseSummary,
   listAccountingExpenseCategories,
   listAccountingExpenses,
 } from '../../api/accounting'
@@ -66,10 +67,13 @@ const batchText = ref('')
 const batchRows = ref<BatchExpenseRow[]>([])
 const batchSubmitting = ref(false)
 const exporting = ref(false)
+const summaryLoading = ref(true)
+const summaryLoaded = ref(false)
+let summaryRequestId = 0
 const summary = ref({
   count: 0,
-  totalAmount: 0,
-  unreimbursedAmount: 0,
+  totalExpense: 0,
+  balance: 0,
 })
 
 const paymentMethodOptions = ['现金', '信用卡', '银行转账', 'PayPay', 'ICOCA', '公司账户', '个人垫付', '其他']
@@ -132,6 +136,32 @@ const fetchExpenses = async (page = currentPage.value) => {
   }
 }
 
+const refreshExpenseSummary = async () => {
+  const requestId = ++summaryRequestId
+  summaryLoading.value = true
+  try {
+    const data = await getAccountingExpenseSummary(filters.value)
+    if (requestId !== summaryRequestId) return
+    summary.value = {
+      count: data.target_count,
+      totalExpense: Number(data.total_expense || 0),
+      balance: Number(data.balance || 0),
+    }
+    summaryLoaded.value = true
+  } catch {
+    if (requestId !== summaryRequestId) return
+    ElMessage.error('支出集計の取得に失敗しました。')
+  } finally {
+    if (requestId === summaryRequestId) {
+      summaryLoading.value = false
+    }
+  }
+}
+
+const loadExpensesWithSummary = async (page = currentPage.value) => {
+  await Promise.all([fetchExpenses(page), refreshExpenseSummary()])
+}
+
 const fetchCategories = async () => {
   try {
     const data = await listAccountingExpenseCategories({ is_active: true })
@@ -142,8 +172,7 @@ const fetchCategories = async () => {
 }
 
 const searchExpenses = () => {
-  fetchExpenses(1)
-  refreshExpenseSummary()
+  loadExpensesWithSummary(1)
 }
 
 const clearFilters = () => {
@@ -155,41 +184,7 @@ const clearFilters = () => {
     payment_method: '',
     is_reimbursed: '',
   }
-  fetchExpenses(1)
-  refreshExpenseSummary()
-}
-
-const fetchAllExpensesForExport = async () => {
-  const rows: Expense[] = []
-  let page = 1
-
-  while (true) {
-    const data = await listAccountingExpenses({ ...filters.value, page })
-    rows.push(...data.results)
-    if (rows.length >= data.count || !data.results.length) break
-    page += 1
-  }
-
-  return rows
-}
-
-const refreshExpenseSummary = async () => {
-  try {
-    const rows = await fetchAllExpensesForExport()
-    summary.value = {
-      count: rows.length,
-      totalAmount: rows.reduce((total, row) => total + Number(row.amount || 0), 0),
-      unreimbursedAmount: rows
-        .filter((row) => !row.is_reimbursed)
-        .reduce((total, row) => total + Number(row.amount || 0), 0),
-    }
-  } catch {
-    summary.value = {
-      count: 0,
-      totalAmount: 0,
-      unreimbursedAmount: 0,
-    }
-  }
+  loadExpensesWithSummary(1)
 }
 
 const exportExpenses = async () => {
@@ -220,8 +215,7 @@ const submitAddExpense = async () => {
     await createAccountingExpense(addForm.value)
     ElMessage.success('支出記録を作成しました。')
     addDialogVisible.value = false
-    await fetchExpenses(1)
-    await refreshExpenseSummary()
+    await loadExpensesWithSummary(1)
   } catch {
     ElMessage.error('支出記録の作成に失敗しました。')
   } finally {
@@ -326,8 +320,7 @@ const submitBatch = async () => {
   }
 
   batchSubmitting.value = false
-  await fetchExpenses(1)
-  await refreshExpenseSummary()
+  await loadExpensesWithSummary(1)
   ElMessage.success(`追加完了：成功 ${successCount} 件、失敗 ${failedCount} 件`)
   if (failedCount === 0) {
     batchDialogVisible.value = false
@@ -343,8 +336,7 @@ const confirmDelete = async (expense: Expense) => {
     })
     await deleteAccountingExpense(expense.id)
     ElMessage.success('支出記録を削除しました。')
-    await fetchExpenses(currentPage.value)
-    await refreshExpenseSummary()
+    await loadExpensesWithSummary(currentPage.value)
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('支出記録の削除に失敗しました。')
@@ -353,8 +345,7 @@ const confirmDelete = async (expense: Expense) => {
 }
 
 onMounted(() => {
-  fetchExpenses()
-  refreshExpenseSummary()
+  loadExpensesWithSummary()
   fetchCategories()
 })
 </script>
@@ -421,15 +412,19 @@ onMounted(() => {
       <div class="accounting-summary-strip">
         <div class="accounting-summary-pill">
           <span>対象件数</span>
-          <strong>{{ summary.count.toLocaleString() }}件</strong>
+          <strong>{{ summaryLoaded || !summaryLoading ? `${summary.count.toLocaleString()}件` : '読込中' }}</strong>
         </div>
         <div class="accounting-summary-pill">
           <span>支出合計</span>
-          <strong class="accounting-number">{{ formatAccountingNumber(summary.totalAmount) }}</strong>
+          <strong class="accounting-number">
+            {{ summaryLoaded || !summaryLoading ? formatAccountingNumber(summary.totalExpense) : '読込中' }}
+          </strong>
         </div>
         <div class="accounting-summary-pill">
-          <span>未精算合計</span>
-          <strong class="accounting-number">{{ formatAccountingNumber(summary.unreimbursedAmount) }}</strong>
+          <span>帳面残高</span>
+          <strong class="accounting-number">
+            {{ summaryLoaded || !summaryLoading ? formatAccountingNumber(summary.balance) : '読込中' }}
+          </strong>
         </div>
       </div>
 
