@@ -72,6 +72,42 @@ docker compose --env-file .env.prod exec backend python manage.py collectstatic 
 - Docker Compose: `docker-compose.yml`
 - Deployment doc: `docs/DEPLOY.md`
 
+### 案件・担当設定管理
+
+当前统一入口:
+
+- Menu: 案件業務 -> 案件・担当設定管理
+- Route: `/case-checklists`
+- Page: `frontend/src/pages/CaseChecklistTemplatesPage.vue`
+
+页面一级分类:
+
+- 案件関連設定
+- 担当者管理
+
+案件関連設定包含:
+
+- 案件種別: `CaseTypeMaster`
+- 申請区分: `CaseApplicationCategory`
+- 案件進捗: `CaseStatusSetting`
+- Checklistテンプレート: `CaseChecklistTemplate` / `CaseChecklistTemplateItem`
+- 取得場所: `AcquisitionPlacePreset`
+- 準備者区分: `ResponsiblePartyPreset`
+
+担当者管理复用:
+
+- `employees.Employee`
+
+案件番号生成:
+
+- 新建案件使用 `Case.case_type_master` 与 `Case.application_category`。
+- 最终格式: `{案件種別略称}-{申請区分略称}-{YYYYMM}-{顧客名}-{4位流水番号}`。
+- YYYYMM 来源为创建时 `timezone.now()` 的东京时间年月。
+- 流水号按完整前缀递增。
+- 旧 `Case.case_type` 字符串字段保留用于历史显示兼容。
+- 现有案件番号不自动重算。
+- 案件详情提供受控操作「案件番号を再生成」，会创建 Timeline「案件番号変更」。
+
 ### 当前重要目录结构
 
 ```text

@@ -4,13 +4,22 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  createAcquisitionPlacePreset,
+  createCaseApplicationCategory,
   createCaseChecklistTemplate,
   createCaseChecklistTemplateItem,
+  createCaseTypeMaster,
+  createResponsiblePartyPreset,
+  listAcquisitionPlacePresets,
+  listCaseApplicationCategories,
   listCaseChecklistItemNameSuggestions,
   listCaseChecklistItemOptions,
   listCaseChecklistDeletionHistory,
   listCaseChecklistTemplateItems,
   listCaseChecklistTemplates,
+  listCaseStatusSettings,
+  listCaseTypeMasters,
+  listResponsiblePartyPresets,
   moveCaseChecklistTemplateItemDown,
   moveCaseChecklistTemplateItemUp,
   restoreCaseChecklistTemplate,
@@ -18,17 +27,30 @@ import {
   seedStandardCaseChecklistTemplates,
   softDeleteCaseChecklistTemplate,
   softDeleteCaseChecklistTemplateItem,
+  updateAcquisitionPlacePreset,
+  updateCaseApplicationCategory,
   updateCaseChecklistTemplate,
   updateCaseChecklistTemplateItem,
+  updateCaseStatusSetting,
+  updateCaseTypeMaster,
+  updateResponsiblePartyPreset,
 } from '../api/cases'
+import { createEmployee, listEmployees, updateEmployee } from '../api/employees'
 import type {
+  AcquisitionPlacePreset,
+  CaseApplicationCategory,
   CaseChecklistDeletionHistoryItem,
   CaseChecklistItemType,
   CaseChecklistTemplate,
   CaseChecklistTemplateItem,
   CaseChecklistTemplateItemPayload,
   CaseChecklistTemplatePayload,
+  CaseStatusSetting,
+  CaseTypeMaster,
+  Employee,
+  EmployeePayload,
   ItemNameSuggestion,
+  ResponsiblePartyPreset,
 } from '../types/api'
 import { formatDateTime } from '../utils/date'
 
@@ -64,6 +86,29 @@ const categoryCandidates = ref<string[]>([])
 let templateRequestId = 0
 let templateItemRequestId = 0
 let deletionHistoryRequestId = 0
+const caseSettingTab = ref('case-types')
+const caseTypes = ref<CaseTypeMaster[]>([])
+const applicationCategories = ref<CaseApplicationCategory[]>([])
+const caseStatusSettings = ref<CaseStatusSetting[]>([])
+const acquisitionPlacePresets = ref<AcquisitionPlacePreset[]>([])
+const responsiblePartyPresets = ref<ResponsiblePartyPreset[]>([])
+const employees = ref<Employee[]>([])
+const settingDialogVisible = ref(false)
+const settingDialogType = ref<'case-type' | 'application-category' | 'status' | 'acquisition-place' | 'responsible-party' | 'employee'>('case-type')
+const editingSettingId = ref<number | null>(null)
+const settingFormRef = ref<FormInstance>()
+const settingSubmitting = ref(false)
+const settingForm = ref({
+  name: '',
+  code: '',
+  number_abbreviation: '',
+  display_name: '',
+  sort_order: 0,
+  is_active: true,
+  is_visible: true,
+  email: '',
+  phone: '',
+})
 
 const presetCategories = [
   '本人資料',
@@ -162,6 +207,38 @@ const itemRules: FormRules<CaseChecklistTemplateItemPayload> = {
   item_type: [{ required: true, message: '項目タイプを選択してください。', trigger: 'change' }],
 }
 
+const settingRules: FormRules = {
+  name: [{ required: true, message: '名称を入力してください。', trigger: 'blur' }],
+  display_name: [{ required: true, message: '表示名を入力してください。', trigger: 'blur' }],
+}
+
+const usageNotes = {
+  caseType: {
+    use: ['案件一覧 ＞ 新規案件 ＞ 案件種別', '顧客詳細 ＞ 案件を追加 ＞ 案件種別', '会社詳細 ＞ 案件を追加 ＞ 案件種別', '案件基本情報 ＞ 編集 ＞ 案件種別'],
+    impact: ['新規案件の案件種別選択肢', '案件番号の案件種別略称'],
+  },
+  applicationCategory: {
+    use: ['案件一覧 ＞ 新規案件 ＞ 申請区分', '顧客詳細 ＞ 案件を追加 ＞ 申請区分', '会社詳細 ＞ 案件を追加 ＞ 申請区分', '案件基本情報 ＞ 編集 ＞ 申請区分'],
+    impact: ['新規案件の申請区分選択肢', '案件番号の申請区分略称'],
+  },
+  status: {
+    use: ['案件詳細 ＞ 進捗変更', '案件一覧 ＞ 現在の進捗筛选', '案件一覧 ＞ 進捗表示', '顧客詳細 ＞ 関連案件', '会社詳細 ＞ 関連案件'],
+    impact: ['表示名・表示順・表示可否のみ変更できます', '内部コードと日付連動ルールは変更できません'],
+  },
+  checklist: {
+    use: ['案件詳細 ＞ 案件進捗・必要資料', '案件詳細 ＞ テンプレートから追加', '顧客向け材料案内', '顧客通知文案'],
+    impact: ['Checklistテンプレートと項目', '取得場所・準備者・必要内容・顧客注意事項'],
+  },
+  presets: {
+    use: ['Checklistテンプレート項目 ＞ 手続先・取得場所', '案件実際事項 ＞ 手続先・取得場所', 'Checklistテンプレート項目 ＞ 準備者／担当区分', '案件実際事項 ＞ 準備者／担当区分'],
+    impact: ['有効な预设は選択肢に表示', '自由入力と歴史テキストは保持'],
+  },
+  employee: {
+    use: ['案件一覧 ＞ 新規案件 ＞ 担当者', '顧客詳細 ＞ 案件を追加 ＞ 担当者', '会社詳細 ＞ 案件を追加 ＞ 担当者', '案件基本情報 ＞ 編集 ＞ 担当者', '案件一覧 ＞ 担当者筛选'],
+    impact: ['有効な担当者は新規・編集フォームに表示', '無効担当者は新規選択肢から除外され、歴史案件では氏名表示を保持'],
+  },
+}
+
 const selectedTemplate = computed(() => (
   templates.value.find((template) => template.id === selectedTemplateId.value) || null
 ))
@@ -192,6 +269,152 @@ const getImportanceOption = (level: string) => (
 const getImportanceLabel = (level: string) => getImportanceOption(level).label
 
 const normalizeOptionText = (value: string) => value.trim().replace(/\s+/g, ' ')
+
+const formatApiError = (error: unknown, fallback: string) => {
+  const data = (error as { response?: { data?: unknown } })?.response?.data
+  if (!data || typeof data !== 'object') return fallback
+  const message = Object.entries(data as Record<string, unknown>).map(([field, value]) => {
+    if (Array.isArray(value)) return `${field}：${value.join('、')}`
+    if (typeof value === 'string') return `${field}：${value}`
+    return `${field}：${JSON.stringify(value)}`
+  }).join('\n')
+  return message || fallback
+}
+
+const fetchSettingData = async () => {
+  try {
+    const [
+      caseTypeData,
+      applicationCategoryData,
+      statusData,
+      acquisitionPlaceData,
+      responsiblePartyData,
+      employeeData,
+    ] = await Promise.all([
+      listCaseTypeMasters({ ordering: 'sort_order' }),
+      listCaseApplicationCategories({ ordering: 'sort_order' }),
+      listCaseStatusSettings({ ordering: 'sort_order' }),
+      listAcquisitionPlacePresets({ ordering: 'sort_order' }),
+      listResponsiblePartyPresets({ ordering: 'sort_order' }),
+      listEmployees(),
+    ])
+    caseTypes.value = caseTypeData.results
+    applicationCategories.value = applicationCategoryData.results
+    caseStatusSettings.value = statusData.results
+    acquisitionPlacePresets.value = acquisitionPlaceData.results
+    responsiblePartyPresets.value = responsiblePartyData.results
+    employees.value = employeeData.results
+  } catch {
+    ElMessage.error('設定データの取得に失敗しました。')
+  }
+}
+
+const resetSettingForm = () => {
+  editingSettingId.value = null
+  settingForm.value = {
+    name: '',
+    code: '',
+    number_abbreviation: '',
+    display_name: '',
+    sort_order: 0,
+    is_active: true,
+    is_visible: true,
+    email: '',
+    phone: '',
+  }
+  settingFormRef.value?.clearValidate()
+}
+
+const openSettingDialog = (
+  type: typeof settingDialogType.value,
+  row?: CaseTypeMaster | CaseApplicationCategory | CaseStatusSetting | AcquisitionPlacePreset | ResponsiblePartyPreset | Employee,
+) => {
+  resetSettingForm()
+  settingDialogType.value = type
+  if (row) {
+    editingSettingId.value = row.id
+    settingForm.value.name = 'name' in row ? row.name : ''
+    settingForm.value.code = 'code' in row ? row.code : ''
+    settingForm.value.number_abbreviation = 'number_abbreviation' in row ? row.number_abbreviation : ''
+    settingForm.value.display_name = 'display_name' in row ? row.display_name : ''
+    settingForm.value.sort_order = 'sort_order' in row ? row.sort_order : 0
+    settingForm.value.is_active = 'is_active' in row ? row.is_active : true
+    settingForm.value.is_visible = 'is_visible' in row ? row.is_visible : true
+    settingForm.value.email = 'email' in row ? row.email : ''
+    settingForm.value.phone = 'phone' in row ? row.phone : ''
+  }
+  settingDialogVisible.value = true
+}
+
+const submitSetting = async () => {
+  if (!settingFormRef.value) return
+  const valid = await settingFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  settingSubmitting.value = true
+  try {
+    const id = editingSettingId.value
+    if (settingDialogType.value === 'case-type') {
+      const payload = {
+        name: settingForm.value.name.trim(),
+        code: settingForm.value.code.trim() || undefined,
+        number_abbreviation: settingForm.value.number_abbreviation.trim(),
+        sort_order: settingForm.value.sort_order,
+        is_active: settingForm.value.is_active,
+      }
+      if (id) await updateCaseTypeMaster(id, payload)
+      else await createCaseTypeMaster(payload)
+    } else if (settingDialogType.value === 'application-category') {
+      const payload = {
+        name: settingForm.value.name.trim(),
+        code: settingForm.value.code.trim() || undefined,
+        number_abbreviation: settingForm.value.number_abbreviation.trim(),
+        sort_order: settingForm.value.sort_order,
+        is_active: settingForm.value.is_active,
+      }
+      if (id) await updateCaseApplicationCategory(id, payload)
+      else await createCaseApplicationCategory(payload)
+    } else if (settingDialogType.value === 'status') {
+      if (id) await updateCaseStatusSetting(id, {
+        display_name: settingForm.value.display_name.trim(),
+        sort_order: settingForm.value.sort_order,
+        is_visible: settingForm.value.is_visible,
+      })
+    } else if (settingDialogType.value === 'acquisition-place') {
+      const payload = {
+        name: settingForm.value.name.trim(),
+        sort_order: settingForm.value.sort_order,
+        is_active: settingForm.value.is_active,
+      }
+      if (id) await updateAcquisitionPlacePreset(id, payload)
+      else await createAcquisitionPlacePreset(payload)
+    } else if (settingDialogType.value === 'responsible-party') {
+      const payload = {
+        name: settingForm.value.name.trim(),
+        code: settingForm.value.code.trim() || undefined,
+        sort_order: settingForm.value.sort_order,
+        is_active: settingForm.value.is_active,
+      }
+      if (id) await updateResponsiblePartyPreset(id, payload)
+      else await createResponsiblePartyPreset(payload)
+    } else if (settingDialogType.value === 'employee') {
+      const payload: EmployeePayload = {
+        name: settingForm.value.name.trim(),
+        email: settingForm.value.email.trim(),
+        phone: settingForm.value.phone.trim(),
+        is_active: settingForm.value.is_active,
+      }
+      if (id) await updateEmployee(id, payload)
+      else await createEmployee(payload)
+    }
+    ElMessage.success('設定を保存しました。')
+    settingDialogVisible.value = false
+    await fetchSettingData()
+  } catch (error) {
+    ElMessage.error(formatApiError(error, '設定の保存に失敗しました。'))
+  } finally {
+    settingSubmitting.value = false
+  }
+}
 
 const fetchItemOptions = async () => {
   try {
@@ -809,6 +1032,7 @@ const generateDemoData = async () => {
 }
 
 onMounted(() => {
+  fetchSettingData()
   fetchItemOptions()
   fetchTemplates()
   fetchDeletionHistory()
@@ -819,15 +1043,107 @@ onMounted(() => {
   <section class="page-section">
     <div class="page-header page-header-row">
       <div>
-        <h1>案件事項管理</h1>
-        <p>案件ごとの手続事項、必要資料、確認事項のテンプレートを管理します。</p>
-        <p class="page-note">標準の案件事項テンプレートを一括で取り込めます。</p>
+        <h1>案件・担当設定管理</h1>
+        <p>案件業務で使用する案件種別、申請区分、案件進捗、Checklist、取得場所、準備者区分、担当者を管理します。</p>
+        <p class="page-note">各設定の使用場所と影響範囲を確認しながら変更できます。</p>
       </div>
       <div class="header-actions">
         <el-button type="primary" :loading="demoSeedSubmitting" @click="generateDemoData">標準テンプレート取込</el-button>
         <el-button type="primary" @click="openCreateTemplateDialog">新規テンプレート追加</el-button>
       </div>
     </div>
+
+    <el-card shadow="never" class="settings-section-card">
+      <template #header><h2>案件関連設定</h2></template>
+      <el-tabs v-model="caseSettingTab" class="settings-secondary-tabs">
+        <el-tab-pane label="案件種別" name="case-types">
+          <el-alert type="info" show-icon :closable="false" class="usage-alert">
+            <template #title>
+              使用場所：{{ usageNotes.caseType.use.join(' / ') }}<br>
+              影響範囲：{{ usageNotes.caseType.impact.join(' / ') }}
+            </template>
+          </el-alert>
+          <div class="setting-card-header"><span>案件種別</span><el-button type="primary" @click="openSettingDialog('case-type')">新規追加</el-button></div>
+          <el-table :data="caseTypes" stripe>
+            <el-table-column prop="name" label="表示名称" min-width="180" />
+            <el-table-column prop="code" label="内部code" min-width="160" />
+            <el-table-column prop="number_abbreviation" label="案件番号略称" width="130" />
+            <el-table-column prop="sort_order" label="順番" width="90" />
+            <el-table-column label="状態" width="90"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '無効' }}</el-tag></template></el-table-column>
+            <el-table-column label="操作" width="90"><template #default="{ row }"><el-button text type="primary" @click="openSettingDialog('case-type', row)">編集</el-button></template></el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="申請区分" name="application-categories">
+          <el-alert type="info" show-icon :closable="false" class="usage-alert">
+            <template #title>
+              使用場所：{{ usageNotes.applicationCategory.use.join(' / ') }}<br>
+              影響範囲：{{ usageNotes.applicationCategory.impact.join(' / ') }}
+            </template>
+          </el-alert>
+          <div class="setting-card-header"><span>申請区分</span><el-button type="primary" @click="openSettingDialog('application-category')">新規追加</el-button></div>
+          <el-table :data="applicationCategories" stripe>
+            <el-table-column prop="name" label="表示名称" min-width="180" />
+            <el-table-column prop="code" label="内部code" min-width="160" />
+            <el-table-column prop="number_abbreviation" label="案件番号略称" width="130" />
+            <el-table-column prop="sort_order" label="順番" width="90" />
+            <el-table-column label="状態" width="90"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '無効' }}</el-tag></template></el-table-column>
+            <el-table-column label="操作" width="90"><template #default="{ row }"><el-button text type="primary" @click="openSettingDialog('application-category', row)">編集</el-button></template></el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="案件進捗" name="case-status">
+          <el-alert type="info" show-icon :closable="false" class="usage-alert">
+            <template #title>
+              使用場所：{{ usageNotes.status.use.join(' / ') }}<br>
+              影響範囲：{{ usageNotes.status.impact.join(' / ') }}
+            </template>
+          </el-alert>
+          <el-table :data="caseStatusSettings" stripe>
+            <el-table-column prop="display_name" label="表示名" min-width="180" />
+            <el-table-column prop="code" label="内部code" min-width="180" />
+            <el-table-column prop="sort_order" label="順番" width="90" />
+            <el-table-column label="表示" width="90"><template #default="{ row }"><el-tag :type="row.is_visible ? 'success' : 'info'">{{ row.is_visible ? '表示' : '非表示' }}</el-tag></template></el-table-column>
+            <el-table-column label="操作" width="90"><template #default="{ row }"><el-button text type="primary" @click="openSettingDialog('status', row)">編集</el-button></template></el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="取得場所・準備者区分" name="presets">
+          <el-alert type="info" show-icon :closable="false" class="usage-alert">
+            <template #title>
+              使用場所：{{ usageNotes.presets.use.join(' / ') }}<br>
+              影響範囲：{{ usageNotes.presets.impact.join(' / ') }}
+            </template>
+          </el-alert>
+          <div class="settings-two-column">
+            <div>
+              <div class="setting-card-header"><span>取得場所</span><el-button type="primary" @click="openSettingDialog('acquisition-place')">新規追加</el-button></div>
+              <el-table :data="acquisitionPlacePresets" stripe>
+                <el-table-column prop="name" label="名称" min-width="170" />
+                <el-table-column prop="sort_order" label="順番" width="80" />
+                <el-table-column label="状態" width="80"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '無効' }}</el-tag></template></el-table-column>
+                <el-table-column label="操作" width="90"><template #default="{ row }"><el-button text type="primary" @click="openSettingDialog('acquisition-place', row)">編集</el-button></template></el-table-column>
+              </el-table>
+            </div>
+            <div>
+              <div class="setting-card-header"><span>準備者区分</span><el-button type="primary" @click="openSettingDialog('responsible-party')">新規追加</el-button></div>
+              <el-table :data="responsiblePartyPresets" stripe>
+                <el-table-column prop="name" label="名称" min-width="150" />
+                <el-table-column prop="code" label="code" min-width="120" />
+                <el-table-column prop="sort_order" label="順番" width="80" />
+                <el-table-column label="状態" width="80"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '無効' }}</el-tag></template></el-table-column>
+                <el-table-column label="操作" width="90"><template #default="{ row }"><el-button text type="primary" @click="openSettingDialog('responsible-party', row)">編集</el-button></template></el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+
+    <el-alert type="info" show-icon :closable="false" class="usage-alert">
+      <template #title>
+        Checklistテンプレート<br>
+        使用場所：{{ usageNotes.checklist.use.join(' / ') }}<br>
+        影響範囲：{{ usageNotes.checklist.impact.join(' / ') }}
+      </template>
+    </el-alert>
 
     <el-card shadow="never" class="filter-card">
       <div class="filter-row">
@@ -1013,6 +1329,77 @@ onMounted(() => {
       </div>
       <p v-if="!deletionTotal" class="empty-text compact-empty-text">削除履歴はありません。</p>
     </el-card>
+
+    <el-card shadow="never" class="settings-section-card">
+      <template #header><h2>担当者管理</h2></template>
+      <el-alert type="info" show-icon :closable="false" class="usage-alert">
+        <template #title>
+          案件の担当者として選択する社員・スタッフを管理します。<br>
+          使用場所：{{ usageNotes.employee.use.join(' / ') }}<br>
+          影響範囲：{{ usageNotes.employee.impact.join(' / ') }}
+        </template>
+      </el-alert>
+      <div class="setting-card-header"><span>担当者</span><el-button type="primary" @click="openSettingDialog('employee')">新規追加</el-button></div>
+      <el-table :data="employees" stripe>
+        <el-table-column prop="name" label="氏名" min-width="160" />
+        <el-table-column prop="email" label="メール" min-width="220"><template #default="{ row }">{{ row.email || '-' }}</template></el-table-column>
+        <el-table-column prop="phone" label="電話" min-width="150"><template #default="{ row }">{{ row.phone || '-' }}</template></el-table-column>
+        <el-table-column label="有効状態" width="110"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '無効' }}</el-tag></template></el-table-column>
+        <el-table-column label="更新日時" min-width="160"><template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template></el-table-column>
+        <el-table-column label="操作" width="90" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="openSettingDialog('employee', row)">編集</el-button></template></el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-dialog
+      v-model="settingDialogVisible"
+      title="設定編集"
+      width="560px"
+      @closed="resetSettingForm"
+    >
+      <el-form ref="settingFormRef" :model="settingForm" :rules="settingRules" label-position="top">
+        <template v-if="settingDialogType === 'status'">
+          <el-form-item label="内部code">
+            <el-input v-model="settingForm.code" disabled />
+          </el-form-item>
+          <el-form-item label="表示名" prop="display_name">
+            <el-input v-model="settingForm.display_name" />
+          </el-form-item>
+          <el-form-item label="表示順">
+            <el-input-number v-model="settingForm.sort_order" :min="0" class="form-control" />
+          </el-form-item>
+          <el-form-item label="表示可否">
+            <el-switch v-model="settingForm.is_visible" active-text="表示" inactive-text="非表示" />
+          </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="名称" prop="name">
+            <el-input v-model="settingForm.name" />
+          </el-form-item>
+          <el-form-item v-if="['case-type', 'application-category', 'responsible-party'].includes(settingDialogType)" label="内部code">
+            <el-input v-model="settingForm.code" :disabled="!!editingSettingId" placeholder="作成後は変更できません" />
+          </el-form-item>
+          <el-form-item v-if="['case-type', 'application-category'].includes(settingDialogType)" label="案件番号略称">
+            <el-input v-model="settingForm.number_abbreviation" />
+          </el-form-item>
+          <el-form-item v-if="settingDialogType === 'employee'" label="メール">
+            <el-input v-model="settingForm.email" />
+          </el-form-item>
+          <el-form-item v-if="settingDialogType === 'employee'" label="電話">
+            <el-input v-model="settingForm.phone" />
+          </el-form-item>
+          <el-form-item v-if="settingDialogType !== 'employee'" label="表示順">
+            <el-input-number v-model="settingForm.sort_order" :min="0" class="form-control" />
+          </el-form-item>
+          <el-form-item label="有効状態">
+            <el-switch v-model="settingForm.is_active" active-text="有効" inactive-text="無効" />
+          </el-form-item>
+        </template>
+      </el-form>
+      <template #footer>
+        <el-button @click="settingDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="settingSubmitting" @click="submitSetting">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="templateDialogVisible"
@@ -1221,6 +1608,30 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.settings-section-card,
+.usage-alert {
+  margin-bottom: 16px;
+}
+
+.settings-section-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.setting-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .checklist-layout {
   display: grid;
   grid-template-columns: minmax(360px, 0.9fr) minmax(520px, 1.4fr);

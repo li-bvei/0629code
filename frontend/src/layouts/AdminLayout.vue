@@ -19,7 +19,6 @@ import {
   Setting,
   Tickets,
   User,
-  UserFilled,
   Van,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
@@ -80,7 +79,7 @@ const handleLogout = async () => {
           </el-menu-item>
           <el-menu-item index="/case-checklists">
             <el-icon><List /></el-icon>
-            <span>案件事項管理</span>
+            <span>案件・担当設定管理</span>
           </el-menu-item>
           <el-menu-item index="/customers">
             <el-icon><User /></el-icon>
@@ -89,10 +88,6 @@ const handleLogout = async () => {
           <el-menu-item index="/companies">
             <el-icon><OfficeBuilding /></el-icon>
             <span>会社管理</span>
-          </el-menu-item>
-          <el-menu-item index="/employees">
-            <el-icon><UserFilled /></el-icon>
-            <span>担当者管理</span>
           </el-menu-item>
           <el-menu-item index="/tasks">
             <el-icon><Checked /></el-icon>

@@ -4,8 +4,10 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { listCases } from '../api/cases'
+import { createCase, listCaseApplicationCategories, listCases, listCaseTypeMasters } from '../api/cases'
 import { getCompany } from '../api/companies'
+import { listCustomers } from '../api/customers'
+import { listEmployees } from '../api/employees'
 import {
   createCompanyStaff,
   deleteCompanyStaff,
@@ -13,7 +15,7 @@ import {
   updateCompanyStaff,
 } from '../api/companyStaff'
 import { residenceStatusOptions } from '../constants/options'
-import type { Case, Company, CompanyStaff, CompanyStaffPayload } from '../types/api'
+import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, Customer, Employee } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -27,6 +29,20 @@ const staffSubmitting = ref(false)
 const staffDialogVisible = ref(false)
 const editingStaffId = ref<number | null>(null)
 const staffFormRef = ref<FormInstance>()
+const caseDialogVisible = ref(false)
+const caseSubmitting = ref(false)
+const caseFormRef = ref<FormInstance>()
+const customers = ref<Customer[]>([])
+const employees = ref<Employee[]>([])
+const caseTypes = ref<CaseTypeMaster[]>([])
+const applicationCategories = ref<CaseApplicationCategory[]>([])
+const caseForm = ref<CasePayload>({
+  case_type_master: null,
+  application_category: null,
+  customer: null,
+  company: null,
+  responsible_employee: null,
+})
 
 const companyId = computed(() => Number(route.params.id))
 
@@ -59,6 +75,12 @@ const staffRules: FormRules<CompanyStaffPayload> = {
   name: [{ required: true, message: '氏名を入力してください。', trigger: 'blur' }],
 }
 
+const caseRules: FormRules<CasePayload> = {
+  case_type_master: [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
+  application_category: [{ required: true, message: '申請区分を選択してください。', trigger: 'change' }],
+  customer: [{ required: true, message: '顧客を選択してください。', trigger: 'change' }],
+}
+
 const displayValue = (value?: string | null) => value || '-'
 const formatFiscalMonth = (value?: string | null) => (value ? `${value}月` : '-')
 const getRepresentativeName = (companyData: Company) => (
@@ -87,6 +109,55 @@ const fetchCompanyDetail = async () => {
 const fetchStaffMembers = async () => {
   const data = await listCompanyStaff({ company: companyId.value })
   staffMembers.value = data.results
+}
+
+const fetchCaseOptions = async () => {
+  const [customerData, employeeData, caseTypeData, applicationCategoryData] = await Promise.all([
+    listCustomers(),
+    listEmployees({ is_active: true }),
+    listCaseTypeMasters({ is_active: true, ordering: 'sort_order' }),
+    listCaseApplicationCategories({ is_active: true, ordering: 'sort_order' }),
+  ])
+  customers.value = customerData.results
+  employees.value = employeeData.results
+  caseTypes.value = caseTypeData.results
+  applicationCategories.value = applicationCategoryData.results
+}
+
+const openCreateCaseDialog = async () => {
+  if (!customers.value.length || !caseTypes.value.length || !applicationCategories.value.length) {
+    await fetchCaseOptions()
+  }
+  caseForm.value = {
+    case_type_master: null,
+    application_category: null,
+    customer: null,
+    company: companyId.value,
+    responsible_employee: null,
+  }
+  caseFormRef.value?.clearValidate()
+  caseDialogVisible.value = true
+}
+
+const submitCase = async () => {
+  if (!caseFormRef.value) return
+  const valid = await caseFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  caseSubmitting.value = true
+  try {
+    await createCase({
+      ...caseForm.value,
+      company: companyId.value,
+      responsible_employee: caseForm.value.responsible_employee || null,
+    })
+    ElMessage.success('案件を追加しました。')
+    caseDialogVisible.value = false
+    await fetchCompanyDetail()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '案件の追加に失敗しました。')
+  } finally {
+    caseSubmitting.value = false
+  }
 }
 
 const resetStaffForm = () => {
@@ -300,7 +371,12 @@ onMounted(() => {
       </el-card>
 
       <el-card shadow="never">
-        <template #header>関連案件</template>
+        <template #header>
+          <div class="card-header-row">
+            <span>関連案件</span>
+            <el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button>
+          </div>
+        </template>
         <el-table :data="relatedCases" stripe>
           <el-table-column label="案件番号" min-width="150">
             <template #default="{ row }">
@@ -409,6 +485,35 @@ onMounted(() => {
         <el-button type="primary" :loading="staffSubmitting" @click="submitStaff">
           {{ editingStaffId ? '保存' : '追加' }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="caseDialogVisible" title="案件追加" width="560px">
+      <el-form ref="caseFormRef" :model="caseForm" :rules="caseRules" label-position="top">
+        <el-form-item label="案件種別" prop="case_type_master">
+          <el-select v-model="caseForm.case_type_master" filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="caseType in caseTypes" :key="caseType.id" :label="caseType.name" :value="caseType.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="申請区分" prop="application_category">
+          <el-select v-model="caseForm.application_category" filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="category in applicationCategories" :key="category.id" :label="category.name" :value="category.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="顧客" prop="customer">
+          <el-select v-model="caseForm.customer" filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="customer in customers" :key="customer.id" :label="customer.name" :value="customer.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="担当者">
+          <el-select v-model="caseForm.responsible_employee" clearable filterable placeholder="未指定" class="form-control">
+            <el-option v-for="employee in employees" :key="employee.id" :label="employee.name" :value="employee.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="caseDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="caseSubmitting" @click="submitCase">追加</el-button>
       </template>
     </el-dialog>
   </section>

@@ -4,7 +4,9 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
+import { createCase, listCaseApplicationCategories, listCaseTypeMasters } from '../api/cases'
 import { getCustomer, updateCustomer } from '../api/customers'
+import { listEmployees } from '../api/employees'
 import { residenceStatusOptions } from '../constants/options'
 import {
   createFamilyMember,
@@ -12,7 +14,7 @@ import {
   listFamilyMembers,
   updateFamilyMember,
 } from '../api/familyMembers'
-import type { Case, Company, Customer, FamilyMember, FamilyMemberPayload, UpdateCustomerPayload } from '../types/api'
+import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, Customer, Employee, FamilyMember, FamilyMemberPayload, UpdateCustomerPayload } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -30,6 +32,19 @@ const familySubmitting = ref(false)
 const familyDialogVisible = ref(false)
 const editingFamilyMemberId = ref<number | null>(null)
 const familyFormRef = ref<FormInstance>()
+const caseDialogVisible = ref(false)
+const caseSubmitting = ref(false)
+const caseFormRef = ref<FormInstance>()
+const caseTypes = ref<CaseTypeMaster[]>([])
+const applicationCategories = ref<CaseApplicationCategory[]>([])
+const employees = ref<Employee[]>([])
+const caseForm = ref<CasePayload>({
+  case_type_master: null,
+  application_category: null,
+  customer: null,
+  company: null,
+  responsible_employee: null,
+})
 const familyForm = ref<FamilyMemberPayload>({
   customer: 0,
   relationship: '',
@@ -148,6 +163,10 @@ const familyRules: FormRules<FamilyMemberPayload> = {
   relationship: [{ required: true, message: '関係を選択してください。', trigger: 'change' }],
   name: [{ required: true, message: '氏名を入力してください。', trigger: 'blur' }],
 }
+const caseRules: FormRules<CasePayload> = {
+  case_type_master: [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
+  application_category: [{ required: true, message: '申請区分を選択してください。', trigger: 'change' }],
+}
 
 const formatGender = (gender?: string | null) => {
   const labels: Record<string, string> = {
@@ -220,6 +239,54 @@ const fetchCustomerDetail = async () => {
     errorMessage.value = '顧客詳細の取得に失敗しました。'
   } finally {
     loading.value = false
+  }
+}
+
+const fetchCaseOptions = async () => {
+  const [caseTypeData, applicationCategoryData, employeeData] = await Promise.all([
+    listCaseTypeMasters({ is_active: true, ordering: 'sort_order' }),
+    listCaseApplicationCategories({ is_active: true, ordering: 'sort_order' }),
+    listEmployees({ is_active: true }),
+  ])
+  caseTypes.value = caseTypeData.results
+  applicationCategories.value = applicationCategoryData.results
+  employees.value = employeeData.results
+}
+
+const openCreateCaseDialog = async () => {
+  if (!caseTypes.value.length || !applicationCategories.value.length) {
+    await fetchCaseOptions()
+  }
+  caseForm.value = {
+    case_type_master: null,
+    application_category: null,
+    customer: customerId.value,
+    company: relatedCompanies.value[0]?.id || null,
+    responsible_employee: null,
+  }
+  caseFormRef.value?.clearValidate()
+  caseDialogVisible.value = true
+}
+
+const submitCase = async () => {
+  if (!caseFormRef.value) return
+  const valid = await caseFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  caseSubmitting.value = true
+  try {
+    await createCase({
+      ...caseForm.value,
+      customer: customerId.value,
+      company: caseForm.value.company || null,
+      responsible_employee: caseForm.value.responsible_employee || null,
+    })
+    ElMessage.success('案件を追加しました。')
+    caseDialogVisible.value = false
+    await fetchCustomerDetail()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '案件の追加に失敗しました。')
+  } finally {
+    caseSubmitting.value = false
   }
 }
 
@@ -519,7 +586,12 @@ onMounted(() => {
       </el-card>
 
       <el-card shadow="never">
-        <template #header>関連案件</template>
+        <template #header>
+          <div class="card-header-row">
+            <span>関連案件</span>
+            <el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button>
+          </div>
+        </template>
         <el-table :data="relatedCases" stripe>
           <el-table-column label="案件番号" min-width="150">
             <template #default="{ row }">
@@ -759,6 +831,35 @@ onMounted(() => {
         <el-button type="primary" :loading="familySubmitting" @click="submitFamilyMember">
           {{ editingFamilyMemberId ? '保存' : '追加' }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="caseDialogVisible" title="案件追加" width="560px">
+      <el-form ref="caseFormRef" :model="caseForm" :rules="caseRules" label-position="top">
+        <el-form-item label="案件種別" prop="case_type_master">
+          <el-select v-model="caseForm.case_type_master" filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="caseType in caseTypes" :key="caseType.id" :label="caseType.name" :value="caseType.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="申請区分" prop="application_category">
+          <el-select v-model="caseForm.application_category" filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="category in applicationCategories" :key="category.id" :label="category.name" :value="category.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="会社">
+          <el-select v-model="caseForm.company" clearable filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="company in relatedCompanies" :key="company.id" :label="company.name" :value="company.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="担当者">
+          <el-select v-model="caseForm.responsible_employee" clearable filterable placeholder="未指定" class="form-control">
+            <el-option v-for="employee in employees" :key="employee.id" :label="employee.name" :value="employee.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="caseDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="caseSubmitting" @click="submitCase">追加</el-button>
       </template>
     </el-dialog>
   </section>

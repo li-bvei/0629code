@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { createCase, deleteCase, listCases, updateCase } from '../api/cases'
+import { createCase, deleteCase, listCaseApplicationCategories, listCases, listCaseTypeMasters, updateCase } from '../api/cases'
 import { listCompanies } from '../api/companies'
 import { listCustomers } from '../api/customers'
 import { listEmployees } from '../api/employees'
-import { caseTypeOptions } from '../constants/options'
-import type { Case, CasePayload, Company, Customer, Employee } from '../types/api'
+import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, Customer, Employee } from '../types/api'
 import {
-  caseRegistrationStatusOptions,
   getCaseDisplayStatus,
   getCaseDisplayStatusTagType,
   getCaseRegistrationStatusLabel,
@@ -27,6 +25,8 @@ const cases = ref<Case[]>([])
 const customers = ref<Customer[]>([])
 const companies = ref<Company[]>([])
 const employees = ref<Employee[]>([])
+const caseTypes = ref<CaseTypeMaster[]>([])
+const applicationCategories = ref<CaseApplicationCategory[]>([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 20
@@ -34,11 +34,12 @@ const dialogVisible = ref(false)
 const editingCaseId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
 const filters = ref({
-  registration_status: 'active',
+  view: 'incomplete',
 })
 const caseForm = ref<CasePayload>({
   case_number: '',
-  case_type: '',
+  case_type_master: null,
+  application_category: null,
   customer: null,
   company: null,
   responsible_employee: null,
@@ -49,18 +50,58 @@ const caseForm = ref<CasePayload>({
 })
 
 const rules: FormRules<CasePayload> = {
-  case_type: [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
+  case_type_master: [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
+  application_category: [{ required: true, message: '申請区分を選択してください。', trigger: 'change' }],
   customer: [{ required: true, message: '顧客を選択してください。', trigger: 'change' }],
+}
+
+const caseWorkViewOptions = [
+  { label: '未完了', value: 'incomplete' },
+  { label: '完了', value: 'completed' },
+  { label: 'すべて', value: 'all' },
+]
+
+const shouldShowRegistrationStatus = computed(() => (
+  filters.value.view === 'all'
+))
+
+const getCaseProgressNumber = (caseItem: Case) => {
+  if (caseItem.status === 'approved') return caseItem.permission_number || '-'
+  if (caseItem.status === 'applied') return caseItem.application_receipt_number || '-'
+  return caseItem.application_receipt_number || caseItem.permission_number || '-'
+}
+
+const fieldLabels: Record<string, string> = {
+  case_type: '案件種別',
+  case_type_master: '案件種別',
+  application_category: '申請区分',
+  customer: '顧客',
+  company: '会社',
+  responsible_employee: '担当者',
+  accepted_at: '受任日',
+  status: '現在の進捗',
+  registration_status: '登録状態',
+  case_number: '案件番号',
+}
+
+const formatApiError = (error: unknown, fallback: string) => {
+  const data = (error as { response?: { data?: unknown } })?.response?.data
+  if (!data || typeof data !== 'object') return fallback
+  return Object.entries(data as Record<string, unknown>)
+    .map(([field, messages]) => {
+      const label = fieldLabels[field] || field
+      if (Array.isArray(messages)) return `${label}：${messages.join('、')}`
+      if (typeof messages === 'string') return `${label}：${messages}`
+      return `${label}：${JSON.stringify(messages)}`
+    })
+    .join('\n') || fallback
 }
 
 const fetchCases = async (page = currentPage.value) => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const params = { page } as { page: number; registration_status?: string }
-    if (['active', 'inactive', 'archived'].includes(filters.value.registration_status)) {
-      params.registration_status = filters.value.registration_status
-    }
+    const params = { page, view: filters.value.view } as { page: number; view: string }
     const data = await listCases(params)
     cases.value = data.results
     total.value = data.count
@@ -72,16 +113,24 @@ const fetchCases = async (page = currentPage.value) => {
   }
 }
 
+const handleWorkViewChange = () => {
+  fetchCases(1)
+}
+
 const fetchSelectOptions = async () => {
   try {
-    const [customerData, companyData, employeeData] = await Promise.all([
+    const [customerData, companyData, employeeData, caseTypeData, applicationCategoryData] = await Promise.all([
       listCustomers(),
       listCompanies(),
       listEmployees({ is_active: true }),
+      listCaseTypeMasters({ is_active: true, ordering: 'sort_order' }),
+      listCaseApplicationCategories({ is_active: true, ordering: 'sort_order' }),
     ])
     customers.value = customerData.results
     companies.value = companyData.results
     employees.value = employeeData.results
+    caseTypes.value = caseTypeData.results
+    applicationCategories.value = applicationCategoryData.results
   } catch {
     ElMessage.error('選択肢の取得に失敗しました。')
   }
@@ -96,7 +145,8 @@ const resetForm = () => {
   editingCaseId.value = null
   caseForm.value = {
     case_number: '',
-    case_type: '',
+    case_type_master: null,
+    application_category: null,
     customer: null,
     company: null,
     responsible_employee: null,
@@ -117,7 +167,8 @@ const openEditDialog = (caseItem: Case) => {
   editingCaseId.value = caseItem.id
   caseForm.value = {
     case_number: caseItem.case_number,
-    case_type: caseItem.case_type,
+    case_type_master: caseItem.case_type_master,
+    application_category: caseItem.application_category,
     customer: caseItem.customer,
     company: caseItem.company,
     responsible_employee: caseItem.responsible_employee,
@@ -139,7 +190,8 @@ const submitCase = async () => {
   submitting.value = true
   try {
     const payload: CasePayload = {
-      case_type: caseForm.value.case_type,
+      case_type_master: caseForm.value.case_type_master,
+      application_category: caseForm.value.application_category,
       customer: caseForm.value.customer,
       company: caseForm.value.company || null,
       responsible_employee: caseForm.value.responsible_employee || null,
@@ -157,8 +209,11 @@ const submitCase = async () => {
     }
     dialogVisible.value = false
     await fetchCases(editingCaseId.value ? currentPage.value : 1)
-  } catch {
-    ElMessage.error(editingCaseId.value ? '案件の更新に失敗しました。' : '案件の作成に失敗しました。')
+  } catch (error) {
+    ElMessage.error(formatApiError(
+      error,
+      editingCaseId.value ? '案件の更新に失敗しました。' : '案件の作成に失敗しました。',
+    ))
   } finally {
     submitting.value = false
   }
@@ -197,10 +252,9 @@ const confirmDeleteCase = async (caseItem: Case) => {
 
     <el-card shadow="never">
       <div class="case-list-filter-row">
-        <el-select v-model="filters.registration_status" class="case-registration-filter" @change="fetchCases(1)">
-          <el-option label="すべて" value="" />
+        <el-select v-model="filters.view" class="case-registration-filter" @change="handleWorkViewChange">
           <el-option
-            v-for="option in caseRegistrationStatusOptions"
+            v-for="option in caseWorkViewOptions"
             :key="option.value"
             :label="option.label"
             :value="option.value"
@@ -223,7 +277,7 @@ const confirmDeleteCase = async (caseItem: Case) => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="登録状態" width="110">
+        <el-table-column v-if="shouldShowRegistrationStatus" label="登録状態" width="110">
           <template #default="{ row }">
             <el-tag :type="getCaseRegistrationStatusTagType(row.registration_status)" effect="plain">
               {{ getCaseRegistrationStatusLabel(row.registration_status) }}
@@ -260,6 +314,17 @@ const confirmDeleteCase = async (caseItem: Case) => {
         </el-table-column>
         <el-table-column prop="responsible_employee_name" label="担当者" min-width="140">
           <template #default="{ row }">{{ row.responsible_employee_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="進捗日" width="130">
+          <template #default="{ row }">{{ formatDate(row.progress_started_at) }}</template>
+        </el-table-column>
+        <el-table-column label="受付番号 / 許可番号" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ getCaseProgressNumber(row) }}</template>
+        </el-table-column>
+        <el-table-column label="審査期間" width="110">
+          <template #default="{ row }">
+            {{ row.review_duration_days === null ? '-' : `${row.review_duration_days}日` }}
+          </template>
         </el-table-column>
         <el-table-column label="タスク進捗" width="120">
           <template #default="{ row }">
@@ -320,20 +385,33 @@ const confirmDeleteCase = async (caseItem: Case) => {
           <el-form-item label="案件番号" prop="case_number">
             <el-input :model-value="editingCaseId ? caseForm.case_number : '自動生成'" disabled />
           </el-form-item>
-          <el-form-item label="案件種別" prop="case_type">
+          <el-form-item label="案件種別" prop="case_type_master">
             <el-select
-              v-model="caseForm.case_type"
+              v-model="caseForm.case_type_master"
               filterable
-              allow-create
-              default-first-option
               placeholder="選択してください"
               class="form-control"
             >
               <el-option
-                v-for="caseType in caseTypeOptions"
-                :key="caseType"
-                :label="caseType"
-                :value="caseType"
+                v-for="caseType in caseTypes"
+                :key="caseType.id"
+                :label="caseType.name"
+                :value="caseType.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="申請区分" prop="application_category">
+            <el-select
+              v-model="caseForm.application_category"
+              filterable
+              placeholder="選択してください"
+              class="form-control"
+            >
+              <el-option
+                v-for="category in applicationCategories"
+                :key="category.id"
+                :label="category.name"
+                :value="category.id"
               />
             </el-select>
           </el-form-item>

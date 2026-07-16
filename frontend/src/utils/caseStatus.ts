@@ -1,18 +1,19 @@
 import type { CaseRegistrationStatus, CaseStatus } from '../types/api'
 
 export const caseStatusOptions: Array<{ label: string, value: CaseStatus, type: 'info' | 'success' | 'warning' | 'danger' | 'primary' }> = [
-  { label: '相談中', value: 'consultation', type: 'info' },
-  { label: '受任済み', value: 'accepted', type: 'primary' },
   { label: '資料準備中', value: 'collecting_documents', type: 'warning' },
-  { label: '書類作成中', value: 'preparing_documents', type: 'warning' },
-  { label: '申請準備完了', value: 'ready_to_apply', type: 'success' },
   { label: '申請済み', value: 'applied', type: 'warning' },
-  { label: '審査中', value: 'under_review', type: 'warning' },
   { label: '追加資料対応中', value: 'additional_documents', type: 'warning' },
+  { label: '追加資料提出済み', value: 'additional_documents_submitted', type: 'primary' },
   { label: '許可', value: 'approved', type: 'success' },
   { label: '不許可', value: 'rejected', type: 'danger' },
   { label: '取下げ', value: 'withdrawn', type: 'info' },
   { label: '完了', value: 'completed', type: 'success' },
+  { label: '相談中', value: 'consultation', type: 'info' },
+  { label: '受任済み', value: 'accepted', type: 'primary' },
+  { label: '書類作成中', value: 'preparing_documents', type: 'warning' },
+  { label: '申請準備完了', value: 'ready_to_apply', type: 'success' },
+  { label: '審査中', value: 'under_review', type: 'warning' },
 ]
 
 export const caseRegistrationStatusOptions: Array<{ label: string, value: CaseRegistrationStatus, type: 'info' | 'success' | 'warning' }> = [

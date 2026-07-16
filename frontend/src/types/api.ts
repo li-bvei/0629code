@@ -13,6 +13,7 @@ export interface ListParams {
   category?: string
   ordering?: string
   registration_status?: string
+  view?: string
   residence_status?: string
   customer?: number
   company?: number
@@ -167,6 +168,12 @@ export interface Case {
   id: number
   case_number: string
   case_type: string
+  case_type_master: number | null
+  case_type_master_name: string
+  case_type_number_abbreviation: string
+  application_category: number | null
+  application_category_name: string
+  application_category_number_abbreviation: string
   registration_status: CaseRegistrationStatus
   registration_status_display: string
   status: CaseStatus
@@ -177,10 +184,30 @@ export interface Case {
   company_name: string
   responsible_employee: number | null
   responsible_employee_name: string
+  consulted_at: string | null
   accepted_at: string | null
+  document_collection_started_at: string | null
+  documents_completed_at: string | null
+  application_ready_at: string | null
   applied_at: string | null
+  application_authority: string
+  application_receipt_number: string
+  permission_number: string
+  review_started_at: string | null
+  expected_result_at: string | null
+  additional_documents_requested_at: string | null
+  additional_documents_due_at: string | null
+  additional_documents_submitted_at: string | null
+  additional_documents_detail: string
   result_notified_at: string | null
+  result_received_at: string | null
+  result_note: string
+  withdrawn_at: string | null
   completed_at: string | null
+  archived_at: string | null
+  status_changed_at: string | null
+  next_action: string
+  next_action_due_at: string | null
   task_total_count: number
   task_completed_count: number
   next_task_title: string
@@ -192,22 +219,135 @@ export interface Case {
   all_required_items_completed: boolean
   suggested_case_status: CaseStatus | ''
   suggestion_message: string
+  progress_started_at: string | null
+  progress_elapsed_days: number
+  progress_remaining_days: number | null
+  is_overdue: boolean
+  attention_priority: number
+  review_duration_days: number | null
+  days_until_additional_request: number | null
+  additional_documents_duration_days: number | null
+  total_processing_days: number | null
   created_at: string
   updated_at: string
 }
 
 export interface CasePayload {
   case_number?: string
-  case_type: string
+  case_type?: string
+  case_type_master?: number | null
+  application_category?: number | null
   status?: CaseStatus
   registration_status?: CaseRegistrationStatus
   customer: number | null
   company?: number | null
   responsible_employee?: number | null
+  consulted_at?: string | null
   accepted_at?: string | null
+  document_collection_started_at?: string | null
+  documents_completed_at?: string | null
+  application_ready_at?: string | null
   applied_at?: string | null
+  application_authority?: string
+  application_receipt_number?: string
+  permission_number?: string
+  review_started_at?: string | null
+  expected_result_at?: string | null
+  additional_documents_requested_at?: string | null
+  additional_documents_due_at?: string | null
+  additional_documents_submitted_at?: string | null
+  additional_documents_detail?: string
   result_notified_at?: string | null
+  result_received_at?: string | null
+  result_note?: string
+  withdrawn_at?: string | null
   completed_at?: string | null
+  archived_at?: string | null
+  status_changed_at?: string | null
+  next_action?: string
+  next_action_due_at?: string | null
+}
+
+export interface CaseTypeMaster {
+  id: number
+  name: string
+  code: string
+  number_abbreviation: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseTypeMasterPayload {
+  name: string
+  code?: string
+  number_abbreviation?: string
+  sort_order?: number
+  is_active?: boolean
+}
+
+export interface CaseApplicationCategory {
+  id: number
+  name: string
+  code: string
+  number_abbreviation: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseApplicationCategoryPayload {
+  name: string
+  code?: string
+  number_abbreviation?: string
+  sort_order?: number
+  is_active?: boolean
+}
+
+export interface CaseStatusSetting {
+  id: number
+  code: CaseStatus
+  display_name: string
+  sort_order: number
+  is_visible: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseStatusSettingPayload {
+  display_name?: string
+  sort_order?: number
+  is_visible?: boolean
+}
+
+export interface CaseSimplePreset {
+  id: number
+  name: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type AcquisitionPlacePreset = CaseSimplePreset
+
+export interface AcquisitionPlacePresetPayload {
+  name: string
+  sort_order?: number
+  is_active?: boolean
+}
+
+export interface ResponsiblePartyPreset extends CaseSimplePreset {
+  code: string
+}
+
+export interface ResponsiblePartyPresetPayload {
+  name: string
+  code?: string
+  sort_order?: number
+  is_active?: boolean
 }
 
 export type CaseRegistrationStatus = 'active' | 'inactive' | 'archived'
@@ -221,6 +361,7 @@ export type CaseStatus =
   | 'applied'
   | 'under_review'
   | 'additional_documents'
+  | 'additional_documents_submitted'
   | 'approved'
   | 'rejected'
   | 'withdrawn'
@@ -236,6 +377,25 @@ export interface CaseStatusChangePayload {
   change_date?: string | null
   note?: string
   force?: boolean
+  next_action?: string
+  next_action_due_at?: string | null
+  status_payload?: CaseStatusPayload
+}
+
+export interface CaseStatusPayload {
+  applied_at?: string | null
+  application_authority?: string
+  application_receipt_number?: string
+  permission_number?: string
+  expected_result_at?: string | null
+  additional_documents_requested_at?: string | null
+  additional_documents_due_at?: string | null
+  additional_documents_detail?: string
+  additional_documents_submitted_at?: string | null
+  result_received_at?: string | null
+  result_note?: string
+  withdrawn_at?: string | null
+  completed_at?: string | null
 }
 
 export interface CaseStatusChangeResponse {

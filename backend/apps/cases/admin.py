@@ -1,6 +1,56 @@
 from django.contrib import admin
 
-from .models import Case, CaseChecklistItem, CaseChecklistTemplate, CaseChecklistTemplateItem
+from .models import (
+    AcquisitionPlacePreset,
+    Case,
+    CaseApplicationCategory,
+    CaseChecklistItem,
+    CaseChecklistTemplate,
+    CaseChecklistTemplateItem,
+    CaseStatusSetting,
+    CaseTypeMaster,
+    ResponsiblePartyPreset,
+)
+
+
+@admin.register(CaseTypeMaster)
+class CaseTypeMasterAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'number_abbreviation', 'sort_order', 'is_active', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'code', 'number_abbreviation')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(CaseApplicationCategory)
+class CaseApplicationCategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'number_abbreviation', 'sort_order', 'is_active', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'code', 'number_abbreviation')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(CaseStatusSetting)
+class CaseStatusSettingAdmin(admin.ModelAdmin):
+    list_display = ('display_name', 'code', 'sort_order', 'is_visible', 'updated_at')
+    list_filter = ('is_visible',)
+    search_fields = ('display_name', 'code')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(AcquisitionPlacePreset)
+class AcquisitionPlacePresetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'sort_order', 'is_active', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('name',)
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(ResponsiblePartyPreset)
+class ResponsiblePartyPresetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'sort_order', 'is_active', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'code')
+    readonly_fields = ('created_at', 'updated_at')
 
 
 @admin.register(Case)
@@ -8,6 +58,8 @@ class CaseAdmin(admin.ModelAdmin):
     list_display = (
         'case_number',
         'case_type',
+        'case_type_master',
+        'application_category',
         'status',
         'customer',
         'company',
@@ -18,7 +70,7 @@ class CaseAdmin(admin.ModelAdmin):
         'completed_at',
         'updated_at',
     )
-    list_filter = ('status', 'case_type')
+    list_filter = ('status', 'case_type', 'case_type_master', 'application_category')
     search_fields = (
         'case_number',
         'case_type',
@@ -26,7 +78,7 @@ class CaseAdmin(admin.ModelAdmin):
         'company__name',
         'responsible_employee__name',
     )
-    autocomplete_fields = ('customer', 'company', 'responsible_employee')
+    autocomplete_fields = ('customer', 'company', 'responsible_employee', 'case_type_master', 'application_category')
     readonly_fields = ('created_at', 'updated_at')
 
 

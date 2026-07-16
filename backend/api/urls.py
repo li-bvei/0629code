@@ -2,10 +2,15 @@ from rest_framework.routers import DefaultRouter
 from django.urls import include, path
 
 from apps.cases.views import (
+    AcquisitionPlacePresetViewSet,
+    CaseApplicationCategoryViewSet,
     CaseChecklistItemViewSet,
     CaseChecklistTemplateItemViewSet,
     CaseChecklistTemplateViewSet,
+    CaseStatusSettingViewSet,
+    CaseTypeMasterViewSet,
     CaseViewSet,
+    ResponsiblePartyPresetViewSet,
     case_checklist_deletion_history,
     seed_case_checklist_demo_view,
 )
@@ -25,6 +30,11 @@ router.register('companies', CompanyViewSet, basename='company')
 router.register('company-staff', CompanyStaffViewSet, basename='company-staff')
 router.register('employees', EmployeeViewSet, basename='employee')
 router.register('cases', CaseViewSet, basename='case')
+router.register('case-type-masters', CaseTypeMasterViewSet, basename='case-type-master')
+router.register('case-application-categories', CaseApplicationCategoryViewSet, basename='case-application-category')
+router.register('case-status-settings', CaseStatusSettingViewSet, basename='case-status-setting')
+router.register('case-acquisition-place-presets', AcquisitionPlacePresetViewSet, basename='case-acquisition-place-preset')
+router.register('case-responsible-party-presets', ResponsiblePartyPresetViewSet, basename='case-responsible-party-preset')
 router.register('case-checklist-templates', CaseChecklistTemplateViewSet, basename='case-checklist-template')
 router.register('case-checklist-template-items', CaseChecklistTemplateItemViewSet, basename='case-checklist-template-item')
 router.register('case-checklist-items', CaseChecklistItemViewSet, basename='case-checklist-item')

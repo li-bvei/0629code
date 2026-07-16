@@ -1,4 +1,86 @@
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
+
+
+class CaseTypeMaster(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    code = models.SlugField(max_length=80, unique=True)
+    number_abbreviation = models.CharField(max_length=20, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'case_type_masters'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class CaseApplicationCategory(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    code = models.SlugField(max_length=80, unique=True)
+    number_abbreviation = models.CharField(max_length=20, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'case_application_categories'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class CaseStatusSetting(models.Model):
+    code = models.CharField(max_length=40, unique=True)
+    display_name = models.CharField(max_length=80)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_visible = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'case_status_settings'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.display_name
+
+
+class AcquisitionPlacePreset(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'case_acquisition_place_presets'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class ResponsiblePartyPreset(models.Model):
+    name = models.CharField(max_length=80, unique=True)
+    code = models.CharField(max_length=40, unique=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'case_responsible_party_presets'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
 
 
 class Case(models.Model):
@@ -13,6 +95,7 @@ class Case(models.Model):
     STATUS_APPLIED = 'applied'
     STATUS_UNDER_REVIEW = 'under_review'
     STATUS_ADDITIONAL_DOCUMENTS = 'additional_documents'
+    STATUS_ADDITIONAL_DOCUMENTS_SUBMITTED = 'additional_documents_submitted'
     STATUS_APPROVED = 'approved'
     STATUS_REJECTED = 'rejected'
     STATUS_WITHDRAWN = 'withdrawn'
@@ -36,6 +119,7 @@ class Case(models.Model):
         (STATUS_APPLIED, '申請済み'),
         (STATUS_UNDER_REVIEW, '審査中'),
         (STATUS_ADDITIONAL_DOCUMENTS, '追加資料対応中'),
+        (STATUS_ADDITIONAL_DOCUMENTS_SUBMITTED, '追加資料提出済み'),
         (STATUS_APPROVED, '許可'),
         (STATUS_REJECTED, '不許可'),
         (STATUS_WITHDRAWN, '取下げ'),
@@ -44,13 +128,27 @@ class Case(models.Model):
 
     case_number = models.CharField(max_length=120, unique=True)
     case_type = models.CharField(max_length=100)
+    case_type_master = models.ForeignKey(
+        CaseTypeMaster,
+        on_delete=models.PROTECT,
+        related_name='cases',
+        blank=True,
+        null=True,
+    )
+    application_category = models.ForeignKey(
+        CaseApplicationCategory,
+        on_delete=models.PROTECT,
+        related_name='cases',
+        blank=True,
+        null=True,
+    )
     registration_status = models.CharField(
         max_length=20,
         choices=REGISTRATION_STATUS_CHOICES,
         default=REGISTRATION_STATUS_ACTIVE,
     )
     status = models.CharField(
-        max_length=20,
+        max_length=30,
         choices=STATUS_CHOICES,
         default=STATUS_ACCEPTED,
     )
@@ -73,10 +171,30 @@ class Case(models.Model):
         blank=True,
         null=True,
     )
+    consulted_at = models.DateField('相談日', blank=True, null=True)
     accepted_at = models.DateField(blank=True, null=True)
+    document_collection_started_at = models.DateField('資料待ち開始日', blank=True, null=True)
+    documents_completed_at = models.DateField('必要資料完了日', blank=True, null=True)
+    application_ready_at = models.DateField('申請準備完了日', blank=True, null=True)
     applied_at = models.DateField('申請日', blank=True, null=True)
+    application_authority = models.CharField('申請先', max_length=150, blank=True)
+    application_receipt_number = models.CharField('受付番号', max_length=100, blank=True)
+    permission_number = models.CharField('許可番号', max_length=100, blank=True)
+    review_started_at = models.DateField('審査開始日', blank=True, null=True)
+    expected_result_at = models.DateField('結果予定日', blank=True, null=True)
+    additional_documents_requested_at = models.DateField('追加資料依頼日', blank=True, null=True)
+    additional_documents_due_at = models.DateField('追加資料期限', blank=True, null=True)
+    additional_documents_submitted_at = models.DateField('追加資料提出日', blank=True, null=True)
+    additional_documents_detail = models.TextField('追加資料内容', blank=True)
     result_notified_at = models.DateField('結果通知日', blank=True, null=True)
+    result_received_at = models.DateField('結果受領日', blank=True, null=True)
+    result_note = models.TextField('結果備考', blank=True)
+    withdrawn_at = models.DateField('取下げ日', blank=True, null=True)
     completed_at = models.DateField('完了日', blank=True, null=True)
+    archived_at = models.DateField('アーカイブ日', blank=True, null=True)
+    status_changed_at = models.DateField('進捗変更日', blank=True, null=True)
+    next_action = models.TextField('次の対応', blank=True)
+    next_action_due_at = models.DateField('対応期限', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -88,10 +206,15 @@ class Case(models.Model):
         return self.case_number
 
     @classmethod
-    def generate_case_number(cls, case_type='', customer=None, created_at=None):
+    def generate_case_number(cls, case_type_master=None, application_category=None, customer=None, created_at=None):
         from .utils import generate_case_number
 
-        return generate_case_number(case_type, customer=customer, created_at=created_at)
+        return generate_case_number(
+            case_type_master=case_type_master,
+            application_category=application_category,
+            customer=customer,
+            created_at=created_at,
+        )
 
     def save(self, *args, **kwargs):
         if self.case_number or self.pk:
@@ -99,7 +222,15 @@ class Case(models.Model):
             return
 
         for attempt in range(3):
-            self.case_number = self.generate_case_number(self.case_type, customer=self.customer)
+            if self.case_type_master and not self.case_type:
+                self.case_type = self.case_type_master.name
+            if not self.case_type_master or not self.application_category:
+                raise ValidationError('案件種別と申請区分を選択してください。')
+            self.case_number = self.generate_case_number(
+                case_type_master=self.case_type_master,
+                application_category=self.application_category,
+                customer=self.customer,
+            )
             try:
                 with transaction.atomic():
                     super().save(*args, **kwargs)

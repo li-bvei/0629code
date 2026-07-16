@@ -1,6 +1,10 @@
 from datetime import date, datetime, time, timedelta
 
 from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Case as DbCase
+from django.db.models import DateField, F, IntegerField, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -18,20 +22,100 @@ from .demo_data import (
     seed_case_checklist_demo_data,
     seed_standard_case_checklist_templates,
 )
-from .models import Case, CaseChecklistItem, CaseChecklistTemplate, CaseChecklistTemplateItem
+from .models import (
+    AcquisitionPlacePreset,
+    Case,
+    CaseApplicationCategory,
+    CaseChecklistItem,
+    CaseChecklistTemplate,
+    CaseChecklistTemplateItem,
+    CaseStatusSetting,
+    CaseTypeMaster,
+    ResponsiblePartyPreset,
+)
 from .serializers import (
+    AcquisitionPlacePresetSerializer,
+    CaseApplicationCategorySerializer,
     CaseChecklistItemSerializer,
     CaseChecklistDeletionHistorySerializer,
     CaseChecklistTemplateItemSerializer,
     CaseChecklistTemplateSerializer,
     CaseSerializer,
+    CaseStatusSettingSerializer,
+    CaseTypeMasterSerializer,
+    ResponsiblePartyPresetSerializer,
 )
 from .status_service import (
     CaseStatusChangeError,
     change_case_registration_status,
     change_case_status,
     get_required_checklist_progress,
+    update_case_progress_info,
 )
+from .utils import generate_case_number
+
+
+class ActiveOrderingMixin:
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        is_active = self.request.query_params.get('is_active')
+        if is_active in ['true', '1']:
+            queryset = queryset.filter(is_active=True)
+        elif is_active in ['false', '0']:
+            queryset = queryset.filter(is_active=False)
+        ordering = self.request.query_params.get('ordering')
+        if ordering:
+            queryset = queryset.order_by(ordering)
+        return queryset
+
+
+class CaseTypeMasterViewSet(ActiveOrderingMixin, ModelViewSet):
+    queryset = CaseTypeMaster.objects.all()
+    serializer_class = CaseTypeMasterSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.cases.exists():
+            return Response({'detail': '使用中の案件種別は削除できません。無効化してください。'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+
+class CaseApplicationCategoryViewSet(ActiveOrderingMixin, ModelViewSet):
+    queryset = CaseApplicationCategory.objects.all()
+    serializer_class = CaseApplicationCategorySerializer
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.cases.exists():
+            return Response({'detail': '使用中の申請区分は削除できません。無効化してください。'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+
+class CaseStatusSettingViewSet(ModelViewSet):
+    queryset = CaseStatusSetting.objects.all()
+    serializer_class = CaseStatusSettingSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        is_visible = self.request.query_params.get('is_visible')
+        if is_visible in ['true', '1']:
+            queryset = queryset.filter(is_visible=True)
+        elif is_visible in ['false', '0']:
+            queryset = queryset.filter(is_visible=False)
+        ordering = self.request.query_params.get('ordering')
+        if ordering:
+            queryset = queryset.order_by(ordering)
+        return queryset
+
+
+class AcquisitionPlacePresetViewSet(ActiveOrderingMixin, ModelViewSet):
+    queryset = AcquisitionPlacePreset.objects.all()
+    serializer_class = AcquisitionPlacePresetSerializer
+
+
+class ResponsiblePartyPresetViewSet(ActiveOrderingMixin, ModelViewSet):
+    queryset = ResponsiblePartyPreset.objects.all()
+    serializer_class = ResponsiblePartyPresetSerializer
 
 
 class CaseChecklistPagination(PageNumberPagination):
@@ -73,20 +157,81 @@ class CaseViewSet(ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        view = self.request.query_params.get('view')
+        if view == 'incomplete':
+            queryset = queryset.filter(
+                registration_status=Case.REGISTRATION_STATUS_ACTIVE,
+            ).exclude(status=Case.STATUS_COMPLETED)
+        elif view == 'completed':
+            queryset = queryset.filter(status=Case.STATUS_COMPLETED)
         registration_status = self.request.query_params.get('registration_status')
-        if registration_status in {
+        if view not in {'incomplete', 'completed', 'all'} and registration_status in {
             Case.REGISTRATION_STATUS_ACTIVE,
             Case.REGISTRATION_STATUS_INACTIVE,
             Case.REGISTRATION_STATUS_ARCHIVED,
         }:
             queryset = queryset.filter(registration_status=registration_status)
+        status_filter = self.request.query_params.get('status')
+        valid_statuses = {choice[0] for choice in Case.STATUS_CHOICES}
+        if status_filter in valid_statuses:
+            queryset = queryset.filter(status=status_filter)
         customer_id = self.request.query_params.get('customer')
         if customer_id:
             queryset = queryset.filter(customer_id=customer_id)
         company_id = self.request.query_params.get('company')
         if company_id:
             queryset = queryset.filter(company_id=company_id)
-        return queryset
+        return self.apply_work_ordering(queryset, view)
+
+    def apply_work_ordering(self, queryset, view):
+        priority = DbCase(
+            When(status=Case.STATUS_ADDITIONAL_DOCUMENTS, then=Value(10)),
+            When(status=Case.STATUS_ADDITIONAL_DOCUMENTS_SUBMITTED, then=Value(20)),
+            When(status=Case.STATUS_APPLIED, then=Value(30)),
+            When(status=Case.STATUS_COLLECTING_DOCUMENTS, then=Value(40)),
+            When(status=Case.STATUS_APPROVED, then=Value(50)),
+            When(status=Case.STATUS_REJECTED, then=Value(60)),
+            When(status=Case.STATUS_WITHDRAWN, then=Value(70)),
+            When(status=Case.STATUS_COMPLETED, then=Value(80)),
+            default=Value(999),
+            output_field=IntegerField(),
+        )
+        due_date = DbCase(
+            When(status=Case.STATUS_ADDITIONAL_DOCUMENTS, then=F('additional_documents_requested_at')),
+            When(status=Case.STATUS_ADDITIONAL_DOCUMENTS_SUBMITTED, then=F('additional_documents_submitted_at')),
+            When(status=Case.STATUS_APPLIED, then=F('applied_at')),
+            When(status=Case.STATUS_COLLECTING_DOCUMENTS, then=F('status_changed_at')),
+            When(status__in=[Case.STATUS_APPROVED, Case.STATUS_REJECTED], then=F('result_received_at')),
+            When(status=Case.STATUS_WITHDRAWN, then=F('withdrawn_at')),
+            When(status=Case.STATUS_COMPLETED, then=F('completed_at')),
+            default=F('updated_at'),
+            output_field=DateField(),
+        )
+        progress_start = DbCase(
+            When(status=Case.STATUS_CONSULTATION, then=F('consulted_at')),
+            When(status=Case.STATUS_ACCEPTED, then=F('accepted_at')),
+            When(status=Case.STATUS_COLLECTING_DOCUMENTS, then=F('document_collection_started_at')),
+            When(status=Case.STATUS_PREPARING_DOCUMENTS, then=F('documents_completed_at')),
+            When(status=Case.STATUS_READY_TO_APPLY, then=F('application_ready_at')),
+            When(status=Case.STATUS_APPLIED, then=F('applied_at')),
+            When(status=Case.STATUS_UNDER_REVIEW, then=F('review_started_at')),
+            When(status=Case.STATUS_ADDITIONAL_DOCUMENTS, then=F('additional_documents_requested_at')),
+            When(status=Case.STATUS_ADDITIONAL_DOCUMENTS_SUBMITTED, then=F('additional_documents_submitted_at')),
+            When(status__in=[Case.STATUS_APPROVED, Case.STATUS_REJECTED], then=F('result_received_at')),
+            When(status=Case.STATUS_COMPLETED, then=F('completed_at')),
+            default=F('status_changed_at'),
+            output_field=DateField(),
+        )
+        end_date = Coalesce('completed_at', 'status_changed_at')
+        queryset = queryset.annotate(
+            work_priority=priority,
+            attention_due_date=due_date,
+            progress_start_order=progress_start,
+            end_date_order=end_date,
+        )
+        if view == 'completed':
+            return queryset.order_by('-end_date_order', '-updated_at', '-id')
+        return queryset.order_by('work_priority', '-attention_due_date', '-updated_at', '-id')
 
     def _status_change_response(self, result):
         return Response({
@@ -107,6 +252,46 @@ class CaseViewSet(ModelViewSet):
         }
         return Response(payload, status=status.HTTP_400_BAD_REQUEST)
 
+    def _build_regenerated_case_number(self, case):
+        if not case.case_type_master or not case.application_category:
+            raise DjangoValidationError('案件種別と申請区分を設定してください。')
+        return generate_case_number(
+            case_type_master=case.case_type_master,
+            application_category=case.application_category,
+            customer=case.customer,
+        )
+
+    @action(detail=True, methods=['get'], url_path='preview-regenerate-case-number')
+    def preview_regenerate_case_number(self, request, pk=None):
+        case = self.get_object()
+        try:
+            new_number = self._build_regenerated_case_number(case)
+        except DjangoValidationError as exc:
+            return Response({'detail': exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'current_case_number': case.case_number,
+            'new_case_number': new_number,
+        })
+
+    @action(detail=True, methods=['post'], url_path='regenerate-case-number')
+    def regenerate_case_number(self, request, pk=None):
+        case = self.get_object()
+        old_number = case.case_number
+        try:
+            new_number = self._build_regenerated_case_number(case)
+        except DjangoValidationError as exc:
+            return Response({'detail': exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        if Case.objects.exclude(pk=case.pk).filter(case_number=new_number).exists():
+            return Response({'detail': '同じ案件番号が既に存在します。'}, status=status.HTTP_400_BAD_REQUEST)
+        case.case_number = new_number
+        case.save(update_fields=['case_number', 'updated_at'])
+        Timeline.objects.create(
+            case=case,
+            title='案件番号変更',
+            content=f'旧番号：{old_number}\n新番号：{new_number}',
+        )
+        return Response(self.get_serializer(case).data)
+
     @action(detail=True, methods=['post'], url_path='change-status')
     def change_status(self, request, pk=None):
         case = self.get_object()
@@ -119,6 +304,9 @@ class CaseViewSet(ModelViewSet):
                 note=request.data.get('note') or '',
                 force=bool(request.data.get('force')),
                 source='manual',
+                next_action=request.data.get('next_action'),
+                next_action_due_at=request.data.get('next_action_due_at'),
+                status_payload=request.data.get('status_payload') or {},
             )
         except (CaseStatusChangeError, ValueError) as exc:
             if isinstance(exc, CaseStatusChangeError):
@@ -144,6 +332,21 @@ class CaseViewSet(ModelViewSet):
                 return self._status_change_error_response(exc)
             return Response({'detail': '変更日が正しくありません。'}, status=status.HTTP_400_BAD_REQUEST)
         return self._status_change_response(result)
+
+    @action(detail=True, methods=['post'], url_path='progress-info')
+    def progress_info(self, request, pk=None):
+        case = self.get_object()
+        try:
+            update_case_progress_info(
+                case,
+                request.data,
+                changed_by=request.user,
+                note=request.data.get('note') or '',
+            )
+        except CaseStatusChangeError as exc:
+            return Response({'detail': exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+        case.refresh_from_db()
+        return Response(self.get_serializer(case).data)
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
