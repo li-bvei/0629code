@@ -239,12 +239,28 @@ export interface AccountingProjectExpensePayload {
 }
 
 export type AccountingVoucherType = 'invoice' | 'receipt'
+export type AccountingVoucherTaxCategory = 'tax_10' | 'tax_8' | 'non_taxable'
 
 export interface AccountingVoucherLineItem {
   item_name: string
   quantity: number | string
   unit_price: number | string
   line_total?: number | string
+  tax_category?: AccountingVoucherTaxCategory
+  tax_category_label?: string
+  tax_excluded_amount?: number | string
+  tax_amount?: number | string
+}
+
+export interface AccountingVoucherTaxSummary {
+  subtotal_10: number | string
+  tax_10: number | string
+  subtotal_8: number | string
+  tax_8: number | string
+  subtotal_non_taxable: number | string
+  subtotal: number | string
+  tax_total: number | string
+  total: number | string
 }
 
 export interface AccountingVoucher {
@@ -262,6 +278,7 @@ export interface AccountingVoucher {
   total_amount: number | string
   details: string
   line_items: AccountingVoucherLineItem[]
+  tax_summary?: AccountingVoucherTaxSummary
   note: string
   payment_due_date: string | null
   payment_method: string
