@@ -18,6 +18,7 @@ import type {
   AccountingVoucher,
   AccountingVoucherLineItem,
   AccountingVoucherPayload,
+  AccountingVoucherTaxCategory,
   AccountingVoucherType,
   VoucherItemTemplate,
 } from '../types/accounting'
@@ -83,6 +84,13 @@ const bankInfoOptions = [
   },
 ]
 
+const TAX_CATEGORY_10: AccountingVoucherTaxCategory = 'tax_10'
+const taxCategoryOptions: { label: string; value: AccountingVoucherTaxCategory }[] = [
+  { label: '10％', value: TAX_CATEGORY_10 },
+  { label: '8％', value: 'tax_8' },
+  { label: '非課税', value: 'non_taxable' },
+]
+
 const getTodayDate = () => {
   const date = new Date()
   return [
@@ -97,6 +105,7 @@ const createLineItem = (): AccountingVoucherLineItem => ({
   quantity: 1,
   unit_price: '',
   line_total: 0,
+  tax_category: TAX_CATEGORY_10,
 })
 
 const voucherForm = ref<AccountingVoucherPayload>({
@@ -126,12 +135,42 @@ const getLineTotal = (item: AccountingVoucherLineItem) => {
   return Math.round(Number(item.quantity || 0) * Number(item.unit_price || 0))
 }
 
-const lineSubtotal = computed(() => {
-  return (voucherForm.value.line_items || []).reduce((sum, item) => sum + getLineTotal(item), 0)
+const getTaxCategory = (item: AccountingVoucherLineItem): AccountingVoucherTaxCategory => {
+  return taxCategoryOptions.some((option) => option.value === item.tax_category)
+    ? item.tax_category as AccountingVoucherTaxCategory
+    : TAX_CATEGORY_10
+}
+
+const getTaxCategoryLabel = (item: AccountingVoucherLineItem) => {
+  return taxCategoryOptions.find((option) => option.value === getTaxCategory(item))?.label || '10％'
+}
+
+const getTaxExcludedAmount = (item: AccountingVoucherLineItem) => {
+  const lineTotal = getLineTotal(item)
+  const taxCategory = getTaxCategory(item)
+  if (taxCategory === 'non_taxable') return lineTotal
+  if (taxCategory === 'tax_8') return Math.round(lineTotal / 1.08)
+  return Math.round(lineTotal / 1.1)
+}
+
+const getLineTaxAmount = (item: AccountingVoucherLineItem) => getLineTotal(item) - getTaxExcludedAmount(item)
+
+const taxSummary = computed(() => {
+  return (voucherForm.value.line_items || []).reduce(
+    (result, item) => {
+      const lineTotal = getLineTotal(item)
+      const taxExcluded = getTaxExcludedAmount(item)
+      result.subtotal += taxExcluded
+      result.tax_total += lineTotal - taxExcluded
+      result.total += lineTotal
+      return result
+    },
+    { subtotal: 0, tax_total: 0, total: 0 },
+  )
 })
-const totalAmount = computed(() => lineSubtotal.value)
-const taxExcludedAmount = computed(() => Math.round(totalAmount.value / 1.1))
-const taxAmount = computed(() => totalAmount.value - taxExcludedAmount.value)
+const totalAmount = computed(() => taxSummary.value.total)
+const taxExcludedAmount = computed(() => taxSummary.value.subtotal)
+const taxAmount = computed(() => taxSummary.value.tax_total)
 const filteredManagedItemTemplates = computed(() => {
   const keyword = itemManagerSearch.value.trim()
   if (!keyword) return managedVoucherItemTemplates.value
@@ -180,7 +219,7 @@ const getVoucherContentTooltip = (voucher: AccountingVoucher) => {
       const note = (item as AccountingVoucherLineItem & { note?: string; remarks?: string }).note
         || (item as AccountingVoucherLineItem & { note?: string; remarks?: string }).remarks
         || ''
-      return `${name} / 単価 ${unitPrice} / 数量 ${quantity} / 金額 ${formatMoney(lineTotal)}${note ? ` / ${note}` : ''}`
+      return `${name} / 単価 ${unitPrice} / 数量 ${quantity} / 税区分 ${getTaxCategoryLabel(item)} / 金額 ${formatMoney(lineTotal)}${note ? ` / ${note}` : ''}`
     })
     .join('\n')
 }
@@ -313,12 +352,13 @@ const openEditDialog = (voucher: AccountingVoucher) => {
     tax_amount: voucher.tax_amount,
     details: voucher.details,
     line_items: voucher.line_items?.length
-      ? voucher.line_items.map((item) => ({ ...item }))
+      ? voucher.line_items.map((item) => ({ ...item, tax_category: getTaxCategory(item) }))
       : [{
           item_name: voucher.title || voucher.details || '',
           quantity: 1,
           unit_price: voucher.amount,
           line_total: voucher.amount,
+          tax_category: TAX_CATEGORY_10,
         }],
     note: voucher.note,
     payment_due_date: voucher.payment_due_date,
@@ -465,6 +505,9 @@ const normalizeLineItems = () => {
       quantity: Number(item.quantity || 0),
       unit_price: Number(item.unit_price || 0),
       line_total: getLineTotal(item),
+      tax_category: getTaxCategory(item),
+      tax_excluded_amount: getTaxExcludedAmount(item),
+      tax_amount: getLineTaxAmount(item),
     }))
 }
 
@@ -773,6 +816,7 @@ onMounted(() => {
                 v-for="(item, index) in voucherForm.line_items"
                 :key="index"
                 class="voucher-line-row"
+                style="grid-template-columns: minmax(180px, 1fr) 90px 132px 110px 144px auto;"
               >
                 <el-form-item label="項目名">
                   <div class="voucher-item-name-control">
@@ -805,10 +849,20 @@ onMounted(() => {
                 <el-form-item label="数量">
                   <el-input v-model="item.quantity" inputmode="decimal" />
                 </el-form-item>
-                <el-form-item label="単価（税込）">
+                <el-form-item label="単価（税込）" class="voucher-nowrap-form-item">
                   <el-input v-model="item.unit_price" inputmode="numeric" />
                 </el-form-item>
-                <el-form-item label="金額（税込）">
+                <el-form-item label="税区分">
+                  <el-select v-model="item.tax_category" class="form-control">
+                    <el-option
+                      v-for="option in taxCategoryOptions"
+                      :key="option.value"
+                      :label="option.label"
+                      :value="option.value"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="金額（税込）" class="voucher-nowrap-form-item">
                   <el-input :model-value="formatMoney(getLineTotal(item))" disabled />
                 </el-form-item>
                 <el-button text type="danger" class="voucher-line-delete" @click="removeLineItem(index)">
@@ -818,7 +872,7 @@ onMounted(() => {
             </div>
             <div class="voucher-total-box">
               <div>
-                <span>税抜金額</span>
+                <span>小計</span>
                 <strong>{{ formatMoney(taxExcludedAmount) }}</strong>
               </div>
               <div>
@@ -826,7 +880,7 @@ onMounted(() => {
                 <strong>{{ formatMoney(taxAmount) }}</strong>
               </div>
               <div class="is-total">
-                <span>税込合計</span>
+                <span>合計</span>
                 <strong>{{ formatMoney(totalAmount) }}</strong>
               </div>
             </div>
@@ -978,3 +1032,9 @@ onMounted(() => {
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+:deep(.voucher-nowrap-form-item .el-form-item__label) {
+  white-space: nowrap;
+}
+</style>

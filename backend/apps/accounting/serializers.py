@@ -1,4 +1,4 @@
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal
 
 from django.db.models import Sum
 from rest_framework import serializers
@@ -21,6 +21,7 @@ from .models import (
 )
 from .seifu_notice_pdf import template_doc, validate_items
 from .tax_renewal_templates import get_tax_renewal_templates
+from .voucher_calculations import VoucherCalculationError, calculate_voucher_amounts, decimal_to_number
 
 
 class ExpenseCategorySerializer(serializers.ModelSerializer):
@@ -163,41 +164,32 @@ class AccountingVoucherSerializer(serializers.ModelSerializer):
         )
 
     def calculate_amounts(self, line_items):
-        normalized_items = []
-        total_amount = Decimal('0')
-
-        for item in line_items or []:
-            if not isinstance(item, dict):
-                continue
-            try:
-                quantity = Decimal(str(item.get('quantity') or 0))
-                unit_price = Decimal(str(item.get('unit_price') or 0))
-            except (InvalidOperation, ValueError):
-                raise serializers.ValidationError({'line_items': '数量と単価は数字で入力してください。'})
-            line_total = (quantity * unit_price).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
-            normalized_items.append({
-                **item,
-                'quantity': int(quantity) if quantity == quantity.to_integral_value() else float(quantity),
-                'unit_price': int(unit_price) if unit_price == unit_price.to_integral_value() else float(unit_price),
-                'line_total': int(line_total),
-            })
-            total_amount += line_total
-
-        tax_excluded = (total_amount / Decimal('1.1')).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
-        tax_amount = total_amount - tax_excluded
-        return normalized_items, tax_excluded, tax_amount, total_amount
+        try:
+            normalized_items, summary = calculate_voucher_amounts(line_items)
+        except VoucherCalculationError as exc:
+            raise serializers.ValidationError({'line_items': str(exc)})
+        return normalized_items, summary
 
     def validate(self, attrs):
         line_items = attrs.get('line_items')
         if line_items is None and self.instance is not None:
             line_items = self.instance.line_items
 
-        normalized_items, amount, tax_amount, total_amount = self.calculate_amounts(line_items or [])
+        normalized_items, summary = self.calculate_amounts(line_items or [])
         attrs['line_items'] = normalized_items
-        attrs['amount'] = amount
-        attrs['tax_amount'] = tax_amount
-        attrs['total_amount'] = total_amount
+        attrs['amount'] = summary['subtotal']
+        attrs['tax_amount'] = summary['tax_total']
+        attrs['total_amount'] = summary['total']
         return attrs
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        _, summary = calculate_voucher_amounts(data.get('line_items') or [])
+        data['tax_summary'] = {
+            key: decimal_to_number(value)
+            for key, value in summary.items()
+        }
+        return data
 
 
 class VoucherItemTemplateSerializer(serializers.ModelSerializer):

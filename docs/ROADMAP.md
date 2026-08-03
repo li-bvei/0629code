@@ -67,10 +67,19 @@ MVP 目标是完成一个可用于事务所内部案件管理的最小系统。
 - Company CRUD
 - Case 列表、详情、CRUD
 - Case 自动案件号生成
-- Case Detail 中 Task CRUD
-- Case Detail 中 Reminder CRUD
+- Case Detail 中 タスク CRUD
 - Case Detail 中 Timeline 追加
-- Case Detail 中 Document 元数据 CRUD
+- 担当者管理
+- 案件・担当設定管理
+- 案件事项 / Checklist 模板管理
+- 会計ダッシュボード
+- 支出記録 / 支出カテゴリ / 収入元 / 車両使用記録
+- プロジェクト収支表
+- 請求書・領収書 PDF 生成
+- 請求書明细税区分: 10％ / 8％ / 非課税
+- 返签 visa 表 PDF 生成
+- 税务证明更新用记录管理、PDF 诊断、坐标 mapping 工具
+- 税务证明「社会保险纳入证明兼委任状」正式 PDF 生成
 - Django Admin / SimpleUI 基础管理
 - seed_demo_data 开发测试数据命令
 
@@ -78,9 +87,18 @@ MVP 目标是完成一个可用于事务所内部案件管理的最小系统。
 
 - 客户 Portal
 - 真实文件上传和下载
-- 申請書 PDF / Excel 生成
+- 税务证明其他 9 个 PDF 正式字段填写
+- 清風合格通知書记录化保存功能（待开发 / 暂停处理）
 - 复杂权限系统
 - 通知发送
+
+当前暂缓:
+
+- 费用功能
+- 材料上传
+- 文件管理入口
+- 独立 Reminder 功能
+- 邮件、日历、定时任务、自动通知
 
 ## 3.2 Local Development
 
@@ -89,16 +107,14 @@ MVP 目标是完成一个可用于事务所内部案件管理的最小系统。
 ```bash
 cd backend
 .venv/bin/python manage.py migrate
-.venv/bin/python manage.py seed_demo_data
-.venv/bin/python manage.py runserver
+.venv/bin/python manage.py runserver 127.0.0.1:8000
 ```
 
 前端启动：
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm run dev -- --host 0.0.0.0
 ```
 
 常用检查：
@@ -114,7 +130,7 @@ npm run build
 
 本地访问：
 
-- 前端后台：`http://127.0.0.1:5173/dashboard`
+- 前端后台：`http://localhost:5173/`
 - Django Admin：`http://127.0.0.1:8000/admin/`
 - API：`http://127.0.0.1:8000/api/`
 

@@ -74,19 +74,42 @@ def sum_decimal(queryset, field_name, decimal_places=0):
     )['total']
 
 
-def build_income_source_queryset_for_expense_summary(params):
-    queryset = IncomeSource.objects.all()
-    if params.get('start_date'):
-        queryset = queryset.filter(source_date__gte=params['start_date'])
-    if params.get('end_date'):
-        queryset = queryset.filter(source_date__lte=params['end_date'])
-    is_exported = parse_bool(params.get('is_exported'))
-    if is_exported is not None:
-        queryset = queryset.filter(is_exported=is_exported)
-    if params.get('search'):
-        keyword = params['search']
-        queryset = queryset.filter(Q(source_target__icontains=keyword) | Q(note__icontains=keyword))
-    return queryset
+def compute_period_balance_context(params):
+    """対象期間（start_date/end_date）を基準にした期首残高・期間収入・期間支出。
+
+    期首残高 = start_date より前のすべての収入・支出の累計差額（start_date が無ければ 0＝それ以前を含め全件が対象期間そのものになる）。
+    期間収入・期間支出は end_date が無ければ上限なし（最新まで）で集計する。
+    カテゴリ・支払方法・精算済み・キーワードなど、明細表だけを絞り込むフィルタはここでは無視する
+    ——残高は「表示中の明細」ではなく「実際の口座の状態」を表すべきなので、日付以外の条件で
+    支出だけを狭めて残高計算に反映させると、実態より残高が多く出てしまう。
+    """
+    start_date = params.get('start_date')
+    end_date = params.get('end_date')
+
+    income_qs = IncomeSource.objects.all()
+    expense_qs = Expense.objects.all()
+
+    if start_date:
+        opening_income_total = sum_decimal(
+            IncomeSource.objects.filter(source_date__lt=start_date), 'amount',
+        )
+        opening_expense_total = sum_decimal(
+            Expense.objects.filter(expense_date__lt=start_date), 'amount',
+        )
+        opening_balance = opening_income_total - opening_expense_total
+        income_qs = income_qs.filter(source_date__gte=start_date)
+        expense_qs = expense_qs.filter(expense_date__gte=start_date)
+    else:
+        opening_balance = Decimal('0')
+
+    if end_date:
+        income_qs = income_qs.filter(source_date__lte=end_date)
+        expense_qs = expense_qs.filter(expense_date__lte=end_date)
+
+    period_incomes = income_qs.order_by('source_date', 'id')
+    period_expense_total = sum_decimal(expense_qs, 'amount')
+
+    return opening_balance, period_incomes, period_expense_total
 
 
 def build_expense_chart(group_field):
@@ -200,25 +223,24 @@ class ExpenseViewSet(ModelViewSet):
         period = 'すべて'
         if params.get('start_date') or params.get('end_date'):
             period = f'{params.get("start_date") or "開始日なし"} ～ {params.get("end_date") or "終了日なし"}'
-        is_reimbursed = parse_bool(params.get('is_reimbursed'))
-        reimbursed_label = 'すべて'
-        if is_reimbursed is not None:
-            reimbursed_label = 'はい' if is_reimbursed else 'いいえ'
         return [
             ('対象期間', period),
             ('支出カテゴリ', params.get('category') or 'すべて'),
-            ('支払方法', params.get('payment_method') or 'すべて'),
-            ('精算済み', reimbursed_label),
-            ('キーワード', params.get('search') or 'すべて'),
         ]
 
     @action(detail=False, methods=['get'], url_path='excel')
     def excel(self, request):
         expenses = self.get_queryset()
+        opening_balance, period_incomes, period_expense_total = compute_period_balance_context(
+            request.query_params,
+        )
         return expenses_excel_response(
             expenses,
+            period_incomes,
             filters=self.build_excel_filter_summary(),
             generated_at=timezone.localtime(timezone.now()),
+            opening_balance=opening_balance,
+            period_expense_total=period_expense_total,
         )
 
     @action(detail=False, methods=['get'], url_path='summary')
@@ -231,17 +253,23 @@ class ExpenseViewSet(ModelViewSet):
                 output_field=DecimalField(max_digits=12, decimal_places=0),
             ),
         )
-        total_income = sum_decimal(
-            build_income_source_queryset_for_expense_summary(request.query_params).order_by(),
-            'amount',
-        )
         total_expense = expense_summary['total_expense'] or Decimal('0')
+
+        # 帳面残高は「今見えている絞り込み結果の収支」ではなく「対象期間開始時点からの
+        # 実際の口座残高」を表すべきなので、Excel 出力と同じ compute_period_balance_context()
+        # を使う（カテゴリ・支払方法など明細専用の絞り込みは無視し、日付のみで期首残高・
+        # 期間収入・期間支出を計算する）。
+        opening_balance, period_incomes, period_expense_total = compute_period_balance_context(
+            request.query_params,
+        )
+        period_income_total = sum_decimal(period_incomes, 'amount')
+        balance = opening_balance + period_income_total - period_expense_total
 
         return Response({
             'target_count': expense_summary['target_count'] or 0,
-            'total_income': decimal_to_number(total_income),
+            'total_income': decimal_to_number(period_income_total),
             'total_expense': decimal_to_number(total_expense),
-            'balance': decimal_to_number(total_income - total_expense),
+            'balance': decimal_to_number(balance),
         })
 
 

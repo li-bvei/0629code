@@ -17,6 +17,10 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-local-dev-key')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
+# Key used to encrypt sensitive PII fields (e.g. マイナンバー) at rest.
+# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+FIELD_ENCRYPTION_KEY = os.getenv('FIELD_ENCRYPTION_KEY', 'Xbl6ZzuVAEiN7PrpPSbZlEYiYKOsJQU8fZQuecZP0QM=')
+
 def env_list(name, default=''):
     value = os.getenv(name, default)
     return [item.strip() for item in value.split(',') if item.strip()]
@@ -54,6 +58,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'axes',
     'apps.authentication',
     'apps.employees',
     'apps.customers',
@@ -74,7 +79,19 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'axes.middleware.AxesMiddleware',
 ]
+
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+# Brute-force login protection (covers both /admin/login and /api/auth/login/).
+AXES_FAILURE_LIMIT = 3
+AXES_LOCKOUT_PARAMETERS = ['username']
+AXES_COOLOFF_TIME = 1  # hours
+AXES_RESET_ON_SUCCESS = True
 
 ROOT_URLCONF = 'config.urls'
 

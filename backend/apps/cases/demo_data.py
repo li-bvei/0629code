@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 
-from .models import CaseChecklistTemplate, CaseChecklistTemplateItem
+from .models import CaseChecklistTemplate, CaseChecklistTemplateItem, ChecklistItemPreset
 
 
 OLD_DEMO_TEMPLATE_RENAMES = {
@@ -285,3 +285,86 @@ def seed_standard_case_checklist_templates():
 
 def seed_case_checklist_demo_data():
     return seed_standard_case_checklist_templates()
+
+
+def preset(name, category, acquisition_place, responsible_party=''):
+    return {
+        'name': name,
+        'category': category,
+        'acquisition_place': acquisition_place,
+        'responsible_party': responsible_party,
+    }
+
+
+STANDARD_CHECKLIST_ITEM_PRESETS = [
+    preset('パスポートコピー', '本人資料', '本人準備', 'customer'),
+    preset('在留カード両面コピー', '本人資料', '本人準備', 'customer'),
+    preset('証明写真', '本人資料', '本人準備', 'customer'),
+    preset('住民票', '本人資料', '市区町村役場（区役所）', 'customer'),
+    preset('印鑑証明書', '本人資料', '市区町村役場（区役所）', 'customer'),
+    preset('履歴書', '本人資料', '本人準備', 'customer'),
+    preset('理由書', '本人資料', '本人準備', 'customer'),
+    preset('戸籍謄本', '本人資料', '本籍地の市区町村役場', 'customer'),
+    preset('婚姻届受理証明書', '本人資料', '市区町村役場', 'customer'),
+    preset('出生証明書', '本人資料', '市区町村役場／出産した病院', 'customer'),
+    preset('卒業証明書', '学歴・職歴資料', '出身校', 'customer'),
+    preset('卒業証書コピー', '学歴・職歴資料', '本人準備', 'customer'),
+    preset('学位証明書', '学歴・職歴資料', '出身校', 'customer'),
+    preset('成績証明書', '学歴・職歴資料', '出身校', 'customer'),
+    preset('職歴証明書', '学歴・職歴資料', '前職の会社', 'customer'),
+    preset('合格通知書', '学歴・職歴資料', '学校', 'customer'),
+    preset('在学証明書', '学歴・職歴資料', '学校', 'customer'),
+    preset('履歴事項全部証明書', '会社資料', '法務局', 'company'),
+    preset('会社案内・パンフレット', '会社資料', '会社準備', 'company'),
+    preset('定款コピー', '会社資料', '会社準備', 'company'),
+    preset('株主総会議事録', '会社資料', '会社準備', 'company'),
+    preset('雇用契約書', '勤務先資料', '会社準備', 'company'),
+    preset('労働条件通知書', '勤務先資料', '会社準備', 'company'),
+    preset('辞令・派遣状', '勤務先資料', '会社準備', 'company'),
+    preset('在職証明書', '勤務先資料', '勤務先', 'company'),
+    preset('納税証明書（その3）', '税務資料', '税務署', 'customer'),
+    preset('個人課税証明書', '税務資料', '市区町村役場（区役所）', 'customer'),
+    preset('個人納税証明書', '税務資料', '市区町村役場（区役所）', 'customer'),
+    preset('源泉徴収票', '税務資料', '会社準備', 'company'),
+    preset('源泉徴収票等の法定調書合計表', '税務資料', '税務署／会社準備', 'company'),
+    preset('確定申告書控え', '税務資料', '本人準備', 'customer'),
+    preset('事業計画書', '事業計画資料', '本人準備（専門家確認）', 'company'),
+    preset('事務所賃貸借契約書コピー', '事務所資料', '契約先（不動産会社）', 'company'),
+    preset('事務所写真', '事務所資料', '本人準備', 'company'),
+    preset('預金通帳コピー', '資本金・資金資料', '本人準備', 'customer'),
+    preset('残高証明書', '資本金・資金資料', '取引銀行', 'customer'),
+    preset('健康保険証コピー', '社会保険資料', '本人準備', 'customer'),
+    preset('被保険者記録照会回答票', '社会保険資料', '年金事務所', 'customer'),
+    preset('社会保険・労働保険加入証明', '社会保険資料', '会社準備／年金事務所', 'company'),
+    preset('直近決算書一式', '給与・税務資料', '会社準備', 'company'),
+    preset('給与支払証明書', '給与・税務資料', '会社準備', 'company'),
+    preset('身元保証書', '身元保証人資料', '本人準備（保証人記入）', 'other'),
+    preset('身元保証人の住民票', '身元保証人資料', '保証人準備', 'other'),
+    preset('出入国履歴', '在留履歴資料', '出入国在留管理庁（オンライン確認）', 'customer'),
+    preset('ポイント計算表', 'ポイント計算資料', '本人準備', 'customer'),
+    preset('経費支弁書', '職業・収入資料', '支援者本人', 'other'),
+    preset('奨学金証明書', '職業・収入資料', '奨学金給付機関', 'other'),
+    preset('申請書', '申請準備', '本人準備（ダウンロード）', 'our_company'),
+    preset('返信用封筒', '申請準備', '本人準備', 'our_company'),
+    preset('申請理由書', '申請準備', '本人準備', 'our_company'),
+    preset('入管提出書類最終確認', '申請準備', '事務所内部確認', 'our_company'),
+]
+
+
+def seed_standard_checklist_item_presets():
+    result = {'success': True, 'message': 'よくある項目を取り込みました。', 'created': 0, 'skipped': 0}
+    for index, preset_data in enumerate(STANDARD_CHECKLIST_ITEM_PRESETS, start=1):
+        _, created = ChecklistItemPreset.objects.get_or_create(
+            name=preset_data['name'],
+            defaults={
+                'category': preset_data['category'],
+                'acquisition_place': preset_data['acquisition_place'],
+                'responsible_party': preset_data['responsible_party'],
+                'sort_order': index * 10,
+            },
+        )
+        if created:
+            result['created'] += 1
+        else:
+            result['skipped'] += 1
+    return result

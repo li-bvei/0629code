@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { createCase, listCaseApplicationCategories, listCaseTypeMasters } from '../api/cases'
@@ -29,7 +28,7 @@ const customerSubmitting = ref(false)
 const customerDialogVisible = ref(false)
 const customerFormRef = ref<FormInstance>()
 const familySubmitting = ref(false)
-const familyDialogVisible = ref(false)
+const familyEditTarget = ref<number | 'new' | null>(null)
 const editingFamilyMemberId = ref<number | null>(null)
 const familyFormRef = ref<FormInstance>()
 const caseDialogVisible = ref(false)
@@ -318,12 +317,12 @@ const resetFamilyForm = () => {
   familyFormRef.value?.clearValidate()
 }
 
-const openCreateFamilyDialog = () => {
+const startAddFamilyMember = () => {
   resetFamilyForm()
-  familyDialogVisible.value = true
+  familyEditTarget.value = 'new'
 }
 
-const openEditFamilyDialog = (familyMember: FamilyMember) => {
+const startEditFamilyMember = (familyMember: FamilyMember) => {
   editingFamilyMemberId.value = familyMember.id
   familyForm.value = {
     customer: customerId.value,
@@ -344,7 +343,12 @@ const openEditFamilyDialog = (familyMember: FamilyMember) => {
     note: familyMember.note,
   }
   familyFormRef.value?.clearValidate()
-  familyDialogVisible.value = true
+  familyEditTarget.value = familyMember.id
+}
+
+const cancelFamilyEdit = () => {
+  familyEditTarget.value = null
+  resetFamilyForm()
 }
 
 const submitFamilyMember = async () => {
@@ -368,7 +372,7 @@ const submitFamilyMember = async () => {
       await createFamilyMember(payload)
       ElMessage.success('家族情報を追加しました。')
     }
-    familyDialogVisible.value = false
+    familyEditTarget.value = null
     await fetchFamilyMembers()
   } catch {
     errorMessage.value = editingFamilyMemberId.value
@@ -392,6 +396,9 @@ const confirmDeleteFamilyMember = async (familyMember: FamilyMember) => {
     )
     await deleteFamilyMember(familyMember.id)
     ElMessage.success('家族情報を削除しました。')
+    if (familyEditTarget.value === familyMember.id) {
+      familyEditTarget.value = null
+    }
     await fetchFamilyMembers()
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
@@ -446,25 +453,88 @@ onMounted(() => {
         <template #header>
           <div class="card-header-row">
             <span>家族情報</span>
-            <el-button type="primary" @click="openCreateFamilyDialog">家族を追加</el-button>
+            <el-button type="primary" :disabled="familyEditTarget !== null" @click="startAddFamilyMember">家族を追加</el-button>
           </div>
         </template>
+
+        <div v-if="familyEditTarget !== null" class="family-member-block family-member-edit-block">
+          <h3 class="family-edit-title">{{ familyEditTarget === 'new' ? '家族を追加' : '家族情報を編集' }}</h3>
+          <el-form ref="familyFormRef" :model="familyForm" :rules="familyRules" label-position="top">
+            <div class="form-grid">
+              <el-form-item label="関係" prop="relationship">
+                <el-select v-model="familyForm.relationship" placeholder="選択してください" class="form-control">
+                  <el-option v-for="option in relationshipOptions" :key="option.value" :label="option.label" :value="option.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start">
+                <el-input v-model="familyForm.name_kana" />
+              </el-form-item>
+              <el-form-item label="氏名" prop="name" class="form-grid-start">
+                <el-input v-model="familyForm.name" />
+              </el-form-item>
+              <el-form-item label="生年月日" prop="birth_date">
+                <el-date-picker v-model="familyForm.birth_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
+              </el-form-item>
+              <el-form-item label="性別" prop="gender">
+                <el-select v-model="familyForm.gender" clearable placeholder="選択してください" class="form-control">
+                  <el-option v-for="option in genderOptions" :key="option.value" :label="option.label" :value="option.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="国籍" prop="nationality">
+                <el-input v-model="familyForm.nationality" />
+              </el-form-item>
+              <el-form-item label="電話番号" prop="phone">
+                <el-input v-model="familyForm.phone" />
+              </el-form-item>
+              <el-form-item label="郵便番号" prop="postal_code" class="form-grid-start">
+                <el-input v-model="familyForm.postal_code" />
+              </el-form-item>
+              <el-form-item label="住所" prop="address" class="form-grid-full">
+                <el-input v-model="familyForm.address" />
+              </el-form-item>
+              <el-form-item label="マイナンバー" prop="my_number">
+                <el-input v-model="familyForm.my_number" />
+              </el-form-item>
+              <el-form-item label="在留資格" prop="residence_status">
+                <el-select v-model="familyForm.residence_status" clearable filterable allow-create default-first-option placeholder="選択してください" class="form-control">
+                  <el-option v-for="status in residenceStatusOptions" :key="status" :label="status" :value="status" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="在留カード番号" prop="residence_card_no">
+                <el-input v-model="familyForm.residence_card_no" />
+              </el-form-item>
+              <el-form-item label="在留期限" prop="residence_expiry">
+                <el-date-picker v-model="familyForm.residence_expiry" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
+              </el-form-item>
+              <el-form-item label="扶養対象" prop="is_dependent">
+                <el-switch v-model="familyForm.is_dependent" active-text="はい" inactive-text="いいえ" />
+              </el-form-item>
+            </div>
+            <el-form-item label="備考" prop="note">
+              <el-input v-model="familyForm.note" type="textarea" :rows="2" />
+            </el-form-item>
+          </el-form>
+          <div class="family-member-actions">
+            <el-button @click="cancelFamilyEdit">キャンセル</el-button>
+            <el-button type="primary" :loading="familySubmitting" @click="submitFamilyMember">
+              {{ familyEditTarget === 'new' ? '追加' : '保存' }}
+            </el-button>
+          </div>
+        </div>
+
         <div v-if="sortedFamilyMembers.length" class="family-member-list">
-          <div v-for="familyMember in sortedFamilyMembers" :key="familyMember.id" class="family-member-block">
+          <div
+            v-for="familyMember in sortedFamilyMembers"
+            v-show="familyEditTarget !== familyMember.id"
+            :key="familyMember.id"
+            class="family-member-block"
+          >
             <div class="family-member-header">
               <strong>{{ getFamilyCardTitle(familyMember) }}</strong>
-              <el-dropdown trigger="click">
-                <el-button text type="primary" class="table-action-trigger">
-                  操作
-                  <el-icon><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item @click="openEditFamilyDialog(familyMember)">編集</el-dropdown-item>
-                    <el-dropdown-item divided class="danger-item" @click="confirmDeleteFamilyMember(familyMember)">削除</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
+              <div class="family-member-actions">
+                <el-button text type="primary" :disabled="familyEditTarget !== null" @click="startEditFamilyMember(familyMember)">編集</el-button>
+                <el-button text type="danger" :disabled="familyEditTarget !== null" @click="confirmDeleteFamilyMember(familyMember)">削除</el-button>
+              </div>
             </div>
             <el-descriptions :column="2" border>
               <el-descriptions-item label="フリガナ" :span="2">{{ displayValue(familyMember.name_kana) }}</el-descriptions-item>
@@ -485,7 +555,7 @@ onMounted(() => {
             </el-descriptions>
           </div>
         </div>
-        <p v-if="!familyMembers.length" class="empty-text">該当データなし</p>
+        <p v-if="!familyMembers.length && familyEditTarget === null" class="empty-text">該当データなし</p>
       </el-card>
 
       <el-card shadow="never">
@@ -727,112 +797,6 @@ onMounted(() => {
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="familyDialogVisible"
-      :title="editingFamilyMemberId ? '家族情報編集' : '家族を追加'"
-      width="640px"
-      @closed="resetFamilyForm"
-    >
-      <el-form ref="familyFormRef" :model="familyForm" :rules="familyRules" label-position="top">
-        <div class="form-grid">
-          <el-form-item label="関係" prop="relationship">
-            <el-select v-model="familyForm.relationship" placeholder="選択してください" class="form-control">
-              <el-option
-                v-for="option in relationshipOptions"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start">
-            <el-input v-model="familyForm.name_kana" />
-          </el-form-item>
-          <el-form-item label="氏名" prop="name" class="form-grid-start">
-            <el-input v-model="familyForm.name" />
-          </el-form-item>
-          <el-form-item label="生年月日" prop="birth_date">
-            <el-date-picker
-              v-model="familyForm.birth_date"
-              type="date"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              placeholder="YYYY-MM-DD"
-              class="form-control"
-            />
-          </el-form-item>
-          <el-form-item label="性別" prop="gender">
-            <el-select v-model="familyForm.gender" clearable placeholder="選択してください" class="form-control">
-              <el-option
-                v-for="option in genderOptions"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="国籍" prop="nationality">
-            <el-input v-model="familyForm.nationality" />
-          </el-form-item>
-          <el-form-item label="電話番号" prop="phone">
-            <el-input v-model="familyForm.phone" />
-          </el-form-item>
-          <el-form-item label="郵便番号" prop="postal_code" class="form-grid-start">
-            <el-input v-model="familyForm.postal_code" />
-          </el-form-item>
-          <el-form-item label="住所" prop="address" class="form-grid-full">
-            <el-input v-model="familyForm.address" />
-          </el-form-item>
-          <el-form-item label="マイナンバー" prop="my_number">
-            <el-input v-model="familyForm.my_number" />
-          </el-form-item>
-          <el-form-item label="在留資格" prop="residence_status">
-            <el-select
-              v-model="familyForm.residence_status"
-              clearable
-              filterable
-              allow-create
-              default-first-option
-              placeholder="選択してください"
-              class="form-control"
-            >
-              <el-option
-                v-for="status in residenceStatusOptions"
-                :key="status"
-                :label="status"
-                :value="status"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="在留カード番号" prop="residence_card_no">
-            <el-input v-model="familyForm.residence_card_no" />
-          </el-form-item>
-          <el-form-item label="在留期限" prop="residence_expiry">
-            <el-date-picker
-              v-model="familyForm.residence_expiry"
-              type="date"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              placeholder="YYYY-MM-DD"
-              class="form-control"
-            />
-          </el-form-item>
-          <el-form-item label="扶養対象" prop="is_dependent">
-            <el-switch v-model="familyForm.is_dependent" active-text="はい" inactive-text="いいえ" />
-          </el-form-item>
-        </div>
-        <el-form-item label="備考" prop="note">
-          <el-input v-model="familyForm.note" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="familyDialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="familySubmitting" @click="submitFamilyMember">
-          {{ editingFamilyMemberId ? '保存' : '追加' }}
-        </el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog v-model="caseDialogVisible" title="案件追加" width="560px">
       <el-form ref="caseFormRef" :model="caseForm" :rules="caseRules" label-position="top">
@@ -864,3 +828,21 @@ onMounted(() => {
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.family-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.family-member-edit-block {
+  margin-bottom: 16px;
+  background: var(--sunrise-bg-soft, #f8fbfd);
+}
+
+.family-edit-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+</style>

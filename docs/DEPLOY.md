@@ -26,6 +26,8 @@ cd /www/wwwroot/0629code
 
 可以参考根目录的 `.env.prod.example` 创建 `.env.prod`，但不要提交真实密码。
 
+`FIELD_ENCRYPTION_KEY` 用于加密マイナンバー（`Customer`/`FamilyMember`/`CompanyStaff` 的 `my_number` 字段），首次部署前必须生成一个真实值并写入 `.env.prod`（`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`），且之后不能再更改——改了旧数据就无法解密。
+
 ## Docker Compose 命令
 
 所有生产部署命令统一使用：

@@ -9,6 +9,7 @@ from .models import (
     CaseChecklistTemplateItem,
     CaseStatusSetting,
     CaseTypeMaster,
+    ChecklistItemPreset,
     ResponsiblePartyPreset,
 )
 
@@ -50,6 +51,14 @@ class ResponsiblePartyPresetAdmin(admin.ModelAdmin):
     list_display = ('name', 'code', 'sort_order', 'is_active', 'updated_at')
     list_filter = ('is_active',)
     search_fields = ('name', 'code')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(ChecklistItemPreset)
+class ChecklistItemPresetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'acquisition_place', 'responsible_party', 'sort_order', 'is_active', 'updated_at')
+    list_filter = ('is_active', 'responsible_party')
+    search_fields = ('name', 'category', 'acquisition_place')
     readonly_fields = ('created_at', 'updated_at')
 
 

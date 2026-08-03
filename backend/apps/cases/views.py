@@ -21,6 +21,7 @@ from .demo_data import (
     normalize_template_orders,
     seed_case_checklist_demo_data,
     seed_standard_case_checklist_templates,
+    seed_standard_checklist_item_presets,
 )
 from .models import (
     AcquisitionPlacePreset,
@@ -31,6 +32,7 @@ from .models import (
     CaseChecklistTemplateItem,
     CaseStatusSetting,
     CaseTypeMaster,
+    ChecklistItemPreset,
     ResponsiblePartyPreset,
 )
 from .serializers import (
@@ -43,6 +45,7 @@ from .serializers import (
     CaseSerializer,
     CaseStatusSettingSerializer,
     CaseTypeMasterSerializer,
+    ChecklistItemPresetSerializer,
     ResponsiblePartyPresetSerializer,
 )
 from .status_service import (
@@ -116,6 +119,30 @@ class AcquisitionPlacePresetViewSet(ActiveOrderingMixin, ModelViewSet):
 class ResponsiblePartyPresetViewSet(ActiveOrderingMixin, ModelViewSet):
     queryset = ResponsiblePartyPreset.objects.all()
     serializer_class = ResponsiblePartyPresetSerializer
+
+
+class ChecklistItemPresetPagination(PageNumberPagination):
+    page_size = 200
+    page_size_query_param = 'page_size'
+    max_page_size = 500
+
+
+class ChecklistItemPresetViewSet(ActiveOrderingMixin, ModelViewSet):
+    queryset = ChecklistItemPreset.objects.all()
+    serializer_class = ChecklistItemPresetSerializer
+    pagination_class = ChecklistItemPresetPagination
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        return queryset
+
+    @action(detail=False, methods=['post'], url_path='seed-standard')
+    def seed_standard(self, request):
+        result = seed_standard_checklist_item_presets()
+        return Response(result, status=status.HTTP_201_CREATED)
 
 
 class CaseChecklistPagination(PageNumberPagination):

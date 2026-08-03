@@ -350,6 +350,30 @@ export interface ResponsiblePartyPresetPayload {
   is_active?: boolean
 }
 
+export interface ChecklistItemPreset {
+  id: number
+  name: string
+  category: string
+  acquisition_place: string
+  responsible_party: CaseChecklistResponsibleParty
+  responsible_party_display: string
+  required_details: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ChecklistItemPresetPayload {
+  name: string
+  category?: string
+  acquisition_place?: string
+  responsible_party?: CaseChecklistResponsibleParty
+  required_details?: string
+  sort_order?: number
+  is_active?: boolean
+}
+
 export type CaseRegistrationStatus = 'active' | 'inactive' | 'archived'
 
 export type CaseStatus =
@@ -826,8 +850,8 @@ export interface ReceptionCompanyPayload {
 }
 
 export interface ReceptionCasePayload {
-  case_type: string
-  status: string
+  case_type_master: number | null
+  application_category: number | null
   responsible_employee?: number | null
   accepted_at?: string | null
 }
@@ -842,7 +866,26 @@ export interface ReceptionPayload {
 export interface ReceptionResponse {
   customer: number
   company: number | null
-  case: number
-  case_number: string
+  case: number | null
+  case_number: string | null
   family_members: number[]
+}
+
+export interface SystemUser {
+  id: number
+  username: string
+  first_name: string
+  last_name: string
+  is_active: boolean
+  is_staff: boolean
+  is_superuser: boolean
+  last_login: string | null
+  date_joined: string
+}
+
+export interface SystemUserCreatePayload {
+  username: string
+  password: string
+  first_name?: string
+  last_name?: string
 }

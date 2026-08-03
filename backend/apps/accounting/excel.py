@@ -309,12 +309,21 @@ def build_project_excel(project, incomes, expenses):
     return output.getvalue()
 
 
-def build_expenses_excel(expenses, filters=None, generated_at=None):
+def build_expenses_excel(
+    expenses,
+    incomes,
+    filters=None,
+    generated_at=None,
+    opening_balance=None,
+    period_expense_total=None,
+):
     expenses = list(expenses)
+    incomes = list(incomes)
     filters = filters or []
-    expense_total = _sum_amount(expenses)
-    expense_count = len(expenses)
-    average_amount = expense_total / expense_count if expense_count else Decimal('0')
+    opening_balance = opening_balance if opening_balance is not None else Decimal('0')
+    period_expense_total = period_expense_total if period_expense_total is not None else Decimal('0')
+    period_income_total = _sum_amount(incomes)
+    closing_balance = opening_balance + period_income_total - period_expense_total
 
     wb = Workbook()
     ws = wb.active
@@ -325,39 +334,34 @@ def build_expenses_excel(expenses, filters=None, generated_at=None):
         ws['A2'] = f'出力日時：{generated_at:%Y-%m-%d %H:%M}'
         ws['A2'].font = Font(size=10, color='52616F')
 
-    _style_summary_box(ws, 1, '支出合計', decimal_to_excel_number(expense_total), ACCOUNTING_NUMBER_FORMAT)
-    _style_summary_box(ws, 3, '対象件数', expense_count, COUNT_NUMBER_FORMAT)
-    _style_summary_box(ws, 5, '平均支出額', decimal_to_excel_number(average_amount), ACCOUNTING_NUMBER_FORMAT)
+    _style_summary_box(ws, 1, '期間収入', decimal_to_excel_number(period_income_total), ACCOUNTING_NUMBER_FORMAT)
+    _style_summary_box(ws, 3, '期首残高', decimal_to_excel_number(opening_balance), ACCOUNTING_NUMBER_FORMAT)
+    _style_summary_box(ws, 5, '残高', decimal_to_excel_number(closing_balance), ACCOUNTING_NUMBER_FORMAT)
+    if closing_balance < 0:
+        ws['E5'].font = Font(size=15, bold=True, color='C45656')
 
-    chart_row = 8
-    category_items = _expense_category_chart_items(expenses)
-    if category_items:
-        chart_ws = wb.create_sheet('ChartData')
-        chart_ws.sheet_state = 'hidden'
-        chart_ws.append(['カテゴリ', '金額'])
-        for item in category_items:
-            chart_ws.append([item['name'], decimal_to_excel_number(item['amount'])])
-            chart_ws.cell(row=chart_ws.max_row, column=2).number_format = ACCOUNTING_NUMBER_FORMAT
+    table_start_row = _write_filter_summary(ws, 7, filters)
+    table_start_row = max(table_start_row, 10)
 
-        pie_chart = PieChart()
-        pie_chart.title = '支出カテゴリ別構成'
-        pie_chart.width = 10
-        pie_chart.height = 7
-        labels = Reference(chart_ws, min_col=1, min_row=2, max_row=chart_ws.max_row)
-        data = Reference(chart_ws, min_col=2, min_row=1, max_row=chart_ws.max_row)
-        pie_chart.add_data(data, titles_from_data=True)
-        pie_chart.set_categories(labels)
-        pie_chart.dataLabels = DataLabelList()
-        pie_chart.dataLabels.showPercent = True
-        pie_chart.dataLabels.showCatName = True
-        ws.add_chart(pie_chart, 'A8')
-    else:
-        ws['A8'] = '表示できる支出データがありません。'
-        ws['A8'].font = Font(color='52616F')
+    income_rows = [
+        [
+            income.source_date,
+            income.source_target or '',
+            decimal_to_excel_number(income.amount),
+            income.note or '',
+        ]
+        for income in incomes
+    ]
+    next_row = _write_table(
+        ws,
+        table_start_row,
+        '収入明細',
+        ['日付', '対象', '金額', '備考'],
+        income_rows,
+        {3},
+    )
 
-    filter_start_row = 8 if not category_items else 23
-    table_start_row = _write_filter_summary(ws, filter_start_row, filters)
-    table_start_row = max(table_start_row, 27 if category_items else 12)
+    expense_table_start_row = next_row
     expense_rows = [
         [
             expense.expense_date,
@@ -367,15 +371,14 @@ def build_expenses_excel(expenses, filters=None, generated_at=None):
             expense.payment_method or '',
             expense.expense_target or '',
             expense.note or '',
-            'はい' if expense.is_reimbursed else 'いいえ',
         ]
         for expense in expenses
     ]
     _write_table(
         ws,
-        table_start_row,
+        expense_table_start_row,
         '支出明細',
-        ['日付', '場所', 'カテゴリ', '金額', '支払方法', '費用対象', '備考', '精算済み'],
+        ['日付', '場所', 'カテゴリ', '金額', '支払方法', '費用対象', '備考'],
         expense_rows,
         {4},
     )
@@ -388,14 +391,11 @@ def build_expenses_excel(expenses, filters=None, generated_at=None):
         'E': 16,
         'F': 20,
         'G': 34,
-        'H': 12,
-        'I': 16,
-        'J': 18,
     }
     for col, width in widths.items():
         ws.column_dimensions[col].width = width
 
-    table_header_row = table_start_row + 1
+    table_header_row = expense_table_start_row + 1
     ws.freeze_panes = f'A{table_header_row + 1}'
     ws.sheet_view.showGridLines = False
     ws.page_setup.orientation = 'landscape'
@@ -408,7 +408,7 @@ def build_expenses_excel(expenses, filters=None, generated_at=None):
     ws.page_margins.bottom = 0.6
     ws.print_title_rows = f'{table_header_row}:{table_header_row}'
     if not expense_rows:
-        ws.auto_filter.ref = f'A{table_header_row}:H{table_header_row}'
+        ws.auto_filter.ref = f'A{table_header_row}:G{table_header_row}'
 
     output = BytesIO()
     wb.save(output)
@@ -427,8 +427,22 @@ def project_excel_response(project, incomes, expenses):
     return response
 
 
-def expenses_excel_response(expenses, filters=None, generated_at=None):
-    content = build_expenses_excel(expenses, filters=filters, generated_at=generated_at)
+def expenses_excel_response(
+    expenses,
+    incomes,
+    filters=None,
+    generated_at=None,
+    opening_balance=None,
+    period_expense_total=None,
+):
+    content = build_expenses_excel(
+        expenses,
+        incomes,
+        filters=filters,
+        generated_at=generated_at,
+        opening_balance=opening_balance,
+        period_expense_total=period_expense_total,
+    )
     filename = f'支出記録_{generated_at:%Y%m%d}.xlsx' if generated_at else '支出記録.xlsx'
     response = HttpResponse(
         content,

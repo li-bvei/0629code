@@ -1,7 +1,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
-from apps.cases.models import Case
+from apps.cases.models import Case, CaseApplicationCategory, CaseTypeMaster
 from apps.companies.models import Company
 from apps.customers.models import Customer, FamilyMember
 from apps.timelines.models import Timeline
@@ -104,8 +104,16 @@ class ReceptionCompanySerializer(serializers.Serializer):
 
 
 class ReceptionCaseSerializer(serializers.Serializer):
-    case_type = serializers.CharField()
-    status = serializers.CharField()
+    case_type_master = serializers.PrimaryKeyRelatedField(
+        queryset=CaseTypeMaster.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+    )
+    application_category = serializers.PrimaryKeyRelatedField(
+        queryset=CaseApplicationCategory.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+    )
     responsible_employee = serializers.IntegerField(required=False, allow_null=True)
     accepted_at = serializers.DateField(required=False, allow_null=True)
 
@@ -115,18 +123,25 @@ class ReceptionCaseSerializer(serializers.Serializer):
             data['responsible_employee'] = None
         return super().to_internal_value(data)
 
+    def validate(self, attrs):
+        has_case_type = bool(attrs.get('case_type_master'))
+        has_application_category = bool(attrs.get('application_category'))
+        if has_case_type != has_application_category:
+            raise serializers.ValidationError('案件を作成する場合は案件種別と申請区分の両方を選択してください。')
+        return attrs
+
 
 class ReceptionSerializer(serializers.Serializer):
     customer = ReceptionCustomerSerializer()
     family_members = ReceptionFamilyMemberSerializer(many=True, required=False)
     company = ReceptionCompanySerializer(required=False)
-    case = ReceptionCaseSerializer()
+    case = ReceptionCaseSerializer(required=False)
 
     def create(self, validated_data):
         customer_data = validated_data['customer']
         family_members_data = validated_data.get('family_members', [])
         company_data = validated_data.get('company') or {}
-        case_data = validated_data['case']
+        case_data = validated_data.get('case') or {}
 
         with transaction.atomic():
             customer_data['gender'] = normalize_gender(customer_data.get('gender'))
@@ -157,26 +172,27 @@ class ReceptionSerializer(serializers.Serializer):
                     company_data['representative_customer_id'] = representative_customer_id
                 company = Company.objects.create(**company_data)
 
-            case = Case.objects.create(
-                case_type=case_data['case_type'],
-                status=case_data['status'],
-                customer=customer,
-                company=company,
-                responsible_employee_id=case_data.get('responsible_employee'),
-                accepted_at=case_data.get('accepted_at'),
-            )
-
-            Timeline.objects.create(
-                case=case,
-                title='新規受付',
-                content='新規受付ページから案件を作成しました。',
-                is_visible_to_client=False,
-            )
+            case = None
+            if case_data.get('case_type_master') and case_data.get('application_category'):
+                case = Case.objects.create(
+                    case_type_master=case_data['case_type_master'],
+                    application_category=case_data['application_category'],
+                    customer=customer,
+                    company=company,
+                    responsible_employee_id=case_data.get('responsible_employee'),
+                    accepted_at=case_data.get('accepted_at'),
+                )
+                Timeline.objects.create(
+                    case=case,
+                    title='新規受付',
+                    content='新規受付ページから案件を作成しました。',
+                    is_visible_to_client=False,
+                )
 
         return {
             'customer': customer.id,
             'company': company.id if company else None,
-            'case': case.id,
-            'case_number': case.case_number,
+            'case': case.id if case else None,
+            'case_number': case.case_number if case else None,
             'family_members': [family_member.id for family_member in family_members],
         }

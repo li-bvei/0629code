@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Briefcase,
-  Checked,
   Coin,
   DataAnalysis,
   Document,
@@ -88,10 +87,6 @@ const handleLogout = async () => {
           <el-menu-item index="/companies">
             <el-icon><OfficeBuilding /></el-icon>
             <span>会社管理</span>
-          </el-menu-item>
-          <el-menu-item index="/tasks">
-            <el-icon><Checked /></el-icon>
-            <span>タスク一覧</span>
           </el-menu-item>
         </el-sub-menu>
 

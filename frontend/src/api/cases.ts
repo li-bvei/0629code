@@ -23,6 +23,8 @@ import type {
   CaseStatusPayload,
   CaseStatusChangePayload,
   CaseStatusChangeResponse,
+  ChecklistItemPreset,
+  ChecklistItemPresetPayload,
   GenerateRemindersResponse,
   ItemNameSuggestion,
   ListParams,
@@ -146,6 +148,29 @@ export const createResponsiblePartyPreset = async (payload: ResponsiblePartyPres
 
 export const updateResponsiblePartyPreset = async (id: number, payload: Partial<ResponsiblePartyPresetPayload>) => {
   const response = await http.patch<ResponsiblePartyPreset>(`/case-responsible-party-presets/${id}/`, payload)
+  return response.data
+}
+
+export const listChecklistItemPresets = async (params?: ListParams & { is_active?: boolean | string, search?: string }) => {
+  const response = await http.get<PaginatedResponse<ChecklistItemPreset>>('/checklist-item-presets/', { params })
+  return response.data
+}
+
+export const createChecklistItemPreset = async (payload: ChecklistItemPresetPayload) => {
+  const response = await http.post<ChecklistItemPreset>('/checklist-item-presets/', payload)
+  return response.data
+}
+
+export const updateChecklistItemPreset = async (id: number, payload: Partial<ChecklistItemPresetPayload>) => {
+  const response = await http.patch<ChecklistItemPreset>(`/checklist-item-presets/${id}/`, payload)
+  return response.data
+}
+
+export const seedStandardChecklistItemPresets = async () => {
+  const response = await http.post<{ success: boolean, message: string, created: number, skipped: number }>(
+    '/checklist-item-presets/seed-standard/',
+    {},
+  )
   return response.data
 }
 

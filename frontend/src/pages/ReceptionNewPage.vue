@@ -5,9 +5,12 @@ import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { listEmployees } from '../api/employees'
 import { listCustomers } from '../api/customers'
+import { listCaseApplicationCategories, listCaseTypeMasters } from '../api/cases'
 import { createReception } from '../api/receptions'
-import { bankAccountTypeOptions, caseTypeOptions, fiscalMonthOptions, residenceStatusOptions } from '../constants/options'
+import { bankAccountTypeOptions, fiscalMonthOptions, residenceStatusOptions } from '../constants/options'
 import type {
+  CaseApplicationCategory,
+  CaseTypeMaster,
   Employee,
   Customer,
   ReceptionCompanyPayload,
@@ -20,10 +23,11 @@ const formRef = ref<FormInstance>()
 const submitting = ref(false)
 const employees = ref<Employee[]>([])
 const customers = ref<Customer[]>([])
+const caseTypes = ref<CaseTypeMaster[]>([])
+const applicationCategories = ref<CaseApplicationCategory[]>([])
 
 const genderOptions = ['男性', '女性', 'その他']
 const relationshipOptions = ['配偶者', '子', '父', '母', '兄弟姉妹', 'その他']
-const statusOptions = ['受付中', '準備中', '申請中', '補正対応中', '完了', '中止']
 
 const form = ref<ReceptionPayload>({
   customer: {
@@ -64,8 +68,8 @@ const form = ref<ReceptionPayload>({
     bank_account_number: '',
   },
   case: {
-    case_type: '',
-    status: '',
+    case_type_master: null,
+    application_category: null,
     responsible_employee: null,
     accepted_at: null,
   },
@@ -74,8 +78,6 @@ const form = ref<ReceptionPayload>({
 const rules: FormRules<ReceptionPayload> = {
   'customer.name': [{ required: true, message: '氏名を入力してください。', trigger: 'blur' }],
   'customer.birth_date': [{ required: true, message: '生年月日を入力してください。', trigger: 'change' }],
-  'case.case_type': [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
-  'case.status': [{ required: true, message: 'ステータスを選択してください。', trigger: 'change' }],
 }
 
 const hasAnyValue = (data: Record<string, unknown>) => (
@@ -139,6 +141,16 @@ const validateFamilyMembers = () => {
   return true
 }
 
+const validateCase = () => {
+  const hasCaseType = Boolean(form.value.case.case_type_master)
+  const hasApplicationCategory = Boolean(form.value.case.application_category)
+  if (hasCaseType !== hasApplicationCategory) {
+    ElMessage.error('案件を作成する場合は案件種別と申請区分の両方を選択してください。')
+    return false
+  }
+  return true
+}
+
 const buildPayload = (): ReceptionPayload => {
   const familyMembers = form.value.family_members
     .filter((familyMember) => hasAnyValue(familyMember as Record<string, unknown>))
@@ -171,13 +183,18 @@ const submitReception = async () => {
   if (!formRef.value) return
 
   const valid = await formRef.value.validate().catch(() => false)
-  if (!valid || !validateCompany() || !validateFamilyMembers()) return
+  if (!valid || !validateCompany() || !validateFamilyMembers() || !validateCase()) return
 
   submitting.value = true
   try {
     const result = await createReception(buildPayload())
-    ElMessage.success(`案件を作成しました。${result.case_number}`)
-    router.push(`/cases/${result.case}`)
+    if (result.case) {
+      ElMessage.success(`案件を作成しました。${result.case_number}`)
+      router.push(`/cases/${result.case}`)
+    } else {
+      ElMessage.success('顧客情報を登録しました。')
+      router.push(`/customers/${result.customer}`)
+    }
   } catch {
     ElMessage.error('新規受付の登録に失敗しました。')
   } finally {
@@ -187,12 +204,16 @@ const submitReception = async () => {
 
 onMounted(async () => {
   try {
-    const [employeeData, customerData] = await Promise.all([
+    const [employeeData, customerData, caseTypeData, applicationCategoryData] = await Promise.all([
       listEmployees(),
       listCustomers(),
+      listCaseTypeMasters({ is_active: true, ordering: 'sort_order' }),
+      listCaseApplicationCategories({ is_active: true, ordering: 'sort_order' }),
     ])
     employees.value = employeeData.results
     customers.value = customerData.results
+    caseTypes.value = caseTypeData.results
+    applicationCategories.value = applicationCategoryData.results
   } catch {
     ElMessage.error('選択肢の取得に失敗しました。')
   }
@@ -506,30 +527,39 @@ onMounted(async () => {
 
         <el-card shadow="never">
           <template #header>案件情報</template>
+          <p class="section-optional-note">まだ案件化しない場合は空欄のままで構いません。顧客情報だけ登録されます。</p>
           <div class="form-grid">
             <el-form-item label="案件番号">
               <el-input model-value="自動生成" disabled />
             </el-form-item>
-            <el-form-item label="案件種別" prop="case.case_type">
+            <el-form-item label="案件種別" prop="case.case_type_master">
               <el-select
-                v-model="form.case.case_type"
+                v-model="form.case.case_type_master"
                 filterable
-                allow-create
-                default-first-option
                 placeholder="選択してください"
                 class="form-control"
               >
                 <el-option
-                  v-for="caseType in caseTypeOptions"
-                  :key="caseType"
-                  :label="caseType"
-                  :value="caseType"
+                  v-for="caseType in caseTypes"
+                  :key="caseType.id"
+                  :label="caseType.name"
+                  :value="caseType.id"
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="ステータス" prop="case.status">
-              <el-select v-model="form.case.status" placeholder="選択してください" class="form-control">
-                <el-option v-for="status in statusOptions" :key="status" :label="status" :value="status" />
+            <el-form-item label="申請区分" prop="case.application_category">
+              <el-select
+                v-model="form.case.application_category"
+                filterable
+                placeholder="選択してください"
+                class="form-control"
+              >
+                <el-option
+                  v-for="category in applicationCategories"
+                  :key="category.id"
+                  :label="category.name"
+                  :value="category.id"
+                />
               </el-select>
             </el-form-item>
             <el-form-item label="担当者" prop="case.responsible_employee">
@@ -564,3 +594,11 @@ onMounted(async () => {
     </el-form>
   </section>
 </template>
+
+<style scoped>
+.section-optional-note {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+</style>

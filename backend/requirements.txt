@@ -1,5 +1,7 @@
 asgiref==3.11.1
+cryptography==50.0.0
 Django==4.2.30
+django-axes==8.0.0
 django-simpleui==2026.1.13
 djangorestframework==3.16.1
 gunicorn==23.0.0

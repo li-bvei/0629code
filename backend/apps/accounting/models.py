@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from apps.companies.models import Company
 from apps.customers.models import Customer
 from apps.employees.models import Employee
+from .voucher_calculations import calculate_voucher_amounts
 
 
 class ExpenseCategory(models.Model):
@@ -253,10 +254,10 @@ class AccountingVoucher(models.Model):
     def save(self, *args, **kwargs):
         self.line_items = self.normalize_line_items(self.line_items)
         if self.line_items:
-            total_amount = sum(Decimal(str(item['line_total'])) for item in self.line_items)
-            self.amount = (total_amount / Decimal('1.1')).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
-            self.tax_amount = total_amount - self.amount
-            self.total_amount = total_amount
+            _, summary = calculate_voucher_amounts(self.line_items)
+            self.amount = summary['subtotal']
+            self.tax_amount = summary['tax_total']
+            self.total_amount = summary['total']
         else:
             self.tax_amount = self.tax_amount or 0
             self.total_amount = self.amount + self.tax_amount
@@ -273,26 +274,7 @@ class AccountingVoucher(models.Model):
 
     @classmethod
     def normalize_line_items(cls, items):
-        if not isinstance(items, list):
-            return []
-
-        normalized = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            item_name = str(item.get('item_name') or '').strip()
-            quantity = cls.to_decimal(item.get('quantity'))
-            unit_price = cls.to_decimal(item.get('unit_price'))
-            if not item_name and quantity == 0 and unit_price == 0:
-                continue
-            line_total = (quantity * unit_price).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
-            normalized.append({
-                'item_name': item_name,
-                'quantity': float(quantity),
-                'unit_price': int(unit_price.quantize(Decimal('1'), rounding=ROUND_HALF_UP)),
-                'line_total': int(line_total),
-            })
-        return normalized
+        return calculate_voucher_amounts(items)[0]
 
     def generate_voucher_number(self):
         prefix = 'INV' if self.voucher_type == self.VOUCHER_TYPE_INVOICE else 'REC'

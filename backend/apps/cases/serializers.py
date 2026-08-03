@@ -12,6 +12,7 @@ from .models import (
     CaseChecklistTemplateItem,
     CaseStatusSetting,
     CaseTypeMaster,
+    ChecklistItemPreset,
     ResponsiblePartyPreset,
 )
 from .status_service import get_required_checklist_progress
@@ -68,6 +69,19 @@ class ResponsiblePartyPresetSerializer(serializers.ModelSerializer):
         name = validated_data.get('name', '')
         validated_data['code'] = self.initial_data.get('code') or name.lower().replace(' ', '_')
         return super().create(validated_data)
+
+
+class ChecklistItemPresetSerializer(serializers.ModelSerializer):
+    responsible_party_display = serializers.CharField(source='get_responsible_party_display', read_only=True)
+
+    class Meta:
+        model = ChecklistItemPreset
+        fields = [
+            'id', 'name', 'category', 'acquisition_place', 'responsible_party',
+            'responsible_party_display', 'required_details', 'sort_order', 'is_active',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class CaseSerializer(serializers.ModelSerializer):

@@ -13,6 +13,11 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+from .voucher_calculations import (
+    TAX_CATEGORY_LABELS,
+    TAX_CATEGORY_10,
+    voucher_tax_summary,
+)
 
 FONT_NAME = 'VoucherCJK'
 MINCHO_FONT = 'YuMinchoProject'
@@ -275,6 +280,10 @@ def get_line_total(item):
     return int(float(item.get('quantity') or 0) * float(item.get('unit_price') or 0))
 
 
+def get_line_tax_label(item):
+    return TAX_CATEGORY_LABELS.get(item.get('tax_category') or TAX_CATEGORY_10, '10％')
+
+
 def get_line_item_name(item):
     return str(
         item.get('item_name')
@@ -395,6 +404,57 @@ def build_content_disposition(filename):
     return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quote(filename)}'
 
 
+def build_invoice_summary_rows(voucher, leading_blank_span, merge_label=False):
+    summary = voucher_tax_summary(voucher)
+
+    if merge_label:
+        # ラベルセルを空白スペーサーと合体させ、1つの罫線付きセルとして右寄せで描く。
+        # 領収書側は収入印紙欄がこの余白に重なるため使わない（行ごとに罫線が入ると
+        # 印紙枠を横切ってしまう）。請求書側は重なるものが無いのでこちらを使う。
+        label_span = leading_blank_span + 1
+        return [
+            [
+                {'text': '小計', 'span': label_span, 'align': 'right', 'size': 8},
+                {'text': yen(summary['subtotal']), 'align': 'right', 'size': 8},
+            ],
+            [
+                {'text': '消費税', 'span': label_span, 'align': 'right', 'size': 8},
+                {'text': yen(summary['tax_total']), 'align': 'right', 'size': 8},
+            ],
+            [
+                {'text': '合計', 'span': label_span, 'align': 'right', 'bold': True, 'size': 8},
+                {'text': yen(summary['total']), 'align': 'right', 'bold': True, 'size': 8},
+            ],
+        ]
+
+    return [
+        [
+            {'text': '', 'span': leading_blank_span, 'border': False},
+            {'text': '小計', 'align': 'right', 'size': 8},
+            {'text': yen(summary['subtotal']), 'align': 'right', 'size': 8},
+        ],
+        [
+            {'text': '', 'span': leading_blank_span, 'border': False},
+            {'text': '消費税', 'align': 'right', 'size': 8},
+            {'text': yen(summary['tax_total']), 'align': 'right', 'size': 8},
+        ],
+        [
+            {'text': '', 'span': leading_blank_span, 'border': False},
+            {'text': '合計', 'align': 'right', 'bold': True, 'size': 8},
+            {'text': yen(summary['total']), 'align': 'right', 'bold': True, 'size': 8},
+        ],
+    ]
+
+
+def connect_summary_left_border(c, margin_x, summary_top_y, table_bottom_y):
+    """summary 行の先頭セルは border:False で空けてある（領収書側は収入印紙欄が
+    重なるため、行ごとに罫線を引くと収入印紙の枠と交差してしまう）。かわりに、
+    明細表の左端から続く縦線を 1 本だけ引いて見た目上つなげる。"""
+    c.setStrokeColor(colors.black)
+    c.setLineWidth(0.8)
+    c.line(margin_x, summary_top_y, margin_x, table_bottom_y)
+
+
 def build_invoice_pdf(voucher, with_seal=False):
     font_name = register_mincho_font()
     buffer = BytesIO()
@@ -466,18 +526,20 @@ def build_invoice_pdf(voucher, with_seal=False):
         [pdfmetrics.stringWidth(text, font_name, 10) for text in item_texts] or [0]
     )
     item_padding = pdfmetrics.stringWidth('ああああ', font_name, 10) + 10
-    unit_w = 22 * mm
+    unit_w = 24 * mm
     qty_w = 14 * mm
+    tax_w = 15 * mm
     amount_w = 26 * mm
     min_note_w = 26 * mm
-    max_item_w = content_w - unit_w - qty_w - amount_w - min_note_w
+    max_item_w = content_w - unit_w - qty_w - tax_w - amount_w - min_note_w
     item_w = min(max_item_w, max(58 * mm, longest_item_width + item_padding))
-    note_w = content_w - item_w - unit_w - qty_w - amount_w
-    col_widths = [item_w, unit_w, qty_w, amount_w, note_w]
+    note_w = content_w - item_w - unit_w - qty_w - tax_w - amount_w
+    col_widths = [item_w, unit_w, qty_w, tax_w, amount_w, note_w]
     detail_rows = [[
         {'text': '適用', 'align': 'center', 'bold': True},
         {'text': '単価（税込）', 'align': 'center', 'bold': True, 'size': 8},
         {'text': '数量', 'align': 'center', 'bold': True},
+        {'text': '税区分', 'align': 'center', 'bold': True, 'size': 8},
         {'text': '金額（税込）', 'align': 'center', 'bold': True, 'size': 8},
         {'text': '備考', 'align': 'center', 'bold': True},
     ]]
@@ -487,6 +549,7 @@ def build_invoice_pdf(voucher, with_seal=False):
             {'text': str(item.get('item_name') or ''), 'align': 'left'},
             {'text': yen(item.get('unit_price')) if item.get('unit_price') not in (None, '') else '', 'align': 'right'},
             {'text': plain_number(item.get('quantity')), 'align': 'center'},
+            {'text': get_line_tax_label(item), 'align': 'center', 'size': 8},
             {'text': yen(get_line_total(item)) if item.get('item_name') or item.get('line_total') not in (None, '') else '', 'align': 'right'},
             {'text': '', 'align': 'left'},
         ])
@@ -498,27 +561,13 @@ def build_invoice_pdf(voucher, with_seal=False):
             {'text': ''},
             {'text': ''},
             {'text': ''},
+            {'text': ''},
         ])
 
-    detail_rows.extend([
-        [
-            {'text': '', 'span': 3, 'border': False},
-            {'text': '税抜金額', 'align': 'right', 'size': 8},
-            {'text': yen(voucher.amount), 'align': 'right', 'size': 8},
-        ],
-        [
-            {'text': '', 'span': 3, 'border': False},
-            {'text': '消費税', 'align': 'right', 'size': 8},
-            {'text': yen(voucher.tax_amount), 'align': 'right', 'size': 8},
-        ],
-        [
-            {'text': '', 'span': 3, 'border': False},
-            {'text': '税込合計', 'align': 'right', 'bold': True, 'size': 8},
-            {'text': yen(voucher.total_amount), 'align': 'right', 'bold': True, 'size': 8},
-        ],
-    ])
+    summary_rows = build_invoice_summary_rows(voucher, leading_blank_span=4, merge_label=True)
+    detail_rows.extend(summary_rows)
 
-    summary_start_index = len(detail_rows) - 3
+    summary_start_index = len(detail_rows) - len(summary_rows)
     row_heights = [
         8 * mm if index == 0 else 6.2 * mm if index >= summary_start_index else 8.8 * mm
         for index in range(len(detail_rows))
@@ -635,36 +684,25 @@ def build_receipt_pdf(voucher, with_seal=False):
             {'text': ''},
         ])
 
-    receipt_rows.extend([
-        [
-            {'text': '', 'border': False},
-            {'text': '税抜金額', 'align': 'right', 'size': 8},
-            {'text': yen(voucher.amount), 'align': 'right', 'size': 8},
-        ],
-        [
-            {'text': '', 'border': False},
-            {'text': '消費税', 'align': 'right', 'size': 8},
-            {'text': yen(voucher.tax_amount), 'align': 'right', 'size': 8},
-        ],
-        [
-            {'text': '', 'border': False},
-            {'text': '税込合計', 'align': 'right', 'bold': True, 'size': 8},
-            {'text': yen(voucher.total_amount), 'align': 'right', 'bold': True, 'size': 8},
-        ],
-    ])
+    receipt_summary_start = len(receipt_rows)
+    receipt_rows.extend(build_invoice_summary_rows(voucher, leading_blank_span=1))
 
     receipt_col_widths = [content_w * 0.52, content_w * 0.22, content_w * 0.26]
-    receipt_summary_start = len(receipt_rows) - 3
     receipt_row_heights = [
         9 * mm if index == 0 else 6.2 * mm if index >= receipt_summary_start else 10 * mm
         for index in range(len(receipt_rows))
     ]
+    receipt_table_top_y = y
+    receipt_summary_top_y = receipt_table_top_y - sum(receipt_row_heights[:receipt_summary_start])
     y = draw_table(c, margin_x, y, receipt_col_widths, receipt_row_heights, receipt_rows, font_name, font_size=10)
 
     stamp_w = 21.5 * mm
     stamp_h = 25.5 * mm
     stamp_top_y = y + sum(receipt_row_heights[receipt_summary_start:])
     stamp_y = stamp_top_y - stamp_h
+    # 収入印紙欄が summary の左側スペースにちょうど重なる形で描かれるので、
+    # 縦線は印紙欄の下端までではなく summary の最下端まで引いて表とつなげる。
+    connect_summary_left_border(c, margin_x, receipt_summary_top_y, y)
     c.setStrokeColor(colors.black)
     c.setLineWidth(0.8)
     c.rect(margin_x, stamp_y, stamp_w, stamp_h, fill=0, stroke=1)

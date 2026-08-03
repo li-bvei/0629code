@@ -1,5 +1,7 @@
 from django.db import models
 
+from apps.common.fields import EncryptedCharField
+
 
 class Customer(models.Model):
     GENDER_MALE = 'male'
@@ -26,7 +28,7 @@ class Customer(models.Model):
     phone = models.CharField(max_length=30, blank=True)
     postal_code = models.CharField('郵便番号', max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)
-    my_number = models.CharField('マイナンバー', max_length=30, blank=True)
+    my_number = EncryptedCharField('マイナンバー', max_length=255, blank=True)
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -73,7 +75,7 @@ class FamilyMember(models.Model):
     phone = models.CharField(max_length=30, blank=True)
     postal_code = models.CharField('郵便番号', max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)
-    my_number = models.CharField('マイナンバー', max_length=30, blank=True)
+    my_number = EncryptedCharField('マイナンバー', max_length=255, blank=True)
     is_dependent = models.BooleanField(default=False)
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

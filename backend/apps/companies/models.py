@@ -1,5 +1,6 @@
 from django.db import models
 
+from apps.common.fields import EncryptedCharField
 from apps.customers.models import Customer
 
 
@@ -66,7 +67,7 @@ class CompanyStaff(models.Model):
     email = models.EmailField('メール', blank=True)
     postal_code = models.CharField('郵便番号', max_length=20, blank=True)
     address = models.CharField('住所', max_length=255, blank=True)
-    my_number = models.CharField('マイナンバー', max_length=30, blank=True)
+    my_number = EncryptedCharField('マイナンバー', max_length=255, blank=True)
     employment_start_date = models.DateField('入社日', null=True, blank=True)
     employment_end_date = models.DateField('退社日', null=True, blank=True)
     note = models.TextField('備考', blank=True)

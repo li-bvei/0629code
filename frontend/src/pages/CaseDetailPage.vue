@@ -12,15 +12,15 @@ import {
   createCaseChecklistItem,
   deleteCaseChecklistItem,
   getCase,
+  listCaseChecklistItemNameSuggestions,
   listCaseChecklistItems,
   listCaseChecklistTemplates,
+  listChecklistItemPresets,
   previewRegenerateCaseNumber,
   regenerateCaseNumber,
+  updateCase,
   updateCaseChecklistItem,
-  updateCaseProgressInfo,
 } from '../api/cases'
-import { listEmployees } from '../api/employees'
-import { createTask, deleteTask, listTasks, updateTask } from '../api/tasks'
 import { createTimeline, listTimelines, updateTimeline } from '../api/timelines'
 import type {
   Case,
@@ -28,9 +28,9 @@ import type {
   CaseChecklistItemPayload,
   CaseChecklistItemType,
   CaseChecklistTemplate,
-  Employee,
-  Task,
-  TaskPayload,
+  CasePayload,
+  ChecklistItemPreset,
+  ItemNameSuggestion,
   Timeline,
   TimelinePayload,
 } from '../types/api'
@@ -49,27 +49,23 @@ const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
 const caseDetail = ref<Case | null>(null)
-const employees = ref<Employee[]>([])
-const tasks = ref<Task[]>([])
 const timelines = ref<Timeline[]>([])
 const checklistItems = ref<CaseChecklistItem[]>([])
 const checklistTemplates = ref<CaseChecklistTemplate[]>([])
-const taskSubmitting = ref(false)
-const taskDialogVisible = ref(false)
-const editingTaskId = ref<number | null>(null)
-const editingTaskResponsibleEmployeeName = ref('')
-const taskFormRef = ref<FormInstance>()
+const checklistItemPresets = ref<ChecklistItemPreset[]>([])
 const timelineSubmitting = ref(false)
 const timelineDialogVisible = ref(false)
 const editingTimelineId = ref<number | null>(null)
 const timelineFormRef = ref<FormInstance>()
-const progressInfoSubmitting = ref(false)
-const progressInfoDialogVisible = ref(false)
-const statusDialogVisible = ref(false)
+const progressUpdateDialogVisible = ref(false)
+const progressUpdateSubmitting = ref(false)
+const progressUpdateNoteVisible = ref(false)
+const progressUpdateWarnings = ref<Array<{ code: string, message: string }>>([])
+const progressHistoryCollapse = ref<string[]>([])
+const correctionDialogVisible = ref(false)
+const correctionSubmitting = ref(false)
 const registrationStatusDialogVisible = ref(false)
-const statusChanging = ref(false)
 const registrationStatusChanging = ref(false)
-const statusWarnings = ref<Array<{ code: string, message: string }>>([])
 const registrationStatusWarnings = ref<Array<{ code: string, message: string }>>([])
 const cancelSubmitting = ref(false)
 const regeneratingCaseNumber = ref(false)
@@ -89,14 +85,6 @@ const canCancelCase = computed(() => (
   caseDetail.value
   && !['withdrawn', 'completed'].includes(caseDetail.value.status)
 ))
-
-const taskStatusOptions = [
-  { label: '未開始', value: 'pending', type: 'info' },
-  { label: '進行中', value: 'in_progress', type: 'warning' },
-  { label: '完了', value: 'completed', type: 'success' },
-  { label: '保留', value: 'paused', type: 'primary' },
-  { label: '取消', value: 'cancelled', type: 'danger' },
-] as const
 
 const timelineTitleOptions = [
   '受任',
@@ -143,25 +131,9 @@ const customerNoticeText = ref('')
 const customerNoticeOptions = ref({
   noticeType: 'initial' as NoticeType,
   language: 'zh' as NoticeLanguage,
-  showCustomerName: true,
-  showCaseType: true,
-  showCaseNumber: true,
-  showPlace: true,
-  showRequiredDetails: true,
-  showCustomerNote: true,
   onlyIncomplete: false,
 })
 
-const taskForm = ref<TaskPayload>({
-  case: 0,
-  title: '',
-  description: '',
-  responsible_employee: null,
-  status: 'pending',
-  sort_order: 0,
-  planned_completion_date: null,
-  completed_at: null,
-})
 const timelineForm = ref<TimelinePayload>({
   case: 0,
   occurred_at: null,
@@ -169,34 +141,38 @@ const timelineForm = ref<TimelinePayload>({
   content: '',
   is_visible_to_client: false,
 })
-const progressInfoForm = ref({
+const progressUpdateForm = ref({
+  new_status: '',
+  change_date: '',
+  note: '',
+  force: false,
   applied_at: null as string | null,
   application_receipt_number: '',
   additional_documents_requested_at: null as string | null,
   additional_documents_detail: '',
+  additional_documents_due_at: null as string | null,
   additional_documents_submitted_at: null as string | null,
+  result_notified_at: null as string | null,
   result_received_at: null as string | null,
   permission_number: '',
   result_note: '',
   withdrawn_at: null as string | null,
   completed_at: null as string | null,
-  note: '',
 })
-const statusForm = ref({
-  new_status: '',
-  change_date: '',
-  note: '',
-  force: false,
-  next_action: '',
-  next_action_due_at: null as string | null,
+const correctionForm = ref({
+  consulted_at: null as string | null,
+  accepted_at: null as string | null,
+  document_collection_started_at: null as string | null,
+  documents_completed_at: null as string | null,
+  application_ready_at: null as string | null,
   applied_at: null as string | null,
-  application_authority: '',
   application_receipt_number: '',
-  expected_result_at: null as string | null,
+  review_started_at: null as string | null,
   additional_documents_requested_at: null as string | null,
+  additional_documents_detail: '',
   additional_documents_due_at: null as string | null,
   additional_documents_submitted_at: null as string | null,
-  additional_documents_detail: '',
+  result_notified_at: null as string | null,
   result_received_at: null as string | null,
   permission_number: '',
   result_note: '',
@@ -235,10 +211,6 @@ const checklistItemForm = ref<CaseChecklistItemPayload>({
   sort_order: 0,
 })
 
-const taskRules: FormRules<TaskPayload> = {
-  title: [{ required: true, message: 'タスク名を入力してください。', trigger: 'blur' }],
-  status: [{ required: true, message: 'ステータスを選択してください。', trigger: 'change' }],
-}
 const timelineRules: FormRules<TimelinePayload> = {
   title: [{ required: true, message: 'タイトルを入力してください。', trigger: 'blur' }],
 }
@@ -260,14 +232,6 @@ const getTodayDate = () => {
   ].join('-')
 }
 
-const getTaskStatusLabel = (status: string) => (
-  taskStatusOptions.find((option) => option.value === status)?.label || status || '-'
-)
-
-const getTaskStatusTagType = (status: string) => (
-  taskStatusOptions.find((option) => option.value === status)?.type || 'info'
-)
-
 const getChecklistItemTypeLabel = (type: CaseChecklistItemType) => (
   checklistItemTypeOptions.find((option) => option.value === type)?.label || type
 )
@@ -277,22 +241,6 @@ const getImportanceOption = (level: string) => (
 )
 
 const getImportanceLabel = (level: string) => getImportanceOption(level).label
-
-const isFinishedTask = (task: Task) => ['completed', 'cancelled'].includes(task.status)
-
-const getTaskRowClassName = ({ row }: { row: Task }) => (isFinishedTask(row) ? 'task-row-finished' : '')
-
-const sortedTasks = computed(() => (
-  [...tasks.value].sort((left, right) => {
-    const leftFinished = isFinishedTask(left) ? 1 : 0
-    const rightFinished = isFinishedTask(right) ? 1 : 0
-    if (leftFinished !== rightFinished) return leftFinished - rightFinished
-    if ((left.sort_order || 0) !== (right.sort_order || 0)) {
-      return (left.sort_order || 0) - (right.sort_order || 0)
-    }
-    return left.id - right.id
-  })
-))
 
 const sortedTimelines = computed(() => (
   timelines.value
@@ -331,12 +279,6 @@ const checklistGroups = computed(() => {
   return groups
 })
 
-const taskProgressText = computed(() => {
-  const total = tasks.value.length
-  const completed = tasks.value.filter((task) => task.status === 'completed').length
-  return `${completed} / ${total}`
-})
-
 const checklistProgressText = computed(() => {
   const total = checklistItems.value.length
   const completed = checklistItems.value.filter((item) => item.is_completed).length
@@ -349,64 +291,45 @@ const checklistProgressPercentage = computed(() => {
   return Math.round((completed / checklistItems.value.length) * 100)
 })
 
+const isAgencyHandledParty = (party: string) => (
+  ['our_company', 'gyousei', 'tax_accountant'].includes(party)
+)
+
 const visibleNoticeItems = computed(() => (
   sortedChecklistItems.value.filter((item) => (
     item.is_visible_to_customer && (!customerNoticeOptions.value.onlyIncomplete || !item.is_completed)
   ))
 ))
 
-const nextTask = computed(() => sortedTasks.value.find((task) => !isFinishedTask(task)) || null)
+const customerActionNoticeItems = computed(() => (
+  visibleNoticeItems.value.filter((item) => !isAgencyHandledParty(item.responsible_party))
+))
 
-const taskEmployeeOptions = computed(() => {
-  const options = [...employees.value]
-  const selectedEmployeeId = taskForm.value.responsible_employee
-  if (
-    selectedEmployeeId
-    && !options.some((employee) => employee.id === selectedEmployeeId)
-    && editingTaskResponsibleEmployeeName.value
-  ) {
-    options.push({
-      id: selectedEmployeeId,
-      name: `${editingTaskResponsibleEmployeeName.value}（無効）`,
-      email: '',
-      phone: '',
-      is_active: false,
-      created_at: '',
-      updated_at: '',
-    })
-  }
-  return options
-})
+const agencyHandledNoticeItems = computed(() => (
+  visibleNoticeItems.value.filter((item) => isAgencyHandledParty(item.responsible_party))
+))
 
 const fetchCaseDetail = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [caseData, taskData, timelineData, employeeData, checklistData, templateData] = await Promise.all([
+    const [caseData, timelineData, checklistData, templateData, presetData] = await Promise.all([
       getCase(caseId.value),
-      listTasks({ case: caseId.value }),
       listTimelines({ case: caseId.value }),
-      listEmployees({ is_active: true }),
       listCaseChecklistItems({ case: caseId.value }),
       listCaseChecklistTemplates({ is_active: true }),
+      listChecklistItemPresets({ is_active: true, ordering: 'sort_order' }),
     ])
     caseDetail.value = caseData
-    tasks.value = taskData.results
     timelines.value = timelineData.results
-    employees.value = employeeData.results
     checklistItems.value = checklistData.results
     checklistTemplates.value = templateData.results
+    checklistItemPresets.value = presetData.results
   } catch {
     errorMessage.value = '案件詳細の取得に失敗しました。'
   } finally {
     loading.value = false
   }
-}
-
-const fetchTasks = async () => {
-  const data = await listTasks({ case: caseId.value })
-  tasks.value = data.results
-  caseDetail.value = await getCase(caseId.value)
 }
 
 const fetchTimelines = async () => {
@@ -418,23 +341,6 @@ const fetchChecklistItems = async () => {
   const data = await listCaseChecklistItems({ case: caseId.value })
   checklistItems.value = data.results
   caseDetail.value = await getCase(caseId.value)
-}
-
-const resetTaskForm = () => {
-  const nextSortOrder = tasks.value.reduce((maxValue, task) => Math.max(maxValue, task.sort_order || 0), 0) + 10
-  editingTaskId.value = null
-  editingTaskResponsibleEmployeeName.value = ''
-  taskForm.value = {
-    case: caseId.value,
-    title: '',
-    description: '',
-    responsible_employee: caseDetail.value?.responsible_employee || null,
-    status: 'pending',
-    sort_order: nextSortOrder,
-    planned_completion_date: null,
-    completed_at: null,
-  }
-  taskFormRef.value?.clearValidate()
 }
 
 const resetTimelineForm = () => {
@@ -484,28 +390,6 @@ const resetChecklistItemForm = () => {
   checklistItemFormRef.value?.clearValidate()
 }
 
-const openCreateTaskDialog = () => {
-  resetTaskForm()
-  taskDialogVisible.value = true
-}
-
-const openEditTaskDialog = (task: Task) => {
-  editingTaskId.value = task.id
-  editingTaskResponsibleEmployeeName.value = task.responsible_employee_name || ''
-  taskForm.value = {
-    case: caseId.value,
-    title: task.title,
-    description: task.description,
-    responsible_employee: task.responsible_employee,
-    status: task.status,
-    sort_order: task.sort_order,
-    planned_completion_date: task.planned_completion_date || task.due_date,
-    completed_at: task.completed_at,
-  }
-  taskFormRef.value?.clearValidate()
-  taskDialogVisible.value = true
-}
-
 const openCreateTimelineDialog = () => {
   resetTimelineForm()
   timelineDialogVisible.value = true
@@ -524,50 +408,55 @@ const openEditTimelineDialog = (timeline: Timeline) => {
   timelineDialogVisible.value = true
 }
 
-const openProgressInfoDialog = () => {
+const openProgressUpdateDialog = (suggestedStatus?: string) => {
   if (!caseDetail.value) return
-  progressInfoForm.value = {
+  progressUpdateWarnings.value = []
+  progressUpdateNoteVisible.value = false
+  const today = getTodayDate()
+  progressUpdateForm.value = {
+    new_status: suggestedStatus || caseDetail.value.status,
+    change_date: today,
+    note: '',
+    force: false,
+    applied_at: caseDetail.value.applied_at || today,
+    application_receipt_number: caseDetail.value.application_receipt_number || '',
+    additional_documents_requested_at: caseDetail.value.additional_documents_requested_at || today,
+    additional_documents_detail: caseDetail.value.additional_documents_detail || '',
+    additional_documents_due_at: caseDetail.value.additional_documents_due_at,
+    additional_documents_submitted_at: caseDetail.value.additional_documents_submitted_at || today,
+    result_notified_at: caseDetail.value.result_notified_at || today,
+    result_received_at: caseDetail.value.result_received_at || today,
+    permission_number: caseDetail.value.permission_number || '',
+    result_note: caseDetail.value.result_note || '',
+    withdrawn_at: caseDetail.value.withdrawn_at || today,
+    completed_at: caseDetail.value.completed_at || today,
+  }
+  progressUpdateDialogVisible.value = true
+}
+
+const openCorrectionDialog = () => {
+  if (!caseDetail.value) return
+  correctionForm.value = {
+    consulted_at: caseDetail.value.consulted_at,
+    accepted_at: caseDetail.value.accepted_at,
+    document_collection_started_at: caseDetail.value.document_collection_started_at,
+    documents_completed_at: caseDetail.value.documents_completed_at,
+    application_ready_at: caseDetail.value.application_ready_at,
     applied_at: caseDetail.value.applied_at,
     application_receipt_number: caseDetail.value.application_receipt_number || '',
+    review_started_at: caseDetail.value.review_started_at,
     additional_documents_requested_at: caseDetail.value.additional_documents_requested_at,
     additional_documents_detail: caseDetail.value.additional_documents_detail || '',
+    additional_documents_due_at: caseDetail.value.additional_documents_due_at,
     additional_documents_submitted_at: caseDetail.value.additional_documents_submitted_at,
+    result_notified_at: caseDetail.value.result_notified_at,
     result_received_at: caseDetail.value.result_received_at,
     permission_number: caseDetail.value.permission_number || '',
     result_note: caseDetail.value.result_note || '',
     withdrawn_at: caseDetail.value.withdrawn_at,
     completed_at: caseDetail.value.completed_at,
-    note: '',
   }
-  progressInfoDialogVisible.value = true
-}
-
-const openStatusDialog = (suggestedStatus?: string) => {
-  if (!caseDetail.value) return
-  statusWarnings.value = []
-  const changeDate = getTodayDate()
-  statusForm.value = {
-    new_status: suggestedStatus || caseDetail.value.status,
-    change_date: changeDate,
-    note: '',
-    force: false,
-    next_action: caseDetail.value.next_action || '',
-    next_action_due_at: caseDetail.value.next_action_due_at,
-    applied_at: caseDetail.value.applied_at || changeDate,
-    application_authority: caseDetail.value.application_authority || '',
-    application_receipt_number: caseDetail.value.application_receipt_number || '',
-    expected_result_at: caseDetail.value.expected_result_at,
-    additional_documents_requested_at: caseDetail.value.additional_documents_requested_at || changeDate,
-    additional_documents_due_at: caseDetail.value.additional_documents_due_at,
-    additional_documents_submitted_at: caseDetail.value.additional_documents_submitted_at || changeDate,
-    additional_documents_detail: caseDetail.value.additional_documents_detail || '',
-    result_received_at: caseDetail.value.result_received_at || changeDate,
-    permission_number: caseDetail.value.permission_number || '',
-    result_note: caseDetail.value.result_note || '',
-    withdrawn_at: caseDetail.value.withdrawn_at || changeDate,
-    completed_at: caseDetail.value.completed_at || changeDate,
-  }
-  statusDialogVisible.value = true
+  correctionDialogVisible.value = true
 }
 
 const openRegistrationStatusDialog = () => {
@@ -619,6 +508,37 @@ const openCreateChecklistItemDialog = () => {
   checklistItemDialogVisible.value = true
 }
 
+const queryChecklistItemNameSuggestions = async (
+  query: string,
+  callback: (suggestions: Array<{ value: string, presetId?: number }>) => void,
+) => {
+  try {
+    const [presetsData, historySuggestions] = await Promise.all([
+      listChecklistItemPresets({ search: query || undefined, is_active: true }),
+      listCaseChecklistItemNameSuggestions({ q: query || undefined }),
+    ])
+    const presetOptions = presetsData.results.map((preset) => ({ value: preset.name, presetId: preset.id }))
+    const presetNames = new Set(presetOptions.map((option) => option.value))
+    const historyOptions = (historySuggestions as ItemNameSuggestion[])
+      .filter((suggestion) => !presetNames.has(suggestion.value))
+      .map((suggestion) => ({ value: suggestion.value }))
+    callback([...presetOptions, ...historyOptions])
+  } catch {
+    callback([])
+  }
+}
+
+const handleChecklistItemNameSelect = (option: { value: string, presetId?: number }) => {
+  if (!option.presetId) return
+  const preset = checklistItemPresets.value.find((item) => item.id === option.presetId)
+  if (!preset) return
+  checklistItemForm.value.name = preset.name
+  if (preset.category) checklistItemForm.value.category = preset.category
+  if (preset.acquisition_place) checklistItemForm.value.acquisition_place = preset.acquisition_place
+  if (preset.responsible_party) checklistItemForm.value.responsible_party = preset.responsible_party
+  if (preset.required_details) checklistItemForm.value.required_details = preset.required_details
+}
+
 const openEditChecklistItemDialog = (item: CaseChecklistItem) => {
   editingChecklistItemId.value = item.id
   checklistItemForm.value = {
@@ -652,49 +572,150 @@ const openApplyTemplateDialog = () => {
   applyTemplateDialogVisible.value = true
 }
 
-const submitStatusChange = async () => {
-  if (!statusForm.value.new_status) {
-    ElMessage.warning('新しい進捗を選択してください。')
-    return
-  }
-  if (statusForm.value.force && !statusForm.value.note.trim()) {
+const submitProgressUpdate = async () => {
+  if (!caseDetail.value) return
+  if (progressUpdateForm.value.force && !progressUpdateForm.value.note.trim()) {
     ElMessage.warning('強制変更する場合は備考を入力してください。')
     return
   }
-  statusChanging.value = true
+  progressUpdateSubmitting.value = true
   try {
     await changeCaseStatus(caseId.value, {
-      new_status: statusForm.value.new_status,
-      change_date: statusForm.value.change_date,
-      note: statusForm.value.note,
-      force: statusForm.value.force,
+      new_status: progressUpdateForm.value.new_status,
+      change_date: progressUpdateForm.value.change_date,
+      note: progressUpdateForm.value.note,
+      force: progressUpdateForm.value.force,
       status_payload: {
-        applied_at: statusForm.value.applied_at,
-        application_receipt_number: statusForm.value.application_receipt_number,
-        additional_documents_requested_at: statusForm.value.additional_documents_requested_at,
-        additional_documents_detail: statusForm.value.additional_documents_detail,
-        additional_documents_submitted_at: statusForm.value.additional_documents_submitted_at,
-        result_received_at: statusForm.value.result_received_at,
-        permission_number: statusForm.value.permission_number,
-        result_note: statusForm.value.result_note,
-        withdrawn_at: statusForm.value.withdrawn_at,
-        completed_at: statusForm.value.completed_at,
+        applied_at: progressUpdateForm.value.applied_at,
+        application_receipt_number: progressUpdateForm.value.application_receipt_number,
+        additional_documents_requested_at: progressUpdateForm.value.additional_documents_requested_at,
+        additional_documents_detail: progressUpdateForm.value.additional_documents_detail,
+        additional_documents_submitted_at: progressUpdateForm.value.additional_documents_submitted_at,
+        result_received_at: progressUpdateForm.value.result_received_at,
+        permission_number: progressUpdateForm.value.permission_number,
+        result_note: progressUpdateForm.value.result_note,
+        withdrawn_at: progressUpdateForm.value.withdrawn_at,
+        completed_at: progressUpdateForm.value.completed_at,
       },
     })
-    ElMessage.success('進捗を変更しました。')
-    statusDialogVisible.value = false
+    const orphanUpdates: Partial<CasePayload> = {}
+    if (progressUpdateForm.value.result_notified_at !== caseDetail.value.result_notified_at) {
+      orphanUpdates.result_notified_at = progressUpdateForm.value.result_notified_at || null
+    }
+    if (progressUpdateForm.value.additional_documents_due_at !== caseDetail.value.additional_documents_due_at) {
+      orphanUpdates.additional_documents_due_at = progressUpdateForm.value.additional_documents_due_at || null
+    }
+    if (Object.keys(orphanUpdates).length) {
+      await updateCase(caseId.value, orphanUpdates)
+    }
+    ElMessage.success('進捗を更新しました。')
+    progressUpdateDialogVisible.value = false
     await Promise.all([fetchCaseDetail(), fetchTimelines()])
   } catch (error: any) {
     const data = error?.response?.data
     if (data?.warnings?.length) {
-      statusWarnings.value = data.warnings
-      statusForm.value.force = true
+      progressUpdateWarnings.value = data.warnings
+      progressUpdateForm.value.force = true
       ElMessage.warning('確認が必要な警告があります。')
     } else {
-      ElMessage.error(data?.detail || '進捗の変更に失敗しました。')
+      ElMessage.error(data?.detail || '進捗の更新に失敗しました。')
     }
   } finally {
-    statusChanging.value = false
+    progressUpdateSubmitting.value = false
+  }
+}
+
+const progressFieldLabels: Record<string, string> = {
+  consulted_at: '相談日',
+  accepted_at: '受任日',
+  document_collection_started_at: '資料待ち開始日',
+  documents_completed_at: '書類作成中（必要資料完了日）',
+  application_ready_at: '申請準備完了日',
+  applied_at: '入管局受理日',
+  application_receipt_number: '受付番号',
+  review_started_at: '審査開始日',
+  additional_documents_requested_at: '補正資料通知日',
+  additional_documents_detail: '補正資料内容',
+  additional_documents_due_at: '補正資料截止日',
+  additional_documents_submitted_at: '補正資料提出日',
+  result_notified_at: '通知日（許可/不許可）',
+  result_received_at: '許可日 / 不許可日',
+  permission_number: '許可番号',
+  result_note: '結果備考',
+  withdrawn_at: '取下げ日',
+  completed_at: '完了日',
+}
+
+const buildCorrectionPayload = () => {
+  const payload: Partial<CasePayload> = {}
+  const changedLines: string[] = []
+  if (!caseDetail.value) return { payload, changedLines }
+  const current = caseDetail.value
+  const form = correctionForm.value
+
+  const trackDate = (key: keyof CasePayload, oldValue: string | null, newValue: string | null) => {
+    const normalizedNew = newValue || null
+    const normalizedOld = oldValue || null
+    if (normalizedNew !== normalizedOld) {
+      ;(payload as Record<string, unknown>)[key] = normalizedNew
+      changedLines.push(`${progressFieldLabels[key]}：${normalizedOld || '-'} → ${normalizedNew || '-'}`)
+    }
+  }
+  const trackText = (key: keyof CasePayload, oldValue: string, newValue: string) => {
+    const normalizedNew = newValue || ''
+    const normalizedOld = oldValue || ''
+    if (normalizedNew !== normalizedOld) {
+      ;(payload as Record<string, unknown>)[key] = normalizedNew
+      changedLines.push(`${progressFieldLabels[key]}：${normalizedOld || '-'} → ${normalizedNew || '-'}`)
+    }
+  }
+
+  trackDate('consulted_at', current.consulted_at, form.consulted_at)
+  trackDate('accepted_at', current.accepted_at, form.accepted_at)
+  trackDate('document_collection_started_at', current.document_collection_started_at, form.document_collection_started_at)
+  trackDate('documents_completed_at', current.documents_completed_at, form.documents_completed_at)
+  trackDate('application_ready_at', current.application_ready_at, form.application_ready_at)
+  trackDate('applied_at', current.applied_at, form.applied_at)
+  trackText('application_receipt_number', current.application_receipt_number, form.application_receipt_number)
+  trackDate('review_started_at', current.review_started_at, form.review_started_at)
+  trackDate('additional_documents_requested_at', current.additional_documents_requested_at, form.additional_documents_requested_at)
+  trackText('additional_documents_detail', current.additional_documents_detail, form.additional_documents_detail)
+  trackDate('additional_documents_due_at', current.additional_documents_due_at, form.additional_documents_due_at)
+  trackDate('additional_documents_submitted_at', current.additional_documents_submitted_at, form.additional_documents_submitted_at)
+  trackDate('result_notified_at', current.result_notified_at, form.result_notified_at)
+  trackDate('result_received_at', current.result_received_at, form.result_received_at)
+  trackText('permission_number', current.permission_number, form.permission_number)
+  trackText('result_note', current.result_note, form.result_note)
+  trackDate('withdrawn_at', current.withdrawn_at, form.withdrawn_at)
+  trackDate('completed_at', current.completed_at, form.completed_at)
+
+  return { payload, changedLines }
+}
+
+const submitCorrection = async () => {
+  if (!caseDetail.value) return
+  const { payload, changedLines } = buildCorrectionPayload()
+  if (!changedLines.length) {
+    ElMessage.info('変更がありません。')
+    return
+  }
+  correctionSubmitting.value = true
+  try {
+    await updateCase(caseId.value, payload)
+    await createTimeline({
+      case: caseId.value,
+      occurred_at: getTodayDate(),
+      title: '進捗情報を修正',
+      content: changedLines.join('\n'),
+      is_visible_to_client: false,
+    })
+    ElMessage.success('過去の項目を修正しました。')
+    correctionDialogVisible.value = false
+    await Promise.all([fetchCaseDetail(), fetchTimelines()])
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '修正に失敗しました。')
+  } finally {
+    correctionSubmitting.value = false
   }
 }
 
@@ -736,13 +757,13 @@ const buildCustomerNoticeText = () => {
   const language = customerNoticeOptions.value.language
   const noticeType = customerNoticeOptions.value.noticeType
   const headerLines: string[] = []
-  if (customerNoticeOptions.value.showCustomerName && caseDetail.value?.customer_name) {
+  if (caseDetail.value?.customer_name) {
     headerLines.push(language === 'zh' ? `${caseDetail.value.customer_name} 您好：` : `${caseDetail.value.customer_name} 様`)
   }
-  if (customerNoticeOptions.value.showCaseType && caseDetail.value?.case_type) {
+  if (caseDetail.value?.case_type) {
     headerLines.push(language === 'zh' ? `案件类型：${caseDetail.value.case_type}` : `案件種別：${caseDetail.value.case_type}`)
   }
-  if (customerNoticeOptions.value.showCaseNumber && caseDetail.value?.case_number) {
+  if (caseDetail.value?.case_number) {
     headerLines.push(language === 'zh' ? `案件编号：${caseDetail.value.case_number}` : `案件番号：${caseDetail.value.case_number}`)
   }
   const opening = language === 'zh'
@@ -756,23 +777,36 @@ const buildCustomerNoticeText = () => {
         additional: '本件のお手続きにあたり、追加で以下の資料をご準備ください。',
         reminder: '本件のお手続きにあたり、以下の未完了資料をご確認ください。',
       }[noticeType]
-  const body = visibleNoticeItems.value.map((item, index) => {
+  const body = customerActionNoticeItems.value.map((item, index) => {
     const lines = [`${index + 1}. ${item.name}`]
-    if (customerNoticeOptions.value.showPlace && item.acquisition_place) {
+    if (item.acquisition_place) {
       lines.push(language === 'zh' ? `开具地点：${item.acquisition_place}` : `取得場所：${item.acquisition_place}`)
     }
-    if (customerNoticeOptions.value.showRequiredDetails && item.required_details) {
+    if (item.required_details) {
       lines.push(language === 'zh' ? `具体要求：${item.required_details}` : `必要内容：${item.required_details}`)
     }
-    if (customerNoticeOptions.value.showCustomerNote && item.customer_note) {
+    if (item.customer_note) {
       lines.push(language === 'zh' ? `注意事项：${item.customer_note}` : `注意事項：${item.customer_note}`)
     }
     return lines.join('\n')
   }).join('\n\n')
+  const agencyItems = agencyHandledNoticeItems.value
+  const agencySection = agencyItems.length
+    ? [
+        language === 'zh' ? '以下事项由我方（或税理士等）代为办理，您无需准备，仅供您了解进度：' : '以下の項目は弊社（または税理士等）が代行いたします。ご準備の必要はございませんが、進捗共有のためご案内します。',
+        agencyItems.map((item, index) => {
+          const partyLabel = responsiblePartyOptions.find((option) => option.value === item.responsible_party)?.label || ''
+          const suffix = item.acquisition_place
+            ? (language === 'zh' ? `（开具地点：${item.acquisition_place}／${partyLabel}）` : `（取得場所：${item.acquisition_place}／${partyLabel}）`)
+            : (partyLabel ? `（${partyLabel}）` : '')
+          return `${index + 1}. ${item.name}${suffix}`
+        }).join('\n'),
+      ].join('\n')
+    : ''
   const closing = language === 'zh'
     ? '材料准备完成后，请拍照或扫描发送给我们确认。\n如有不清楚的地方，请随时联系我们。'
     : 'ご準備ができましたら、写真またはスキャンデータをお送りください。\nご不明な点がございましたら、いつでもご連絡ください。'
-  return [headerLines.join('\n'), opening, body, closing].filter(Boolean).join('\n\n')
+  return [headerLines.join('\n'), opening, body, agencySection, closing].filter(Boolean).join('\n\n')
 }
 
 const openCustomerNoticeDialog = () => {
@@ -786,6 +820,11 @@ const openCustomerNoticeDialog = () => {
 
 const refreshCustomerNoticeText = () => {
   customerNoticeText.value = buildCustomerNoticeText()
+}
+
+const applyNoticeTypeDefaults = () => {
+  customerNoticeOptions.value.onlyIncomplete = customerNoticeOptions.value.noticeType === 'reminder'
+  refreshCustomerNoticeText()
 }
 
 const copyCustomerNoticeText = async () => {
@@ -806,94 +845,6 @@ const copyCustomerNoticeText = async () => {
     ElMessage.success('コピーしました。')
   } catch {
     ElMessage.error('コピーに失敗しました。文案を手動で選択してください。')
-  }
-}
-
-const submitTask = async () => {
-  if (!taskFormRef.value) return
-
-  const valid = await taskFormRef.value.validate().catch(() => false)
-  if (!valid) return
-
-  taskSubmitting.value = true
-  try {
-    const payload: TaskPayload = {
-      ...taskForm.value,
-      case: caseId.value,
-      responsible_employee: taskForm.value.responsible_employee || null,
-      planned_completion_date: taskForm.value.planned_completion_date || null,
-      completed_at: taskForm.value.completed_at || null,
-    }
-    if (payload.status === 'completed' && !payload.completed_at) {
-      payload.completed_at = getTodayDate()
-    }
-    if (payload.status !== 'completed') {
-      payload.completed_at = null
-    }
-
-    if (editingTaskId.value) {
-      await updateTask(editingTaskId.value, payload)
-      ElMessage.success('タスクを更新しました。')
-    } else {
-      await createTask(payload)
-      ElMessage.success('タスクを追加しました。')
-    }
-    taskDialogVisible.value = false
-    await fetchTasks()
-  } catch {
-    ElMessage.error(editingTaskId.value ? 'タスクの更新に失敗しました。' : 'タスクの追加に失敗しました。')
-  } finally {
-    taskSubmitting.value = false
-  }
-}
-
-const confirmDeleteTask = async (task: Task) => {
-  try {
-    await ElMessageBox.confirm(
-      `「${task.title}」を削除します。よろしいですか？`,
-      '削除確認',
-      {
-        confirmButtonText: '削除',
-        cancelButtonText: 'キャンセル',
-        type: 'warning',
-      },
-    )
-    await deleteTask(task.id)
-    ElMessage.success('タスクを削除しました。')
-    await fetchTasks()
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('タスクの削除に失敗しました。')
-    }
-  }
-}
-
-const updateTaskStatus = async (task: Task, status: TaskPayload['status']) => {
-  try {
-    await updateTask(task.id, {
-      status,
-      completed_at: status === 'completed' ? (task.completed_at || getTodayDate()) : null,
-    })
-    ElMessage.success(status === 'completed' ? 'タスクを完了しました。' : 'タスクを更新しました。')
-    await fetchTasks()
-  } catch {
-    ElMessage.error('タスク状態の更新に失敗しました。')
-  }
-}
-
-const moveTask = async (task: Task, direction: -1 | 1) => {
-  const currentIndex = sortedTasks.value.findIndex((item) => item.id === task.id)
-  const targetTask = sortedTasks.value[currentIndex + direction]
-  if (!targetTask) return
-
-  try {
-    await Promise.all([
-      updateTask(task.id, { sort_order: targetTask.sort_order }),
-      updateTask(targetTask.id, { sort_order: task.sort_order }),
-    ])
-    await fetchTasks()
-  } catch {
-    ElMessage.error('並び順の更新に失敗しました。')
   }
 }
 
@@ -1017,33 +968,6 @@ const submitApplyTemplate = async () => {
   }
 }
 
-const submitProgressInfo = async () => {
-  progressInfoSubmitting.value = true
-  try {
-    caseDetail.value = await updateCaseProgressInfo(caseId.value, {
-      applied_at: progressInfoForm.value.applied_at,
-      application_receipt_number: progressInfoForm.value.application_receipt_number,
-      additional_documents_requested_at: progressInfoForm.value.additional_documents_requested_at,
-      additional_documents_detail: progressInfoForm.value.additional_documents_detail,
-      additional_documents_submitted_at: progressInfoForm.value.additional_documents_submitted_at,
-      result_received_at: progressInfoForm.value.result_received_at,
-      permission_number: progressInfoForm.value.permission_number,
-      result_note: progressInfoForm.value.result_note,
-      withdrawn_at: progressInfoForm.value.withdrawn_at,
-      completed_at: progressInfoForm.value.completed_at,
-      note: progressInfoForm.value.note,
-    })
-    progressInfoDialogVisible.value = false
-    await fetchTimelines()
-    ElMessage.success('進捗情報を更新しました。')
-  } catch (error: unknown) {
-    const data = (error as { response?: { data?: { detail?: string } } })?.response?.data
-    ElMessage.error(data?.detail || '進捗情報の更新に失敗しました。')
-  } finally {
-    progressInfoSubmitting.value = false
-  }
-}
-
 const submitTimeline = async () => {
   if (!timelineFormRef.value) return
 
@@ -1148,8 +1072,7 @@ onMounted(() => {
           <div class="card-header-row">
             <span>現在の進捗</span>
             <div class="header-actions">
-              <el-button type="primary" @click="openStatusDialog()">進捗変更</el-button>
-              <el-button @click="openProgressInfoDialog">進捗情報を編集</el-button>
+              <el-button type="primary" @click="openProgressUpdateDialog()">進捗を更新</el-button>
             </div>
           </div>
         </template>
@@ -1160,29 +1083,38 @@ onMounted(() => {
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="最新進捗日">{{ formatDate(caseDetail.progress_started_at) }}</el-descriptions-item>
-          <el-descriptions-item label="タスク進捗">{{ taskProgressText }}</el-descriptions-item>
-          <el-descriptions-item label="次のタスク">
-            {{ nextTask?.title || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="次の担当者">
-            {{ nextTask?.responsible_employee_name || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.accepted_at" label="受任日">{{ formatDate(caseDetail.accepted_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.applied_at" label="申請日">{{ formatDate(caseDetail.applied_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.application_receipt_number" label="申請受付番号">{{ caseDetail.application_receipt_number }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.additional_documents_requested_at" label="追加資料依頼日">{{ formatDate(caseDetail.additional_documents_requested_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.additional_documents_detail" label="追加資料内容" :span="2">{{ caseDetail.additional_documents_detail }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.additional_documents_submitted_at" label="追加資料提出日">{{ formatDate(caseDetail.additional_documents_submitted_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.result_received_at && caseDetail.status === 'approved'" label="許可日">{{ formatDate(caseDetail.result_received_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.permission_number" label="許可番号">{{ caseDetail.permission_number }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.result_received_at && caseDetail.status === 'rejected'" label="不許可日">{{ formatDate(caseDetail.result_received_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.withdrawn_at" label="取下げ日">{{ formatDate(caseDetail.withdrawn_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.completed_at" label="完了日">{{ formatDate(caseDetail.completed_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.review_duration_days !== null" label="審査期間">{{ caseDetail.review_duration_days }}日</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.days_until_additional_request !== null" label="追加資料依頼まで">{{ caseDetail.days_until_additional_request }}日</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.additional_documents_duration_days !== null" label="追加資料対応期間">{{ caseDetail.additional_documents_duration_days }}日</el-descriptions-item>
-          <el-descriptions-item v-if="caseDetail.total_processing_days !== null" label="案件処理期間">{{ caseDetail.total_processing_days }}日</el-descriptions-item>
         </el-descriptions>
+        <el-collapse v-if="caseDetail" v-model="progressHistoryCollapse" class="progress-history-collapse">
+          <el-collapse-item title="進捗履歴" name="history">
+            <el-descriptions :column="2" border>
+              <el-descriptions-item v-if="caseDetail.consulted_at" label="相談日">{{ formatDate(caseDetail.consulted_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.accepted_at" label="受任日">{{ formatDate(caseDetail.accepted_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.document_collection_started_at" label="資料待ち開始日">{{ formatDate(caseDetail.document_collection_started_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.documents_completed_at" label="書類作成中（必要資料完了日）">{{ formatDate(caseDetail.documents_completed_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.application_ready_at" label="申請準備完了日">{{ formatDate(caseDetail.application_ready_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.applied_at" label="入管局受理日">{{ formatDate(caseDetail.applied_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.application_receipt_number" label="受付番号">{{ caseDetail.application_receipt_number }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.review_started_at" label="審査開始日">{{ formatDate(caseDetail.review_started_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.additional_documents_requested_at" label="補正資料通知日">{{ formatDate(caseDetail.additional_documents_requested_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.additional_documents_detail" label="補正資料内容" :span="2">{{ caseDetail.additional_documents_detail }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.additional_documents_due_at" label="補正資料截止日">{{ formatDate(caseDetail.additional_documents_due_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.additional_documents_submitted_at" label="補正資料提出日">{{ formatDate(caseDetail.additional_documents_submitted_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.result_notified_at" label="通知日（許可/不許可）">{{ formatDate(caseDetail.result_notified_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.result_received_at" :label="caseDetail.status === 'rejected' ? '不許可日' : '許可日'">{{ formatDate(caseDetail.result_received_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.permission_number" label="許可番号">{{ caseDetail.permission_number }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.result_note" label="結果備考" :span="2">{{ caseDetail.result_note }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.withdrawn_at" label="取下げ日">{{ formatDate(caseDetail.withdrawn_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.completed_at" label="完了日">{{ formatDate(caseDetail.completed_at) }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.review_duration_days !== null" label="審査期間">{{ caseDetail.review_duration_days }}日</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.days_until_additional_request !== null" label="追加資料依頼まで">{{ caseDetail.days_until_additional_request }}日</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.additional_documents_duration_days !== null" label="追加資料対応期間">{{ caseDetail.additional_documents_duration_days }}日</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.total_processing_days !== null" label="案件処理期間">{{ caseDetail.total_processing_days }}日</el-descriptions-item>
+            </el-descriptions>
+            <div class="progress-correction-link">
+              <el-button text size="small" @click="openCorrectionDialog">過去の項目を修正</el-button>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
       </el-card>
 
       <el-card shadow="never">
@@ -1214,7 +1146,7 @@ onMounted(() => {
           class="checklist-suggestion-alert"
         >
           <template #default>
-            <el-button size="small" type="primary" @click="openStatusDialog(caseDetail?.suggested_case_status)">
+            <el-button size="small" type="primary" @click="openProgressUpdateDialog(caseDetail?.suggested_case_status)">
               状態を変更
             </el-button>
           </template>
@@ -1295,65 +1227,6 @@ onMounted(() => {
       <el-card shadow="never">
         <template #header>
           <div class="card-header-row">
-            <span>タスク一覧</span>
-            <el-button type="primary" @click="openCreateTaskDialog">タスク追加</el-button>
-          </div>
-        </template>
-        <el-table :data="sortedTasks" stripe row-key="id" :row-class-name="getTaskRowClassName">
-          <el-table-column label="步骤" width="80">
-            <template #default="{ $index }">{{ $index + 1 }}</template>
-          </el-table-column>
-          <el-table-column prop="title" label="タスク名" min-width="180" show-overflow-tooltip />
-          <el-table-column label="担当者" min-width="120">
-            <template #default="{ row }">{{ row.responsible_employee_name || '未指定' }}</template>
-          </el-table-column>
-          <el-table-column label="ステータス" width="110">
-            <template #default="{ row }">
-              <el-tag :type="getTaskStatusTagType(row.status)">
-                {{ getTaskStatusLabel(row.status) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="予定完了日" width="130">
-            <template #default="{ row }">{{ formatDate(row.planned_completion_date || row.due_date) }}</template>
-          </el-table-column>
-          <el-table-column label="完了日" width="130">
-            <template #default="{ row }">{{ formatDate(row.completed_at) }}</template>
-          </el-table-column>
-          <el-table-column prop="description" label="備考" min-width="220" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.description || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="100" fixed="right">
-            <template #default="{ row }">
-              <el-dropdown trigger="click">
-                <el-button text type="primary" class="table-action-trigger">
-                  操作
-                  <el-icon><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item @click="openEditTaskDialog(row)">編集</el-dropdown-item>
-                    <el-dropdown-item v-if="row.status !== 'completed'" @click="updateTaskStatus(row, 'completed')">
-                      完了
-                    </el-dropdown-item>
-                    <el-dropdown-item @click="moveTask(row, -1)">上へ</el-dropdown-item>
-                    <el-dropdown-item @click="moveTask(row, 1)">下へ</el-dropdown-item>
-                    <el-dropdown-item v-if="row.status !== 'paused'" divided @click="updateTaskStatus(row, 'paused')">
-                      保留
-                    </el-dropdown-item>
-                    <el-dropdown-item divided class="danger-item" @click="confirmDeleteTask(row)">削除</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </template>
-          </el-table-column>
-        </el-table>
-        <p v-if="!tasks.length" class="empty-text">まだタスクがありません</p>
-      </el-card>
-
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header-row">
             <span>進捗記録</span>
             <el-button type="primary" @click="openCreateTimelineDialog">記録追加</el-button>
           </div>
@@ -1379,13 +1252,13 @@ onMounted(() => {
       </el-card>
     </div>
 
-    <el-dialog v-model="statusDialogVisible" title="進捗変更" width="560px">
-      <el-form :model="statusForm" label-position="top">
+    <el-dialog v-model="progressUpdateDialogVisible" title="進捗を更新" width="480px">
+      <el-form :model="progressUpdateForm" label-position="top">
         <el-form-item label="現在の進捗">
           <el-input :model-value="getCaseDisplayStatus(caseDetail?.status)" disabled />
         </el-form-item>
         <el-form-item label="新しい進捗">
-          <el-select v-model="statusForm.new_status" class="form-control">
+          <el-select v-model="progressUpdateForm.new_status" class="form-control">
             <el-option
               v-for="option in caseStatusOptions"
               :key="option.value"
@@ -1394,53 +1267,59 @@ onMounted(() => {
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="変更日">
+        <el-form-item v-if="progressUpdateForm.new_status !== caseDetail?.status" label="変更日">
           <el-date-picker
-            v-model="statusForm.change_date"
+            v-model="progressUpdateForm.change_date"
             type="date"
             format="YYYY-MM-DD"
             value-format="YYYY-MM-DD"
             class="form-control"
           />
         </el-form-item>
-        <template v-if="statusForm.new_status === 'applied'">
-          <el-form-item label="申請日">
-            <el-date-picker v-model="statusForm.applied_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+        <template v-if="progressUpdateForm.new_status === 'applied'">
+          <el-form-item label="入管局受理日">
+            <el-date-picker v-model="progressUpdateForm.applied_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
-          <el-form-item label="申請受付番号">
-            <el-input v-model="statusForm.application_receipt_number" />
-          </el-form-item>
-        </template>
-        <template v-if="statusForm.new_status === 'additional_documents'">
-          <el-form-item label="追加資料依頼日">
-            <el-date-picker v-model="statusForm.additional_documents_requested_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
-          </el-form-item>
-          <el-form-item label="追加資料内容">
-            <el-input v-model="statusForm.additional_documents_detail" type="textarea" :rows="2" />
+          <el-form-item label="受付番号">
+            <el-input v-model="progressUpdateForm.application_receipt_number" />
           </el-form-item>
         </template>
-        <el-form-item v-if="statusForm.new_status === 'additional_documents_submitted'" label="追加資料提出日">
-          <el-date-picker v-model="statusForm.additional_documents_submitted_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
-        </el-form-item>
-        <template v-if="statusForm.new_status === 'approved'">
-          <el-form-item label="許可日">
-            <el-date-picker v-model="statusForm.result_received_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+        <template v-if="progressUpdateForm.new_status === 'additional_documents'">
+          <el-form-item label="補正資料通知日">
+            <el-date-picker v-model="progressUpdateForm.additional_documents_requested_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
-          <el-form-item label="許可番号">
-            <el-input v-model="statusForm.permission_number" />
+          <el-form-item label="補正資料内容">
+            <el-input v-model="progressUpdateForm.additional_documents_detail" type="textarea" :rows="2" />
+          </el-form-item>
+          <el-form-item label="補正資料截止日">
+            <el-date-picker v-model="progressUpdateForm.additional_documents_due_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
         </template>
-        <el-form-item v-if="statusForm.new_status === 'rejected'" label="不許可日">
-          <el-date-picker v-model="statusForm.result_received_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+        <el-form-item v-if="progressUpdateForm.new_status === 'additional_documents_submitted'" label="補正資料提出日">
+          <el-date-picker v-model="progressUpdateForm.additional_documents_submitted_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
         </el-form-item>
-        <el-form-item v-if="statusForm.new_status === 'withdrawn'" label="取下げ日">
-          <el-date-picker v-model="statusForm.withdrawn_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+        <template v-if="progressUpdateForm.new_status === 'approved' || progressUpdateForm.new_status === 'rejected'">
+          <el-form-item label="通知日">
+            <el-date-picker v-model="progressUpdateForm.result_notified_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item :label="progressUpdateForm.new_status === 'approved' ? '許可日' : '不許可日'">
+            <el-date-picker v-model="progressUpdateForm.result_received_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item v-if="progressUpdateForm.new_status === 'approved'" label="許可番号">
+            <el-input v-model="progressUpdateForm.permission_number" />
+          </el-form-item>
+          <el-form-item label="結果備考">
+            <el-input v-model="progressUpdateForm.result_note" type="textarea" :rows="2" />
+          </el-form-item>
+        </template>
+        <el-form-item v-if="progressUpdateForm.new_status === 'withdrawn'" label="取下げ日">
+          <el-date-picker v-model="progressUpdateForm.withdrawn_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
         </el-form-item>
-        <el-form-item v-if="statusForm.new_status === 'completed'" label="完了日">
-          <el-date-picker v-model="statusForm.completed_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+        <el-form-item v-if="progressUpdateForm.new_status === 'completed'" label="完了日">
+          <el-date-picker v-model="progressUpdateForm.completed_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
         </el-form-item>
         <el-alert
-          v-if="statusWarnings.length"
+          v-if="progressUpdateWarnings.length"
           type="warning"
           show-icon
           :closable="false"
@@ -1448,56 +1327,104 @@ onMounted(() => {
         >
           <template #title>確認が必要です</template>
           <ul class="status-warning-list">
-            <li v-for="warning in statusWarnings" :key="warning.code">{{ warning.message }}</li>
+            <li v-for="warning in progressUpdateWarnings" :key="warning.code">{{ warning.message }}</li>
           </ul>
         </el-alert>
-        <el-form-item label="備考">
-          <el-input v-model="statusForm.note" type="textarea" :rows="3" />
+        <el-button
+          v-if="!progressUpdateNoteVisible"
+          text
+          size="small"
+          class="note-toggle-button"
+          @click="progressUpdateNoteVisible = true"
+        >
+          備考を追加
+        </el-button>
+        <el-form-item v-else label="備考">
+          <el-input v-model="progressUpdateForm.note" type="textarea" :rows="2" />
         </el-form-item>
-        <el-checkbox v-if="statusWarnings.length" v-model="statusForm.force">警告を確認して強制変更する</el-checkbox>
+        <el-checkbox v-if="progressUpdateWarnings.length" v-model="progressUpdateForm.force">警告を確認して強制変更する</el-checkbox>
       </el-form>
       <template #footer>
-        <el-button @click="statusDialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="statusChanging" @click="submitStatusChange">変更</el-button>
+        <el-button @click="progressUpdateDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="progressUpdateSubmitting" @click="submitProgressUpdate">保存</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="progressInfoDialogVisible" title="進捗情報を編集" width="560px">
-      <el-form :model="progressInfoForm" label-position="top">
-        <el-form-item label="申請日">
-          <el-date-picker v-model="progressInfoForm.applied_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+    <el-dialog v-model="correctionDialogVisible" title="過去の項目を修正" width="640px">
+      <p class="dialog-note">
+        進捗状態は変更されません。日付や番号の記入ミスを直接修正する場合に使用してください。変更内容は進捗記録に自動で残ります。
+      </p>
+      <el-form :model="correctionForm" label-position="top">
+        <h3 class="form-section-title">相談〜書類準備</h3>
+        <div class="form-grid">
+          <el-form-item label="相談日">
+            <el-date-picker v-model="correctionForm.consulted_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="受任日">
+            <el-date-picker v-model="correctionForm.accepted_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="資料待ち開始日">
+            <el-date-picker v-model="correctionForm.document_collection_started_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="書類作成中（必要資料完了日）">
+            <el-date-picker v-model="correctionForm.documents_completed_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="申請準備完了日">
+            <el-date-picker v-model="correctionForm.application_ready_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+        </div>
+        <h3 class="form-section-title">申請〜審査</h3>
+        <div class="form-grid">
+          <el-form-item label="入管局受理日">
+            <el-date-picker v-model="correctionForm.applied_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="受付番号">
+            <el-input v-model="correctionForm.application_receipt_number" />
+          </el-form-item>
+          <el-form-item label="審査開始日">
+            <el-date-picker v-model="correctionForm.review_started_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+        </div>
+        <h3 class="form-section-title">補正資料</h3>
+        <div class="form-grid">
+          <el-form-item label="補正資料通知日">
+            <el-date-picker v-model="correctionForm.additional_documents_requested_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="補正資料截止日">
+            <el-date-picker v-model="correctionForm.additional_documents_due_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="補正資料提出日">
+            <el-date-picker v-model="correctionForm.additional_documents_submitted_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+        </div>
+        <el-form-item label="補正資料内容">
+          <el-input v-model="correctionForm.additional_documents_detail" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="申請受付番号">
-          <el-input v-model="progressInfoForm.application_receipt_number" />
-        </el-form-item>
-        <el-form-item label="追加資料依頼日">
-          <el-date-picker v-model="progressInfoForm.additional_documents_requested_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
-        </el-form-item>
-        <el-form-item label="追加資料内容">
-          <el-input v-model="progressInfoForm.additional_documents_detail" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item label="追加資料提出日">
-          <el-date-picker v-model="progressInfoForm.additional_documents_submitted_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
-        </el-form-item>
-        <el-form-item label="許可日 / 不許可日">
-          <el-date-picker v-model="progressInfoForm.result_received_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
-        </el-form-item>
-        <el-form-item label="許可番号">
-          <el-input v-model="progressInfoForm.permission_number" />
-        </el-form-item>
-        <el-form-item label="取下げ日">
-          <el-date-picker v-model="progressInfoForm.withdrawn_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
-        </el-form-item>
-        <el-form-item label="完了日">
-          <el-date-picker v-model="progressInfoForm.completed_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
-        </el-form-item>
-        <el-form-item label="備考">
-          <el-input v-model="progressInfoForm.note" type="textarea" :rows="2" />
+        <h3 class="form-section-title">結果〜完了</h3>
+        <div class="form-grid">
+          <el-form-item label="通知日（許可/不許可）">
+            <el-date-picker v-model="correctionForm.result_notified_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="許可日 / 不許可日">
+            <el-date-picker v-model="correctionForm.result_received_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="許可番号">
+            <el-input v-model="correctionForm.permission_number" />
+          </el-form-item>
+          <el-form-item label="取下げ日">
+            <el-date-picker v-model="correctionForm.withdrawn_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+          <el-form-item label="完了日">
+            <el-date-picker v-model="correctionForm.completed_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+          </el-form-item>
+        </div>
+        <el-form-item label="結果備考">
+          <el-input v-model="correctionForm.result_note" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="progressInfoDialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="progressInfoSubmitting" @click="submitProgressInfo">保存</el-button>
+        <el-button @click="correctionDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="correctionSubmitting" @click="submitCorrection">保存</el-button>
       </template>
     </el-dialog>
 
@@ -1579,7 +1506,15 @@ onMounted(() => {
           </el-form-item>
         </div>
         <el-form-item label="項目名" prop="name">
-          <el-input v-model="checklistItemForm.name" />
+          <el-autocomplete
+            v-model="checklistItemForm.name"
+            :fetch-suggestions="queryChecklistItemNameSuggestions"
+            clearable
+            placeholder="事項名を入力"
+            value-key="value"
+            class="form-control"
+            @select="handleChecklistItemNameSelect"
+          />
         </el-form-item>
         <div class="form-grid">
           <el-form-item label="数量" prop="quantity">
@@ -1656,7 +1591,7 @@ onMounted(() => {
     <el-dialog v-model="customerNoticeDialogVisible" title="顧客通知文案" width="780px" class="material-notice-dialog">
       <div class="notice-option-grid">
         <el-form-item label="文案タイプ">
-          <el-select v-model="customerNoticeOptions.noticeType" class="form-control" @change="refreshCustomerNoticeText">
+          <el-select v-model="customerNoticeOptions.noticeType" class="form-control" @change="applyNoticeTypeDefaults">
             <el-option label="初回材料案内" value="initial" />
             <el-option label="追加資料案内" value="additional" />
             <el-option label="未完了資料リマインド" value="reminder" />
@@ -1670,12 +1605,6 @@ onMounted(() => {
         </el-form-item>
       </div>
       <div class="notice-switches">
-        <el-checkbox v-model="customerNoticeOptions.showCustomerName" @change="refreshCustomerNoticeText">顧客名</el-checkbox>
-        <el-checkbox v-model="customerNoticeOptions.showCaseType" @change="refreshCustomerNoticeText">案件種別</el-checkbox>
-        <el-checkbox v-model="customerNoticeOptions.showCaseNumber" @change="refreshCustomerNoticeText">案件番号</el-checkbox>
-        <el-checkbox v-model="customerNoticeOptions.showPlace" @change="refreshCustomerNoticeText">取得場所</el-checkbox>
-        <el-checkbox v-model="customerNoticeOptions.showRequiredDetails" @change="refreshCustomerNoticeText">必要内容</el-checkbox>
-        <el-checkbox v-model="customerNoticeOptions.showCustomerNote" @change="refreshCustomerNoticeText">注意事項</el-checkbox>
         <el-checkbox v-model="customerNoticeOptions.onlyIncomplete" @change="refreshCustomerNoticeText">未完了のみ</el-checkbox>
       </div>
       <el-input v-model="customerNoticeText" type="textarea" :rows="18" />
@@ -1707,84 +1636,6 @@ onMounted(() => {
         <el-button @click="applyTemplateDialogVisible = false">キャンセル</el-button>
         <el-button type="primary" :loading="applyingChecklistTemplate" @click="submitApplyTemplate">
           追加
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="taskDialogVisible"
-      :title="editingTaskId ? 'タスク編集' : 'タスク追加'"
-      width="680px"
-      @closed="resetTaskForm"
-    >
-      <el-form ref="taskFormRef" :model="taskForm" :rules="taskRules" label-position="top">
-        <el-form-item label="タスク名" prop="title">
-          <el-input v-model="taskForm.title" />
-        </el-form-item>
-        <el-form-item label="詳細内容 / 備考" prop="description">
-          <el-input v-model="taskForm.description" type="textarea" :rows="3" />
-        </el-form-item>
-        <div class="form-grid">
-          <el-form-item label="担当者" prop="responsible_employee">
-            <div class="inline-field-with-action">
-              <el-select
-                v-model="taskForm.responsible_employee"
-                clearable
-                filterable
-                placeholder="未指定"
-                class="form-control"
-              >
-                <el-option label="未指定" :value="null" />
-                <el-option
-                  v-for="employee in taskEmployeeOptions"
-                  :key="employee.id"
-                  :label="employee.name"
-                  :value="employee.id"
-                />
-              </el-select>
-              <el-button @click="router.push('/employees')">担当者管理</el-button>
-            </div>
-          </el-form-item>
-          <el-form-item label="ステータス" prop="status">
-            <el-select v-model="taskForm.status" placeholder="選択してください" class="form-control">
-              <el-option
-                v-for="status in taskStatusOptions"
-                :key="status.value"
-                :label="status.label"
-                :value="status.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="表示順" prop="sort_order">
-            <el-input-number v-model="taskForm.sort_order" :min="0" :step="10" class="form-control" />
-          </el-form-item>
-          <el-form-item label="予定完了日" prop="planned_completion_date">
-            <el-date-picker
-              v-model="taskForm.planned_completion_date"
-              type="date"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              placeholder="YYYY-MM-DD"
-              class="form-control"
-            />
-          </el-form-item>
-          <el-form-item label="完了日" prop="completed_at">
-            <el-date-picker
-              v-model="taskForm.completed_at"
-              type="date"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              placeholder="YYYY-MM-DD"
-              class="form-control"
-            />
-          </el-form-item>
-        </div>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="taskDialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="taskSubmitting" @click="submitTask">
-          {{ editingTaskId ? '保存' : '追加' }}
         </el-button>
       </template>
     </el-dialog>
@@ -1857,24 +1708,22 @@ onMounted(() => {
 </template>
 
 <style scoped>
-:deep(.task-row-finished) {
-  color: var(--el-text-color-secondary);
-  text-decoration: line-through;
-}
-
-.inline-field-with-action {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-
-.inline-field-with-action .form-control {
-  flex: 1;
-}
-
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.progress-correction-link {
+  margin-top: 8px;
+  text-align: right;
+}
+
+.note-toggle-button {
+  margin-bottom: 8px;
+}
+
+.progress-history-collapse {
+  margin-top: 12px;
 }
 
 .checklist-summary {

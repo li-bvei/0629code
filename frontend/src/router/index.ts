@@ -28,6 +28,7 @@ import PlaceholderPage from '../pages/PlaceholderPage.vue'
 import ReceptionNewPage from '../pages/ReceptionNewPage.vue'
 import RemindersPage from '../pages/RemindersPage.vue'
 import SeifuNoticePdfTextPage from '../pages/SeifuNoticePdfTextPage.vue'
+import SettingsPage from '../pages/SettingsPage.vue'
 import TasksPage from '../pages/TasksPage.vue'
 import TaxRenewalVouchersPage from '../pages/TaxRenewalVouchersPage.vue'
 import TimelinesPage from '../pages/TimelinesPage.vue'
@@ -261,8 +262,7 @@ const router = createRouter({
         {
           path: 'settings',
           name: 'settings',
-          component: PlaceholderPage,
-          props: { title: '設定' },
+          component: SettingsPage,
         },
       ],
     },

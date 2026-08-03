@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  createCustomer,
   deleteCustomer,
   listCustomers,
   updateCustomer,
@@ -13,6 +13,7 @@ import { residenceStatusOptions } from '../constants/options'
 import type { CreateCustomerPayload, Customer } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
+const router = useRouter()
 const loading = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
@@ -106,11 +107,6 @@ const resetForm = () => {
   formRef.value?.clearValidate()
 }
 
-const openCreateDialog = () => {
-  resetForm()
-  dialogVisible.value = true
-}
-
 const openEditDialog = (customer: Customer) => {
   editingCustomerId.value = customer.id
   customerForm.value = {
@@ -136,26 +132,19 @@ const openEditDialog = (customer: Customer) => {
 }
 
 const submitCustomer = async () => {
-  if (!formRef.value) return
+  if (!formRef.value || !editingCustomerId.value) return
 
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
   submitting.value = true
   try {
-    if (editingCustomerId.value) {
-      await updateCustomer(editingCustomerId.value, customerForm.value)
-      ElMessage.success('顧客を更新しました。')
-    } else {
-      await createCustomer(customerForm.value)
-      ElMessage.success('顧客を作成しました。')
-    }
+    await updateCustomer(editingCustomerId.value, customerForm.value)
+    ElMessage.success('顧客を更新しました。')
     dialogVisible.value = false
-    await fetchCustomers(editingCustomerId.value ? currentPage.value : 1)
+    await fetchCustomers(currentPage.value)
   } catch {
-    errorMessage.value = editingCustomerId.value
-      ? '顧客の更新に失敗しました。'
-      : '顧客の作成に失敗しました。'
+    errorMessage.value = '顧客の更新に失敗しました。'
   } finally {
     submitting.value = false
   }
@@ -187,7 +176,7 @@ const confirmDeleteCustomer = async (customer: Customer) => {
   <section class="page">
     <div class="page-header page-header-row">
       <h1>顧客管理</h1>
-      <el-button type="primary" @click="openCreateDialog">新規顧客</el-button>
+      <el-button type="primary" @click="router.push('/reception/new')">新規受付へ</el-button>
     </div>
 
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
@@ -266,7 +255,7 @@ const confirmDeleteCustomer = async (customer: Customer) => {
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingCustomerId ? '顧客編集' : '新規顧客'"
+      title="顧客編集"
       width="520px"
       @closed="resetForm"
     >
@@ -356,9 +345,7 @@ const confirmDeleteCustomer = async (customer: Customer) => {
 
       <template #footer>
         <el-button @click="dialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitCustomer">
-          {{ editingCustomerId ? '保存' : '作成' }}
-        </el-button>
+        <el-button type="primary" :loading="submitting" @click="submitCustomer">保存</el-button>
       </template>
     </el-dialog>
   </section>

@@ -24,7 +24,6 @@ class CustomerAdmin(admin.ModelAdmin):
         'postal_code',
         'residence_card_no',
         'passport_no',
-        'my_number',
     )
     list_filter = ('gender', 'nationality', 'residence_status')
     readonly_fields = ('created_at', 'updated_at')
@@ -51,7 +50,6 @@ class FamilyMemberAdmin(admin.ModelAdmin):
         'phone',
         'postal_code',
         'residence_card_no',
-        'my_number',
     )
     list_filter = (
         'relationship',

@@ -394,3 +394,24 @@ class CaseChecklistItem(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ChecklistItemPreset(models.Model):
+    RESPONSIBLE_PARTY_CHOICES = CaseChecklistTemplateItem.RESPONSIBLE_PARTY_CHOICES
+
+    name = models.CharField(max_length=150, unique=True)
+    category = models.CharField(max_length=100, blank=True)
+    acquisition_place = models.CharField(max_length=255, blank=True)
+    responsible_party = models.CharField(max_length=30, choices=RESPONSIBLE_PARTY_CHOICES, blank=True)
+    required_details = models.TextField(blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'case_checklist_item_presets'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
