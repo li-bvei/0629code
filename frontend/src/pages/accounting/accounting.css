@@ -454,7 +454,7 @@
 
 .voucher-line-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 90px 130px 140px auto;
+  grid-template-columns: minmax(160px, 1fr) 64px 96px 88px 104px 56px;
   gap: 10px;
   align-items: flex-end;
   padding: 12px;
@@ -465,16 +465,32 @@
 
 .voucher-line-row .el-form-item {
   margin-bottom: 0;
+  min-width: 0;
+}
+
+.voucher-line-row .el-form-item__content {
+  min-width: 0;
 }
 
 .voucher-item-name-control {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
-.voucher-item-name-control .el-button {
-  align-self: flex-start;
+.voucher-item-name-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.voucher-item-preset-select {
+  flex: 1 1 140px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .voucher-line-delete {

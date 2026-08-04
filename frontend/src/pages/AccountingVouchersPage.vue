@@ -34,6 +34,7 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 20
 const editingVoucherId = ref<number | null>(null)
+const showRecipientDetail = ref(false)
 const formRef = ref<FormInstance>()
 const selectedBankInfo = ref('')
 const voucherItemTemplates = ref<VoucherItemTemplate[]>([])
@@ -331,6 +332,7 @@ const resetForm = () => {
     bank_info: '',
   }
   selectedBankInfo.value = ''
+  showRecipientDetail.value = false
   formRef.value?.clearValidate()
 }
 
@@ -371,6 +373,7 @@ const openEditDialog = (voucher: AccountingVoucher) => {
     bank_info: voucher.bank_info,
   }
   selectedBankInfo.value = ''
+  showRecipientDetail.value = Boolean(voucher.recipient_postal_code || voucher.recipient_address)
   formRef.value?.clearValidate()
   dialogVisible.value = true
 }
@@ -397,6 +400,12 @@ const handleLineItemNameChange = (item: AccountingVoucherLineItem) => {
   if (!Number(item.unit_price || 0)) {
     item.unit_price = selected.default_unit_price
   }
+}
+
+const applyVoucherItemTemplate = (item: AccountingVoucherLineItem, name: string) => {
+  if (!name) return
+  item.item_name = name
+  handleLineItemNameChange(item)
 }
 
 const saveVoucherItemTemplate = async (item: AccountingVoucherLineItem) => {
@@ -793,13 +802,24 @@ onMounted(() => {
           </el-form-item>
           <el-form-item label="宛先会社名" prop="recipient_name" class="accounting-dialog-full">
             <el-input v-model="voucherForm.recipient_name" />
+            <el-button
+              v-if="!showRecipientDetail"
+              text
+              type="primary"
+              size="small"
+              @click="showRecipientDetail = true"
+            >
+              詳細住所を追加（任意）
+            </el-button>
           </el-form-item>
-          <el-form-item label="宛先郵便番号" prop="recipient_postal_code">
-            <el-input v-model="voucherForm.recipient_postal_code" />
-          </el-form-item>
-          <el-form-item label="宛先住所" prop="recipient_address" class="accounting-dialog-full">
-            <el-input v-model="voucherForm.recipient_address" />
-          </el-form-item>
+          <template v-if="showRecipientDetail">
+            <el-form-item label="宛先郵便番号" prop="recipient_postal_code">
+              <el-input v-model="voucherForm.recipient_postal_code" />
+            </el-form-item>
+            <el-form-item label="宛先住所" prop="recipient_address" class="accounting-dialog-full">
+              <el-input v-model="voucherForm.recipient_address" />
+            </el-form-item>
+          </template>
           <el-form-item label="件名 / 但し書き" prop="title" class="accounting-dialog-full">
             <el-input v-model="voucherForm.title" />
           </el-form-item>
@@ -816,34 +836,42 @@ onMounted(() => {
                 v-for="(item, index) in voucherForm.line_items"
                 :key="index"
                 class="voucher-line-row"
-                style="grid-template-columns: minmax(180px, 1fr) 90px 132px 110px 144px auto;"
+                style="grid-template-columns: minmax(160px, 1fr) 64px 96px 88px 104px 56px;"
               >
                 <el-form-item label="項目名">
                   <div class="voucher-item-name-control">
-                    <el-select
+                    <el-input
                       v-model="item.item_name"
-                      filterable
-                      allow-create
-                      default-first-option
-                      placeholder="選択または入力"
+                      type="textarea"
+                      :autosize="{ minRows: 1, maxRows: 6 }"
+                      placeholder="項目名を入力（複数行可）"
                       class="form-control"
-                      @change="handleLineItemNameChange(item)"
-                    >
-                      <el-option
-                        v-for="template in voucherItemTemplates"
-                        :key="template.id"
-                        :label="template.name"
-                        :value="template.name"
-                      />
-                    </el-select>
-                    <el-button
-                      v-if="isNewVoucherItemName(item.item_name)"
-                      size="small"
-                      plain
-                      @click="saveVoucherItemTemplate(item)"
-                    >
-                      保存为常用項目
-                    </el-button>
+                    />
+                    <div class="voucher-item-name-actions">
+                      <el-select
+                        :model-value="null"
+                        placeholder="よく使う項目から選択"
+                        size="small"
+                        filterable
+                        class="voucher-item-preset-select"
+                        @change="(name: string) => applyVoucherItemTemplate(item, name)"
+                      >
+                        <el-option
+                          v-for="template in voucherItemTemplates"
+                          :key="template.id"
+                          :label="template.name"
+                          :value="template.name"
+                        />
+                      </el-select>
+                      <el-button
+                        v-if="isNewVoucherItemName(item.item_name)"
+                        size="small"
+                        plain
+                        @click="saveVoucherItemTemplate(item)"
+                      >
+                        保存为常用項目
+                      </el-button>
+                    </div>
                   </div>
                 </el-form-item>
                 <el-form-item label="数量">

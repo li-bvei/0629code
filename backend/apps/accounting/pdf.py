@@ -225,6 +225,29 @@ def draw_wrapped_cell_text(c, x, y, width, height, text, font_name, size, align=
             c.drawString(x + 5, line_y, line)
 
 
+def cell_line_count(cell, col_w, font_name, default_size=10):
+    if isinstance(cell, dict):
+        text = cell.get('text', '')
+        size = cell.get('size', default_size)
+    else:
+        text = cell or ''
+        size = default_size
+    return len(split_text_by_width(str(text or ''), font_name, size, max(col_w - 10, 8)))
+
+
+def row_height_for_lines(base_height, lines, size=10):
+    leading = size + 3
+    return base_height + max(0, lines - 1) * leading
+
+
+def content_driven_row_height(row, col_widths, font_name, base_height, default_size=10):
+    max_lines = max(
+        (cell_line_count(cell, col_w, font_name, default_size) for cell, col_w in zip(row, col_widths)),
+        default=1,
+    )
+    return row_height_for_lines(base_height, max_lines, default_size)
+
+
 def issuer_value(voucher, field):
     value = getattr(voucher, field, '') or ''
     return str(value).strip() or DEFAULT_ISSUER[field]
@@ -569,7 +592,9 @@ def build_invoice_pdf(voucher, with_seal=False):
 
     summary_start_index = len(detail_rows) - len(summary_rows)
     row_heights = [
-        8 * mm if index == 0 else 6.2 * mm if index >= summary_start_index else 8.8 * mm
+        8 * mm if index == 0
+        else 6.2 * mm if index >= summary_start_index
+        else content_driven_row_height(detail_rows[index], col_widths, font_name, 8.8 * mm)
         for index in range(len(detail_rows))
     ]
     y = draw_table(c, margin_x, y, col_widths, row_heights, detail_rows, font_name, font_size=10)
@@ -689,7 +714,9 @@ def build_receipt_pdf(voucher, with_seal=False):
 
     receipt_col_widths = [content_w * 0.52, content_w * 0.22, content_w * 0.26]
     receipt_row_heights = [
-        9 * mm if index == 0 else 6.2 * mm if index >= receipt_summary_start else 10 * mm
+        9 * mm if index == 0
+        else 6.2 * mm if index >= receipt_summary_start
+        else content_driven_row_height(receipt_rows[index], receipt_col_widths, font_name, 10 * mm)
         for index in range(len(receipt_rows))
     ]
     receipt_table_top_y = y

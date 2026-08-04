@@ -281,6 +281,18 @@ PDF 文件:
 
 **发现但未处理的数据问题**：验证 PDF 时发现，部分较早创建的 `AccountingVoucher`（例如 id=10、11，最后更新时间在 2026-07-04 早上）存的 `amount`/`tax_amount`/`total_amount` 字段，跟按当前 `voucher_calculations.py` 逻辑对 `line_items` 现算出来的数字对不上——PDF 上方"請求金額合計"/"合計金額"用的是存量字段（旧值），下方"内訳"表格里的 小計/消費税/合計 是现算的（新值），同一份 PDF 上会出现两个不同的合计数字。怀疑是这些记录建于 `tax_category` 相关计算逻辑/`migrations/0012` 数据迁移引入之前，迁移只回填了 `line_items` 里的 `tax_category` 字段，没有触发 `save()` 重新计算 `amount`/`tax_amount`/`total_amount`。**这次没有动这些存量数据**——只要给这些旧 `AccountingVoucher` 记录重新 `.save()` 一次就能修复（`save()` 里已经会调用 `calculate_voucher_amounts()` 重算），但这样会改动已经可能发给客户的历史请求書/領収書上的金额，需要用户确认后再处理，不能自作主张改。
 
+### 明細入力体験改善 + 明細表格行高自适应（2026-08-04）
+
+用户反馈了 5 点体验问题（項目名没法复制粘贴编辑、宛先默认要求郵便番号/住所、明細表格样式跑版、項目名字数多了会冲出表格边框、想要"項目名换行加适用期间"这种格式但不想用日期选择器辅助）。逐一处理：
+
+- **項目名输入框**：`frontend/src/pages/AccountingVouchersPage.vue` 明細项目名原来是 `<el-select filterable allow-create>`——这类可搜索下拉框有个通病：点击编辑已有内容时会清空成搜索框而不是把原文字放进去，导致没法直接选中复制。改成 `<el-input type="textarea" :autosize="{minRows:1,maxRows:6}">` 直接绑定 `item.item_name`，跟普通输入框一样能复制粘贴、能手动换行；原来"从常用項目里选"的功能保留，改成旁边一个独立的小 `el-select`（`voucher-item-preset-select`，选中即写入 `item.item_name` 并触发 `applyVoucherItemTemplate()` 复用原有的 `handleLineItemNameChange()` 自动带出单价），"保存为常用項目"按钮逻辑未变。因为换成了真正的多行文本框，用户可以直接手打换行 + 适用期间这种格式（比如「会社税務に関するコンサルタント費\n（2025年1月1日-2025年12月31日）」），不需要额外做日期选择器辅助（用户明确要求"全手打就好，日期选择器太麻烦"，没有做结构化的起止日期字段）。
+- **宛先郵便番号 / 宛先住所收起**：这两个字段后端本来就是可选的（`blank=True`，序列化器和前端校验规则都没要求必填），问题只是表单一直常显让人以为必填。改成默认收起，宛先会社名旁边加一个「詳細住所を追加（任意）」文字按钮，点了才展开两个字段；编辑已有 `AccountingVoucher` 时如果这两个字段本来就有值会自动展开（`showRecipientDetail` 根据 `voucher.recipient_postal_code || voucher.recipient_address` 初始化）。
+- **明細表格跑版 + 項目名字数多了冲出边框（同一个根因）**：`backend/apps/accounting/pdf.py` 的請求書/領収書明細表格是手动用 ReportLab canvas 画的，不是用自动排版的表格组件，每行高度原来是写死的常量（請求書 `8.8mm`/領収書 `10mm`），跟項目名实际会换行成几行完全无关——项目名换到第二行时，文字的基线算出来落在这一行边框下面，就是"冲出表格线"；换行数超过预期时还会被截断丢字。新增 `cell_line_count()`/`content_driven_row_height()` 两个辅助函数，先用已有的 `split_text_by_width()` 换行逻辑量出这一行里最长的那一格需要几行，再算 `row_h = base_height + max(0, lines-1) * (size+3)`（`base_height` 就是原来的 8.8mm/10mm，行数为 1 时完全不变），据此再画边框和文字。請求書 `get_review_duration_days` 相邻的 `row_heights`（约 pdf.py:570）和領収書 `receipt_row_heights`（约 pdf.py:716）两处都改了。用真实数据生成 PDF 转图片核对过：1 行、2 行（换行+適用期間格式）、4 行（超长项目名）三种情况都能正确撑开边框、不再截断，且 1 行的情况跟改动前完全一样（没有变得更松）。
+
+验证：`manage.py check`、`npm run build` 均通过；后端直接生成真实 PDF 转图片核对过表格渲染；前端在浏览器里走了一遍完整创建流程（多行項目名输入 → 提交 → 查看返回的 JSON 确认 `item_name` 正确带着换行符存储、`recipient_postal_code`/`recipient_address` 未展开时确实没有提交 → 下载生成的 PDF 转图片确认排版正确），测试数据已清理。
+
+**上线后立刻发现的回归 bug（同日修复）**：用户反馈「帳票を作成」弹窗看起来"整体大小被限制了，删除按钮之类都超出去了"。排查是这次改动引入的两个 CSS 问题叠加：① 新增的 `.voucher-item-preset-select` 写死了 `width: 200px`，放在 flex 行里，而 CSS Grid 的子项默认 `min-width: auto`（不会自动收缩去迁就更窄的轨道），导致項目名这一列被撑到 200px 宽，超出它所在的 `minmax(180px, 1fr)` 网格轨道，把 数量/単価/税区分/金額/削除 全部往右挤出弹窗；② 即使①修好后，`.voucher-line-row` 原有的固定列宽总和（`180+90+132+110+144` 再加 5 个 10px 间距和行内边距）本来就已经比弹窗实际可用宽度（约 698px）更宽，`削除` 按钮所在的最后一列因为宽度不够而被挤出弹窗外——这个问题在改动前也存在，只是項目名原来是单行控件、视觉上不明显，这次項目名区域变高之后才被用户注意到。修复：`.voucher-item-preset-select` 改成 `flex: 1 1 140px` 可收缩；`.voucher-item-name-control`/`.voucher-item-name-actions`/`.voucher-line-row .el-form-item` 都加了 `min-width: 0` 打通收缩链路；`.voucher-line-row` 的列宽预算重新分配为 `minmax(160px, 1fr) 64px 96px 88px 104px 56px`（Vue 模板里的内联 style 和 CSS 类里的默认值都同步改了），总宽度实测能在 698px 内完整容纳全部 6 列，两条明细行都验证过 `scrollWidth` 不再超出容器宽度、削除按钮完整可见可点。
+
 ### 支出記録汇总
 
 状态: 已优化。
