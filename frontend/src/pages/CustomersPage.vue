@@ -7,10 +7,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   deleteCustomer,
   listCustomers,
+  listResidenceStatusMasters,
   updateCustomer,
 } from '../api/customers'
-import { residenceStatusOptions } from '../constants/options'
-import type { CreateCustomerPayload, Customer } from '../types/api'
+import type { CreateCustomerPayload, Customer, ResidenceStatusMaster } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const router = useRouter()
@@ -18,6 +18,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
 const customers = ref<Customer[]>([])
+const residenceStatusOptions = ref<ResidenceStatusMaster[]>([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 20
@@ -70,8 +71,14 @@ const fetchCustomers = async (page = currentPage.value) => {
   }
 }
 
+const fetchResidenceStatusOptions = async () => {
+  const data = await listResidenceStatusMasters({ is_active: true, ordering: 'sort_order' })
+  residenceStatusOptions.value = data.results
+}
+
 onMounted(() => {
   fetchCustomers()
+  fetchResidenceStatusOptions()
 })
 
 const searchCustomers = () => {
@@ -197,9 +204,9 @@ const confirmDeleteCustomer = async (customer: Customer) => {
         >
           <el-option
             v-for="status in residenceStatusOptions"
-            :key="status"
-            :label="status"
-            :value="status"
+            :key="status.id"
+            :label="status.name"
+            :value="status.name"
           />
         </el-select>
         <el-button type="primary" @click="searchCustomers">検索</el-button>
@@ -291,9 +298,9 @@ const confirmDeleteCustomer = async (customer: Customer) => {
           >
             <el-option
               v-for="status in residenceStatusOptions"
-              :key="status"
-              :label="status"
-              :value="status"
+              :key="status.id"
+              :label="status.name"
+              :value="status.name"
             />
           </el-select>
         </el-form-item>

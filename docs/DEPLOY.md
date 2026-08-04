@@ -100,11 +100,49 @@ http://43.139.37.150/sun/api/
 Docker 前端服务只绑定服务器本机：
 
 ```text
-127.0.0.1:8080
+127.0.0.1:8081
 ```
 
 公网访问应通过宝塔 / Nginx 反向代理到：
 
 ```text
-http://127.0.0.1:8080
+http://127.0.0.1:8081
 ```
+
+当前服务器端口分配（2026-08-03 已核对）：
+
+- `8080`：服务器原有 Java / `jsvc` 服务，本项目不可占用。
+- `8081`：本项目 `0629code-frontend-1`。
+- `8090`：另一个项目 `sunrise-diagnosis-web`，不可停止或改作本项目端口。
+
+宝塔 vhost 中 `/sun/` 应保留完整路径转发：
+
+```nginx
+location ^~ /sun/ {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+`proxy_pass` 末尾不要加 `/`，否则 `/sun/admin/`、`/sun/api/` 等路径会被错误改写。
+
+## django-axes 首次迁移兼容
+
+如果生产数据库已经存在 `axes_accessattempt`，但 `showmigrations axes` 显示 `0001_initial` 未应用，普通 `migrate` 会报 `Table 'axes_accessattempt' already exists`。先核对迁移状态：
+
+```bash
+docker compose --env-file .env.prod exec backend python manage.py showmigrations axes
+```
+
+仅在初始迁移显示未应用且现有 axes 表来自此前安装时，执行：
+
+```bash
+docker compose --env-file .env.prod exec backend python manage.py migrate axes --fake-initial
+docker compose --env-file .env.prod exec backend python manage.py migrate
+```
+
+不要删除现有 axes 表，也不要执行 `docker compose down -v`。如果 `--fake-initial` 仍报错，应先检查 axes 表是否只创建了一部分，不能直接使用普通 `--fake`。

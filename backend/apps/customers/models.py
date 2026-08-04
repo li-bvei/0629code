@@ -3,6 +3,34 @@ from django.db import models
 from apps.common.fields import EncryptedCharField
 
 
+class ResidenceStatusMaster(models.Model):
+    CATEGORY_WORK = 'work'
+    CATEGORY_NON_WORK = 'non_work'
+    CATEGORY_STATUS = 'status'
+    CATEGORY_SPECIFIED = 'specified'
+
+    CATEGORY_CHOICES = [
+        (CATEGORY_WORK, '就労系'),
+        (CATEGORY_NON_WORK, '非就労系'),
+        (CATEGORY_STATUS, '身分・地位系'),
+        (CATEGORY_SPECIFIED, '特定活動'),
+    ]
+
+    name = models.CharField(max_length=100, unique=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'residence_status_masters'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
 class Customer(models.Model):
     GENDER_MALE = 'male'
     GENDER_FEMALE = 'female'

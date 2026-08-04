@@ -2,6 +2,49 @@
 
 ## Current Task
 
+2026-08-04 顧客・会社・案件一批 bug 修复 + 新功能（对应 Task #37-43，详见 `AI_CONTEXT.md` 「4C. 顧客・会社・案件本轮修复与新增」）：
+
+1. 全项目 select/option value-vs-code 审计，修复 `CustomerDetailPage.vue`（性别）+ `ReceptionNewPage.vue`（性别+家族関係，新規受付主表单，影响面更大）两处真实 bug，其余约 8 处核对无问题。
+2. 修复 `CaseDetailPage.vue` 必須事項进度条与「X/Y 完了」文字口径不一致（改成统一读后端 `required_items_progress_percent`）。
+3. `CaseDetailPage.vue` 新增「案件基本情報」编辑入口（案件種別/申請区分/顧客/会社/担当者，diff 提交 + Timeline 记录），不含日期/番号字段（用户确认不需要）。
+4. `CompanyStaff` 新增可选 `customer` 外键，可直接从既有顧客选人自动带出字段；新增序列化器级"同一顧客不能同时在职于两家公司"校验；従業員列表离职员工变灰排最下面（用户明确选定的方案），保留硬删除。
+5. 新增 `ResidenceStatusMaster` 后端管理表（含约 30 项官方在留資格种子数据 + `get_or_create` 种子函数），四个消费端（`CustomerDetailPage.vue`/`ReceptionNewPage.vue`/`CustomersPage.vue`/`CompanyDetailPage.vue`）改为动态拉取 + `filterable` 关键字搜索，删除原硬编码的 17 项常量数组。设置页新增「在留資格」管理 tab。
+6. 修复 `.search-row` 在 560-900px 缩放区间的 CSS grid 溢出死区（全站共用一条规则）。**未能复现**用户描述的"操作按钮完全覆盖内容"具体场景，如果之后能复现需再单独定位。
+7. 侧边栏新增折叠为图标模式（`AdminLayout.vue` + `el-menu :collapse`），`localStorage` 持久化。
+
+**未实施、待用户确认**：Checklistテンプレート内容清理（去重 + よくある項目扩充候选清单）——已排查完成并整理出具体修改清单，但用户要求先审阅内容再动手，跟以上 7 项分开处理，不在本轮范围内。
+
+验证：`manage.py check`、`npm run build`（全部改动合并后一起跑）均通过；浏览器人工验证覆盖性别提交、进度条一致性、案件基本情報编辑、会社従業員关联顧客、在留資格四端下拉、侧边栏折叠展开+刷新持久化。
+
+状态：
+
+```text
+已完成（Checklistテンプレート内容清理待用户审阅后另行处理）
+```
+
+## Previous Task Notes（项目记忆刷新 2026-08-03）
+
+2026-08-03 项目记忆刷新：重新读取当前仓库、全部 Markdown、今天的提交 `157a986`，并以实际代码为准统一项目状态。
+
+本轮确认并更新：
+
+- 生产前端正确端口为 `8081`，宝塔 `/sun/` 已代理到 `127.0.0.1:8081`；`8080` 是 Java / `jsvc`，`8090` 是另一个项目 `sunrise-diagnosis-web`。仓库 `docker-compose.yml` 与 `docs/DEPLOY.md` 已同步改为 `8081`。
+- 记录生产库的 django-axes 初始迁移兼容问题：如果 `axes_accessattempt` 已存在但 `axes.0001_initial` 未记录，先核对 `showmigrations axes`，再用 `migrate axes --fake-initial`，不删除表、不直接普通 `--fake`。
+- 当前案件前端以 `CaseChecklistItem` 为实际步骤/必要资料机制；独立 Task 后端保留，但菜单和案件详情 CRUD 已下线。
+- 案件・担当設定管理当前只保留案件種別、申請区分、よくある項目与 Checklistテンプレート；案件進捗、取得場所、準備者区分旧设置已隐藏，担当者走独立 `/employees` 页面。
+- 新規受付以顾客创建为核心，案件可选；顾客列表不再直接新建顾客，会社列表仍保留新建公司。
+- 系统安全现状：マイナンバー Fernet 加密、django-axes 防爆破、`/settings` 修改密码和 root 账号管理已完成。
+- 清風合格通知書的基础 PDF 添加文字工具实际已存在，但业务继续开发暂停；修正文档中“待开发”与“已存在”并存的歧义。
+- `AI_CONTEXT.md`、`docs/PROJECT.md`、`docs/DATABASE.md`、`docs/ROADMAP.md`、`docs/DEPLOY.md` 已按上述现状对齐。
+
+状态：
+
+```text
+已完成（仅更新配置与项目记忆/文档，不改业务逻辑，不生成 migration）
+```
+
+## Previous Task Notes（請求書・領収書汇总显示与边框）
+
 用户反馈帳票管理的請求書・領収書部分，汇总数字（小計/10%対象額/消費税10%/非課税対象額/合計，最多可到7行）太复杂，要求简化成只有小計/消費税/合計三行；同时反馈PDF明细表左边框在汇总行那里断掉了，需要接上。两个都改了：
 
 - **汇总简化**：`build_invoice_summary_rows()`（`backend/apps/accounting/pdf.py`）只保留小計/消費税/合計三行，不再按10%/8%/非課税逐条展开。**只是显示层简化，`voucher_calculations.py` 的分税区分计算逻辑完全没动**——`summary['subtotal']`/`summary['tax_total']`/`summary['total']` 本来就是合并后的数字，直接用。前端 `AccountingVouchersPage.vue` 的 `.voucher-total-box` 同步做了一样的精简（`taxSummary` 的 reduce 也只算这三个字段了），删掉了不再用的 `.voucher-nowrap-label` 死代码。
@@ -126,7 +169,11 @@ cd frontend && npm run build
 
 后续不要继续围绕清風合格通知書开发，除非用户重新明确要求。
 
-## 1. 当前目标
+## Legacy Task Specification（历史记录，不作为当前实现依据）
+
+以下内容记录早期 Task 功能设计，当前前端已经下线独立 Task。后续判断当前产品状态时，以 `AI_CONTEXT.md` 的「案件业务模块现状」和本文件顶部 Current Task 为准；除非用户明确要求恢复 Task，不按以下旧规格继续开发。
+
+## 1. 当时目标
 
 案件模块主要保留:
 

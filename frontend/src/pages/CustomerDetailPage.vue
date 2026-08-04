@@ -4,16 +4,15 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { createCase, listCaseApplicationCategories, listCaseTypeMasters } from '../api/cases'
-import { getCustomer, updateCustomer } from '../api/customers'
+import { getCustomer, listResidenceStatusMasters, updateCustomer } from '../api/customers'
 import { listEmployees } from '../api/employees'
-import { residenceStatusOptions } from '../constants/options'
 import {
   createFamilyMember,
   deleteFamilyMember,
   listFamilyMembers,
   updateFamilyMember,
 } from '../api/familyMembers'
-import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, Customer, Employee, FamilyMember, FamilyMemberPayload, UpdateCustomerPayload } from '../types/api'
+import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, Customer, Employee, FamilyMember, FamilyMemberPayload, ResidenceStatusMaster, UpdateCustomerPayload } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -37,6 +36,7 @@ const caseFormRef = ref<FormInstance>()
 const caseTypes = ref<CaseTypeMaster[]>([])
 const applicationCategories = ref<CaseApplicationCategory[]>([])
 const employees = ref<Employee[]>([])
+const residenceStatusOptions = ref<ResidenceStatusMaster[]>([])
 const caseForm = ref<CasePayload>({
   case_type_master: null,
   application_category: null,
@@ -148,9 +148,9 @@ const getFamilyCardTitle = (familyMember: FamilyMember) => {
 }
 
 const genderOptions = [
-  { label: '男性', value: '男性' },
-  { label: '女性', value: '女性' },
-  { label: 'その他', value: 'その他' },
+  { label: '男性', value: 'male' },
+  { label: '女性', value: 'female' },
+  { label: 'その他', value: 'other' },
 ]
 
 const customerRules: FormRules<UpdateCustomerPayload> = {
@@ -407,8 +407,14 @@ const confirmDeleteFamilyMember = async (familyMember: FamilyMember) => {
   }
 }
 
+const fetchResidenceStatusOptions = async () => {
+  const data = await listResidenceStatusMasters({ is_active: true, ordering: 'sort_order' })
+  residenceStatusOptions.value = data.results
+}
+
 onMounted(() => {
   fetchCustomerDetail()
+  fetchResidenceStatusOptions()
 })
 </script>
 
@@ -497,7 +503,7 @@ onMounted(() => {
               </el-form-item>
               <el-form-item label="在留資格" prop="residence_status">
                 <el-select v-model="familyForm.residence_status" clearable filterable allow-create default-first-option placeholder="選択してください" class="form-control">
-                  <el-option v-for="status in residenceStatusOptions" :key="status" :label="status" :value="status" />
+                  <el-option v-for="status in residenceStatusOptions" :key="status.id" :label="status.name" :value="status.name" />
                 </el-select>
               </el-form-item>
               <el-form-item label="在留カード番号" prop="residence_card_no">
@@ -750,9 +756,9 @@ onMounted(() => {
             >
               <el-option
                 v-for="status in residenceStatusOptions"
-                :key="status"
-                :label="status"
-                :value="status"
+                :key="status.id"
+                :label="status.name"
+                :value="status.name"
               />
             </el-select>
           </el-form-item>

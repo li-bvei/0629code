@@ -8,6 +8,8 @@ import {
   DataAnalysis,
   Document,
   EditPen,
+  Expand,
+  Fold,
   Files,
   List,
   Menu,
@@ -26,11 +28,17 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const isSidebarOpen = ref(false)
+const isSidebarCollapsed = ref(localStorage.getItem('sidebarCollapsed') === '1')
 
 const activeMenu = computed(() => route.path)
 
 const closeSidebar = () => {
   isSidebarOpen.value = false
+}
+
+const toggleSidebarCollapsed = () => {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value
+  localStorage.setItem('sidebarCollapsed', isSidebarCollapsed.value ? '1' : '0')
 }
 
 const handleLogout = async () => {
@@ -45,17 +53,21 @@ const handleLogout = async () => {
 
 <template>
   <div class="admin-layout">
-    <aside class="sidebar" :class="{ 'is-open': isSidebarOpen }">
+    <aside class="sidebar" :class="{ 'is-open': isSidebarOpen, 'is-collapsed': isSidebarCollapsed }">
       <div class="sidebar-brand">
         <div class="brand-mark">S</div>
-        <div>
+        <div v-if="!isSidebarCollapsed">
           <div class="brand-name">SUNRISE</div>
         </div>
+        <button class="collapse-toggle" type="button" aria-label="サイドバー折りたたみ" @click="toggleSidebarCollapsed">
+          <el-icon><Fold v-if="!isSidebarCollapsed" /><Expand v-else /></el-icon>
+        </button>
       </div>
 
       <el-menu
         class="sidebar-menu"
         :default-active="activeMenu"
+        :collapse="isSidebarCollapsed"
         router
         @select="closeSidebar"
       >

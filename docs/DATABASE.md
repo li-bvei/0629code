@@ -50,9 +50,9 @@ MVP 阶段不默认给所有表添加软删除。只有明确需要恢复或隐�
 - `cases`: 案件
 `cases` 是主表之一，应包含案件号、案件类型、状态、客户、公司、受理日期等基础字段。
 
-- `employees`：后台用户
+- `employees`：业务担当者
 
-Employee 后面一定会出现，现在加进去即可。
+`employees.Employee` 用于案件负责人等业务关联；它与 Django `auth.User` 登录账号目前没有外键或一对一关联。登录账号由前端 `/settings` 的账号管理功能维护。
 
 
 
@@ -66,7 +66,8 @@ Employee 后面一定会出现，现在加进去即可。
 - 一个 Company 可以关联多个 Case
 - 一个 Case 可以关联一个 Customer
 - 一个 Case 可以关联一个 Company
-- 一个 Case 可以拥有多个 Task
+- 一个 Case 可以拥有多个 CaseChecklistItem（当前前端实际使用的步骤 / 必要资料）
+- 一个 Case 可以拥有多个 Task（历史模型，后端保留但前端已下线）
 - 一个 Case 可以拥有多个 Reminder
 - 一个 Case 可以拥有多个 Timeline
 - 一个 Case 可以拥有多个 Document
@@ -84,7 +85,7 @@ MVP 阶段暂不设计复杂多对多参与人结构。如后续案件需要多�
 - `case_reminders`: 案件提醒
 - `case_timelines`: 案件时间线
 
-`case_tasks` 用于记录内部待办。
+`case_tasks` 是历史独立待办模型，后端保留；当前前端用 CaseChecklistItem 管理案件步骤和必要资料，不再提供 Task 新建、编辑入口。
 
 `case_reminders` 用于记录重要日期和提醒事项。
 

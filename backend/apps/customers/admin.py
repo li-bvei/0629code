@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import Customer, FamilyMember
+from .models import Customer, FamilyMember, ResidenceStatusMaster
+
+
+@admin.register(ResidenceStatusMaster)
+class ResidenceStatusMasterAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'sort_order', 'is_active')
+    list_filter = ('category', 'is_active')
+    search_fields = ('name',)
 
 
 @admin.register(Customer)

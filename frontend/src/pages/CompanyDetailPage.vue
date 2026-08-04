@@ -6,7 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { createCase, listCaseApplicationCategories, listCases, listCaseTypeMasters } from '../api/cases'
 import { getCompany } from '../api/companies'
-import { listCustomers } from '../api/customers'
+import { listCustomers, listResidenceStatusMasters } from '../api/customers'
 import { listEmployees } from '../api/employees'
 import {
   createCompanyStaff,
@@ -14,8 +14,7 @@ import {
   listCompanyStaff,
   updateCompanyStaff,
 } from '../api/companyStaff'
-import { residenceStatusOptions } from '../constants/options'
-import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, Customer, Employee } from '../types/api'
+import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, Customer, Employee, ResidenceStatusMaster } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -36,6 +35,7 @@ const customers = ref<Customer[]>([])
 const employees = ref<Employee[]>([])
 const caseTypes = ref<CaseTypeMaster[]>([])
 const applicationCategories = ref<CaseApplicationCategory[]>([])
+const residenceStatusOptions = ref<ResidenceStatusMaster[]>([])
 const caseForm = ref<CasePayload>({
   case_type_master: null,
   application_category: null,
@@ -48,8 +48,18 @@ const companyId = computed(() => Number(route.params.id))
 
 const genderOptions = ['男性', '女性', 'その他']
 
+const sortedStaffMembers = computed(() => (
+  [...staffMembers.value].sort((left, right) => {
+    const leftRetired = left.employment_end_date ? 1 : 0
+    const rightRetired = right.employment_end_date ? 1 : 0
+    if (leftRetired !== rightRetired) return leftRetired - rightRetired
+    return left.name.localeCompare(right.name, 'ja')
+  })
+))
+
 const staffForm = ref<CompanyStaffPayload>({
   company: 0,
+  customer: null,
   name: '',
   name_kana: '',
   position: '',
@@ -164,6 +174,7 @@ const resetStaffForm = () => {
   editingStaffId.value = null
   staffForm.value = {
     company: companyId.value,
+    customer: null,
     name: '',
     name_kana: '',
     position: '',
@@ -187,15 +198,46 @@ const resetStaffForm = () => {
   staffFormRef.value?.clearValidate()
 }
 
-const openCreateStaffDialog = () => {
+const openCreateStaffDialog = async () => {
+  if (!customers.value.length) {
+    await fetchCaseOptions()
+  }
   resetStaffForm()
   staffDialogVisible.value = true
+}
+
+const handleStaffCustomerSelect = (customerId: number | null) => {
+  const customer = customers.value.find((item) => item.id === customerId)
+  if (!customer) {
+    staffForm.value = { ...staffForm.value, customer: null }
+    return
+  }
+  staffForm.value = {
+    ...staffForm.value,
+    customer: customer.id,
+    name: customer.name,
+    name_kana: customer.name_kana,
+    birth_date: customer.birth_date,
+    gender: customer.gender,
+    nationality: customer.nationality,
+    residence_status: customer.residence_status,
+    residence_card_no: customer.residence_card_no,
+    residence_expiry: customer.residence_expiry,
+    passport_no: customer.passport_no,
+    passport_expiry: customer.passport_expiry,
+    phone: customer.phone,
+    email: customer.email,
+    postal_code: customer.postal_code,
+    address: customer.address,
+    my_number: customer.my_number,
+  }
 }
 
 const openEditStaffDialog = (staff: CompanyStaff) => {
   editingStaffId.value = staff.id
   staffForm.value = {
     company: companyId.value,
+    customer: staff.customer,
     name: staff.name,
     name_kana: staff.name_kana,
     position: staff.position,
@@ -241,8 +283,9 @@ const submitStaff = async () => {
     }
     staffDialogVisible.value = false
     await fetchStaffMembers()
-  } catch {
-    ElMessage.error(editingStaffId.value ? '従業員情報の更新に失敗しました。' : '従業員の追加に失敗しました。')
+  } catch (error: any) {
+    const detail = error?.response?.data?.customer?.[0]
+    ElMessage.error(detail || (editingStaffId.value ? '従業員情報の更新に失敗しました。' : '従業員の追加に失敗しました。'))
   } finally {
     staffSubmitting.value = false
   }
@@ -269,8 +312,14 @@ const confirmDeleteStaff = async (staff: CompanyStaff) => {
   }
 }
 
+const fetchResidenceStatusOptions = async () => {
+  const data = await listResidenceStatusMasters({ is_active: true, ordering: 'sort_order' })
+  residenceStatusOptions.value = data.results
+}
+
 onMounted(() => {
   fetchCompanyDetail()
+  fetchResidenceStatusOptions()
 })
 </script>
 
@@ -328,9 +377,18 @@ onMounted(() => {
           </div>
         </template>
         <div v-if="staffMembers.length" class="staff-member-list">
-          <div v-for="staff in staffMembers" :key="staff.id" class="staff-member-block">
+          <div
+            v-for="staff in sortedStaffMembers"
+            :key="staff.id"
+            class="staff-member-block"
+            :class="{ 'is-retired': staff.employment_end_date }"
+          >
             <div class="staff-member-header">
-              <strong>{{ displayValue(staff.name) }}</strong>
+              <div class="staff-member-title">
+                <strong>{{ displayValue(staff.name) }}</strong>
+                <el-tag v-if="staff.employment_end_date" size="small" type="info">退社済み</el-tag>
+                <el-tag v-else-if="staff.customer" size="small" type="success">在職中</el-tag>
+              </div>
               <el-dropdown trigger="click">
                 <el-button text type="primary" class="table-action-trigger">
                   操作
@@ -345,6 +403,12 @@ onMounted(() => {
               </el-dropdown>
             </div>
             <el-descriptions :column="2" border>
+              <el-descriptions-item label="紐付く顧客" :span="2">
+                <router-link v-if="staff.customer" class="text-link" :to="`/customers/${staff.customer}`">
+                  {{ staff.customer_name }}
+                </router-link>
+                <span v-else>-</span>
+              </el-descriptions-item>
               <el-descriptions-item label="フリガナ" :span="2">{{ displayValue(staff.name_kana) }}</el-descriptions-item>
               <el-descriptions-item label="氏名" :span="2">{{ displayValue(staff.name) }}</el-descriptions-item>
               <el-descriptions-item label="役職">{{ displayValue(staff.position) }}</el-descriptions-item>
@@ -407,6 +471,18 @@ onMounted(() => {
       @closed="resetStaffForm"
     >
       <el-form ref="staffFormRef" :model="staffForm" :rules="staffRules" label-position="top">
+        <el-form-item label="既存の顧客から選択（任意）">
+          <el-select
+            :model-value="staffForm.customer"
+            clearable
+            filterable
+            placeholder="選択すると氏名などを自動入力します"
+            class="form-control"
+            @update:model-value="handleStaffCustomerSelect"
+          >
+            <el-option v-for="customer in customers" :key="customer.id" :label="customer.name" :value="customer.id" />
+          </el-select>
+        </el-form-item>
         <div class="form-grid">
           <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start">
             <el-input v-model="staffForm.name_kana" />
@@ -438,7 +514,7 @@ onMounted(() => {
               placeholder="選択してください"
               class="form-control"
             >
-              <el-option v-for="status in residenceStatusOptions" :key="status" :label="status" :value="status" />
+              <el-option v-for="status in residenceStatusOptions" :key="status.id" :label="status.name" :value="status.name" />
             </el-select>
           </el-form-item>
           <el-form-item label="在留カード番号" prop="residence_card_no">

@@ -4,10 +4,10 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { listEmployees } from '../api/employees'
-import { listCustomers } from '../api/customers'
+import { listCustomers, listResidenceStatusMasters } from '../api/customers'
 import { listCaseApplicationCategories, listCaseTypeMasters } from '../api/cases'
 import { createReception } from '../api/receptions'
-import { bankAccountTypeOptions, fiscalMonthOptions, residenceStatusOptions } from '../constants/options'
+import { bankAccountTypeOptions, fiscalMonthOptions } from '../constants/options'
 import type {
   CaseApplicationCategory,
   CaseTypeMaster,
@@ -16,6 +16,7 @@ import type {
   ReceptionCompanyPayload,
   ReceptionFamilyMemberPayload,
   ReceptionPayload,
+  ResidenceStatusMaster,
 } from '../types/api'
 
 const router = useRouter()
@@ -25,9 +26,21 @@ const employees = ref<Employee[]>([])
 const customers = ref<Customer[]>([])
 const caseTypes = ref<CaseTypeMaster[]>([])
 const applicationCategories = ref<CaseApplicationCategory[]>([])
+const residenceStatusOptions = ref<ResidenceStatusMaster[]>([])
 
-const genderOptions = ['男性', '女性', 'その他']
-const relationshipOptions = ['配偶者', '子', '父', '母', '兄弟姉妹', 'その他']
+const genderOptions = [
+  { label: '男性', value: 'male' },
+  { label: '女性', value: 'female' },
+  { label: 'その他', value: 'other' },
+]
+const relationshipOptions = [
+  { label: '配偶者', value: 'spouse' },
+  { label: '子', value: 'child' },
+  { label: '父', value: 'father' },
+  { label: '母', value: 'mother' },
+  { label: '兄弟姉妹', value: 'sibling' },
+  { label: 'その他', value: 'other' },
+]
 
 const form = ref<ReceptionPayload>({
   customer: {
@@ -204,16 +217,18 @@ const submitReception = async () => {
 
 onMounted(async () => {
   try {
-    const [employeeData, customerData, caseTypeData, applicationCategoryData] = await Promise.all([
+    const [employeeData, customerData, caseTypeData, applicationCategoryData, residenceStatusData] = await Promise.all([
       listEmployees(),
       listCustomers(),
       listCaseTypeMasters({ is_active: true, ordering: 'sort_order' }),
       listCaseApplicationCategories({ is_active: true, ordering: 'sort_order' }),
+      listResidenceStatusMasters({ is_active: true, ordering: 'sort_order' }),
     ])
     employees.value = employeeData.results
     customers.value = customerData.results
     caseTypes.value = caseTypeData.results
     applicationCategories.value = applicationCategoryData.results
+    residenceStatusOptions.value = residenceStatusData.results
   } catch {
     ElMessage.error('選択肢の取得に失敗しました。')
   }
@@ -250,7 +265,7 @@ onMounted(async () => {
             </el-form-item>
             <el-form-item label="性別" prop="customer.gender">
               <el-select v-model="form.customer.gender" clearable placeholder="選択してください" class="form-control">
-                <el-option v-for="gender in genderOptions" :key="gender" :label="gender" :value="gender" />
+                <el-option v-for="gender in genderOptions" :key="gender.value" :label="gender.label" :value="gender.value" />
               </el-select>
             </el-form-item>
             <el-form-item label="国籍" prop="customer.nationality">
@@ -283,9 +298,9 @@ onMounted(async () => {
               >
                 <el-option
                   v-for="status in residenceStatusOptions"
-                  :key="status"
-                  :label="status"
-                  :value="status"
+                  :key="status.id"
+                  :label="status.name"
+                  :value="status.name"
                 />
               </el-select>
             </el-form-item>
@@ -340,9 +355,9 @@ onMounted(async () => {
                 <el-select v-model="familyMember.relationship" clearable placeholder="選択してください" class="form-control">
                   <el-option
                     v-for="relationship in relationshipOptions"
-                    :key="relationship"
-                    :label="relationship"
-                    :value="relationship"
+                    :key="relationship.value"
+                    :label="relationship.label"
+                    :value="relationship.value"
                   />
                 </el-select>
               </el-form-item>
@@ -364,7 +379,7 @@ onMounted(async () => {
               </el-form-item>
               <el-form-item label="性別">
                 <el-select v-model="familyMember.gender" clearable placeholder="選択してください" class="form-control">
-                  <el-option v-for="gender in genderOptions" :key="gender" :label="gender" :value="gender" />
+                  <el-option v-for="gender in genderOptions" :key="gender.value" :label="gender.label" :value="gender.value" />
                 </el-select>
               </el-form-item>
               <el-form-item label="国籍">
@@ -394,9 +409,9 @@ onMounted(async () => {
                 >
                   <el-option
                     v-for="status in residenceStatusOptions"
-                    :key="status"
-                    :label="status"
-                    :value="status"
+                    :key="status.id"
+                    :label="status.name"
+                    :value="status.name"
                   />
                 </el-select>
               </el-form-item>

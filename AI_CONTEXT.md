@@ -47,6 +47,8 @@ npm run build
 - Docker Compose 部署。
 - 服务器项目目录约定使用 `/www/wwwroot/0629code`。
 - 生产 env 文件使用 `.env.prod`。
+- Docker 前端绑定 `127.0.0.1:8081:80`，宝塔 / Nginx 的 `/sun/` 反向代理到 `http://127.0.0.1:8081`（`proxy_pass` 末尾不加 `/`，以保留 `/sun/` 路径）。
+- 服务器 `8080` 已被 Java / `jsvc` 使用；`8090` 属于另一个容器 `sunrise-diagnosis-web`，不要停止或改作本项目端口。
 - 部署命令示例:
 
 ```bash
@@ -55,6 +57,8 @@ docker compose --env-file .env.prod up -d
 docker compose --env-file .env.prod exec backend python manage.py migrate
 docker compose --env-file .env.prod exec backend python manage.py collectstatic --noinput
 ```
+
+生产环境首次加入 `django-axes` 时，如果已有 `axes_accessattempt` 表但 `axes.0001_initial` 没有迁移记录，应先执行 `showmigrations axes` 确认，再使用 `python manage.py migrate axes --fake-initial`，随后运行普通 `migrate`。不要删除 axes 表，也不要在未核对表结构时使用普通 `--fake`。
 
 ### 重要路径
 
@@ -785,15 +789,77 @@ API: `/api/tasks/`、`/api/tasks/{id}/`，支持 `?case={case_id}`。案件列�
 - 权限边界已用 Django test client 分别以 root 和普通用户身份跑过一遍（列表/建号/强制改密/改自己密码/越权改别人密码），也用真实浏览器（临时注入本地测试 session cookie，没有走真实登录表单）走了一遍新建账号的 UI 流程，两种身份下界面表现符合预期。
 - Employee 和 `auth.User` 之间**没有建立关联**——这次的账号管理是独立于 `Employee`（担当者）体系之外的登录账号管理，如果以后需要"担当者一建号就自动能登录"这种联动，需要单独设计。
 
-## 5. 清風合格通知書模块现状
+## 4C. 顧客・会社・案件本轮修复与新增（2026-08-04）
 
-状态: 待开发 / 暂停处理。
+用户在实际使用中发现的一批 bug + 功能请求，一次性处理完（对应 Task #37-43）。
 
-要求:
+### 全项目 select/option 的 value-vs-code 审计
 
-- 不删除现有代码。
-- 不修改现有功能。
-- 后续不要继续围绕清風合格通知書开发，除非用户重新明确要求。
+背景：用户反馈更新顾客性别为「男性」时报错 `{gender: ["\"男性\"は有効な選択肢ではありません。\"]}`——根因是前端 `<el-option>` 的 `value` 绑定用的是日文显示文案本身（如 `'男性'`），而不是后端 `choices=` 实际存储的 code（如 `'male'`），DRF 序列化器拿到不认识的字符串直接 400。用户要求把全项目所有涉及 VALUE 绑定的地方都查一遍。
+
+审计结果，共发现并修复 2 处真实 bug：
+
+- `frontend/src/pages/CustomerDetailPage.vue`：`genderOptions` 的 `value` 从 `'男性'/'女性'/'その他'` 改成 `'male'/'female'/'other'`（顾客表单 + 家族表单两处 `<el-option>` 都改）。
+- `frontend/src/pages/ReceptionNewPage.vue`（**新規受付主表单，影响面比先发现的 `CustomerDetailPage.vue` 更大**）：`genderOptions`/`relationshipOptions` 原来都是纯字符串数组直接当 value 用，同样是日文标签当 value 提交；改成 `{label,value}` 数组，value 分别对应后端 `male/female/other` 和 `spouse/child/father/mother/sibling/other`。这个 bug 意味着新規受付这个顾客录入主入口，只要提交时填了性别或家族关系就必然 400——已用后端 `Client()` 直接 POST 验证修复后能正常入库。
+
+其余约 8 处 select/option（案件種別、申請区分、案件状态、支付方式等）逐一核对后确认 value 本来就绑定的是后端 code 或数据库主键，无需改动。
+
+### 必須事項进度条卡住 bug
+
+`frontend/src/pages/CaseDetailPage.vue` 的「完了率」进度条和旁边「必須事項：X/Y 完了」文字用的是两套不同的计算口径——后者直接读后端 `caseDetail.required_items_progress_percent`，前者 `checklistProgressPercentage` 却是前端自己拿 `checklistItems.value`（**全部**项目，不分必須/任意）重新算了一遍百分比，编辑或删除 checklist 项目后两者就会不一致（比如卡在 71% 但下面文字已经变成 20/20）。修复：`checklistProgressPercentage` 改成直接读 `caseDetail.value?.required_items_progress_percent || 0`，跟旁边文字统一口径，不再自己算。（注意：`fetchChecklistItems()` 内部本来就会重新拉取 `caseDetail`，之前怀疑的"数据没刷新"不是真正病因。）
+
+### 案件詳細页新增「案件基本情報」编辑入口
+
+背景：案件詳細页原来没有编辑案件種別/申請区分/顧客/会社/担当者这几个基本字段的地方，只能去案件一覧的小弹窗改，两处入口不一致。
+
+`frontend/src/pages/CaseDetailPage.vue` 的「案件基本情報」卡片标题旁新增「編集」按钮，弹窗内含 5 个 `<el-select>`（案件種別/申請区分/顧客/会社/担当者），提交是 diff 方式——只把真正变化的字段打包成 payload 调用 `updateCase()`，成功后额外调 `createTimeline()` 记一条「案件基本情報を修正」，内容是每个变化字段的旧值→新值（复用「過去の項目を修正」已有的 diff-and-log 模式）。案件番号/日期类字段不在这个编辑范围内，维持原有的「案件番号を再生成」等专门入口不变（用户已确认这样足够，不需要在这里改日期）。
+
+### CompanyStaff（会社従業員）与既有顧客关联 + 在職/退職状态
+
+背景：新規受付录入的顧客如果实际是某公司员工，会社详情页添加従業員时要重新手打一遍姓名/生年月日/在留資格等信息，没法直接复用已有顧客数据；员工离职后也没有清晰的状态标记。
+
+- `backend/apps/companies/models.py`：`CompanyStaff` 新增 `customer` 外键（`on_delete=SET_NULL, null=True, blank=True`，可选，不要求必须关联——参照 `Company.representative_customer` 已有的同类可选外键先例），迁移 `apps/companies/migrations/0008_companystaff_customer.py`。
+- `backend/apps/companies/serializers.py`：`CompanyStaffSerializer` 新增 `customer`/`customer_name` 字段，并加 `validate()`——同一个 `customer` 在职（`employment_end_date` 为空）状态下不能同时挂在两家公司名下（用序列化器层面的条件校验而非数据库 `unique=True`，因为唯一性是"仅当在职时"这个条件成立的）。
+- `frontend/src/pages/CompanyDetailPage.vue`：新增従業員弹窗顶部加「既存の顧客から選択」下拉，选中后 `handleStaffCustomerSelect()` 自动把姓名/生年月日/性别/国籍/在留資格等字段整体带出来，用户仍可在此基础上修改（不是只读锁定）。员工列表新增 `sortedStaffMembers` 计算属性——离职员工（`employment_end_date` 有值）统一排到列表最下面并加灰底 + 「退社済み」标签，在职员工保持原顺序 + 「在職中」标签；**离职员工没有被隐藏或不可删除，硬删除按钮原样保留**，只是多了"标记离职但先留着"这个替代方案（这是用户在"能删除+能记录离职日期"和"变灰放最下面"两个方案里，明确选择了后者）。
+
+### 在留資格（ResidenceStatusMaster）后端化 + 全表可搜索选择
+
+背景：用户担心手写死在前端的在留資格列表有遗漏，且希望跟「案件・担当設定管理」的案件種別一样做成可管理表；同时要求录入时能"打几个关键字就选中"而不是翻长列表。
+
+- `backend/apps/customers/models.py` 新增 `ResidenceStatusMaster`（`name` 唯一、`category` 四选一：就労系/非就労系/身分・地位系/特定活動、`sort_order`、`is_active`），迁移 `apps/customers/migrations/0007_residencestatusmaster.py`。
+- `backend/apps/customers/demo_data.py`（新文件）：`STANDARD_RESIDENCE_STATUSES` 内置出入国在留管理庁公开的完整在留資格清单（约 30 项，含身分・地位系的永住者/日本人の配偶者等/定住者等），`seed_standard_residence_statuses()` 用 `get_or_create(name=...)` 幂等写入，跟「よくある項目」的 `seed_standard_checklist_item_presets()` 是同一模式——**只创建不覆盖，可在生产反复安全点击**。
+- API：`/api/residence-status-masters/`（`ResidenceStatusMasterViewSet`，`page_size=100`），`POST /api/residence-status-masters/seed-standard/` 触发种子。
+- **刻意没有把 `Customer.residence_status`/`FamilyMember.residence_status`/`CompanyStaff.residence_status` 改成外键**，仍是自由文本 `CharField`，只是可选项来源换成这张新表——参照 `ExpenseCategory`（管理表）与 `Expense.category`（自由文本按字符串匹配，非真外键）已有的先例，避免大范围数据迁移风险。
+- 消费端全部改为动态拉取（原来 `frontend/src/constants/options.ts` 的硬编码 `residenceStatusOptions`（17 项）已删除）：`CustomerDetailPage.vue`、`ReceptionNewPage.vue`、`CustomersPage.vue`（搜索筛选 + 编辑弹窗）、`CompanyDetailPage.vue`，四处的 `<el-option>` 全部改成从新表拉取的数据渲染，`:value` 绑定 `status.name`（字符串匹配，非 id）。
+- 「打几个关键字就能选」直接用 Element Plus `<el-select filterable>` 已有能力实现，未额外引入搜索机制。
+- 设置页 `CaseChecklistTemplatesPage.vue` 新增「在留資格」tab（表格 + 新增/编辑弹窗 + 「標準項目取込」按钮），管理入口跟「案件種別」「よくある項目」并列。
+
+### 窄屏/缩放布局统一
+
+背景：用户很喜欢「案件・担当設定管理」页面缩放时的表现，希望其他页面也统一成这种不被"操作"列覆盖的效果。
+
+排查确认具体病灶：`frontend/src/style.css` 里全站共用的 `.search-row { grid-template-columns: minmax(220px, 420px) minmax(200px, 280px) auto auto; }` 有一个约 700px 的组合硬下限，原有的 `@media (max-width: 560px)` 单列覆盖规则只在 560px 以下生效，560-900px 之间是没有任何 reflow 规则覆盖的"死区"，缩放到这个区间时搜索行的多个筛选框会被挤到溢出。修复：在既有的 `@media (max-width: 900px)` 断点内新增 `.search-row { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }`，让搜索行筛选项在中间宽度区间自动折行而不是溢出。这是全站共用的一条 CSS 规则，所有用 `.search-row` 的列表页（顧客/会社/案件一覧等）一次性统一受益，不需要逐页改。未能在实测中复现用户描述的"操作按钮完全覆盖内容"这个具体现象（`el-table` 原生的固定列 + 横向滚动在 700-800px 宽度下实测表现尚可），这部分是尽力而为的修复，如果用户之后还能复现具体覆盖场景，需要再单独定位。
+
+### 侧边栏折叠为图标模式
+
+`frontend/src/layouts/AdminLayout.vue`：顶部品牌区新增折叠开关按钮（`Fold`/`Expand` 图标切换），点击后 `<el-menu :collapse="isSidebarCollapsed">`（Element Plus 原生折叠支持，子菜单变成悬浮展开）；折叠状态存 `localStorage.sidebarCollapsed`，刷新后保持。`frontend/src/style.css` 给 `.sidebar` 加了宽度过渡动画和 `.sidebar.is-collapsed { width: 64px; }`，内容区宽度依赖已有的 `.workspace { flex:1; min-width:0 }` 自动重新计算，无需额外适配。已在浏览器实测折叠/展开双向切换 + 刷新后状态保持，均正常。
+
+验证（本轮全部改动一起跑）：
+
+```bash
+cd backend && .venv/bin/python manage.py check
+cd frontend && npm run build
+```
+
+两者均通过（`makemigrations --check` 未见遗漏迁移）。浏览器人工验证覆盖：性别修改不再 400、必須事項进度条与文字一致、案件基本情報编辑弹窗提交与 Timeline 记录、会社従業員选顾客自动带出字段与在職/退社灰化排序、在留資格新表在四个消费端下拉可搜索、侧边栏折叠展开与持久化。
+
+### 待用户确认后再实施：Checklistテンプレート内容清理
+
+已排查现有 6 个 `CaseChecklistTemplate` 内容，发现重复/冲突条目（経営・管理更新模板的重复「住民票」+ sort_order 冲突、需要用户确认「納税証明書（その3）」是否与「法人税納税証明書」重复；技人国ビザ更新模板重复「給与明細/源泉徴収票」；永住許可申請模板重复「課税証明書/納税証明書/在留履歴確認/出入国履歴確認」），并整理出「よくある項目」目录可扩充的约 30+ 候选新条目（分"有把握的官方机构文件"和"不确定的自备材料"两类）。**这部分内容改动尚未实施**——按用户明确要求（"テンプレート你做好内容先把内容给我，我同意后在进行"），需要先把具体修改清单发给用户确认后才能动手，跟本轮其他 7 项改动分开处理。
+
+## 5. 返签 visa 表补充现状
+
+状态: 已存在并在使用；以下为模板、字体和字段兼容细节。
 
 ### PDF 模板和 mapping
 
@@ -919,7 +985,7 @@ elif current_address or home_address2:
 - 只有现住址时，不加「现住址：」标签。
 - 两个地址都有时，户籍地址在上，现住址在下。
 
-## 4. 返签 visa 调试工具
+## 6. 返签 visa 调试工具
 
 ### 坐标调试工具
 
@@ -959,13 +1025,13 @@ elif current_address or home_address2:
 - 不要随便破坏。
 - 不要把这些工具变成客户使用页面。
 
-## 5. 清風合格通知書 / PDF 添加文字功能
+## 7. 清風合格通知書 / PDF 添加文字功能
 
 用户有时会写成「清風合同通知書」，但当前代码、菜单和模板实际是「清風合格通知書」。
 
 ### 当前状态
 
-状态: 已存在。
+状态: 基础 PDF 添加文字工具已存在，但业务继续开发处于暂停状态。菜单仍保留并标记「暂停」；除非用户重新明确要求，不继续扩展记录化保存等功能，也不删除或破坏现有代码。
 
 菜单:
 
@@ -1043,7 +1109,7 @@ API:
 - 字体缺失时不能 fallback 到 YuMincho / dengxian / 默认字体。
 - 坐标使用 PDF pt 坐标，左上原点，和 PyMuPDF 预览图坐标一致。
 
-## 6. 当前已知注意事项
+## 8. 当前已知注意事项
 
 - 不要影响請求書・領収書。
 - 不要影响返签 visa。
@@ -1056,8 +1122,10 @@ API:
 - 不要静默替换用户指定字体。
 - 工作区可能已有多项历史未提交改动，不要随意 revert。
 - 修改文件前先确认用户本轮允许范围。
+- 生产前端端口是 `8081`；`8080` 和 `8090` 均属于其他服务，不要占用。
+- 生产库曾出现 `axes_accessattempt` 表存在但 `axes.0001_initial` 迁移记录缺失的情况；按部署章节使用 `--fake-initial` 核对修复，不删除数据表。
 
-## 7. 常用命令
+## 9. 常用命令
 
 ### Backend
 

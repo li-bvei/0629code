@@ -32,6 +32,12 @@ import {
   updateCaseTypeMaster,
   updateChecklistItemPreset,
 } from '../api/cases'
+import {
+  createResidenceStatusMaster,
+  listResidenceStatusMasters,
+  seedStandardResidenceStatusMasters,
+  updateResidenceStatusMaster,
+} from '../api/customers'
 import type {
   CaseApplicationCategory,
   CaseChecklistDeletionHistoryItem,
@@ -44,6 +50,8 @@ import type {
   ChecklistItemPreset,
   ChecklistItemPresetPayload,
   ItemNameSuggestion,
+  ResidenceStatusMaster,
+  ResidenceStatusMasterPayload,
 } from '../types/api'
 import { formatDateTime } from '../utils/date'
 
@@ -112,6 +120,30 @@ const checklistItemPresetForm = ref<ChecklistItemPresetPayload>({
   sort_order: 0,
   is_active: true,
 })
+
+const residenceStatusMasters = ref<ResidenceStatusMaster[]>([])
+const residenceStatusDialogVisible = ref(false)
+const editingResidenceStatusId = ref<number | null>(null)
+const residenceStatusFormRef = ref<FormInstance>()
+const residenceStatusSubmitting = ref(false)
+const seedingResidenceStatuses = ref(false)
+const residenceStatusForm = ref<ResidenceStatusMasterPayload>({
+  name: '',
+  category: '',
+  sort_order: 0,
+  is_active: true,
+})
+
+const residenceStatusCategoryOptions = [
+  { label: '就労系', value: 'work' },
+  { label: '非就労系', value: 'non_work' },
+  { label: '身分・地位系', value: 'status' },
+  { label: '特定活動', value: 'specified' },
+]
+
+const getResidenceStatusCategoryLabel = (value: string) => (
+  residenceStatusCategoryOptions.find((option) => option.value === value)?.label || value
+)
 
 const presetCategories = [
   '本人資料',
@@ -215,6 +247,10 @@ const checklistItemPresetRules: FormRules<ChecklistItemPresetPayload> = {
   name: [{ required: true, message: '項目名称を入力してください。', trigger: 'blur' }],
 }
 
+const residenceStatusRules: FormRules<ResidenceStatusMasterPayload> = {
+  name: [{ required: true, message: '在留資格名を入力してください。', trigger: 'blur' }],
+}
+
 const usageNotes = {
   caseType: {
     use: ['案件一覧 ＞ 新規案件 ＞ 案件種別', '顧客詳細 ＞ 案件を追加 ＞ 案件種別', '会社詳細 ＞ 案件を追加 ＞ 案件種別', '案件基本情報 ＞ 編集 ＞ 案件種別'],
@@ -301,6 +337,15 @@ const fetchChecklistItemPresets = async () => {
     checklistItemPresetCurrentPage.value = 1
   } catch {
     ElMessage.error('よくある項目の取得に失敗しました。')
+  }
+}
+
+const fetchResidenceStatusMasters = async () => {
+  try {
+    const data = await listResidenceStatusMasters({ ordering: 'sort_order' })
+    residenceStatusMasters.value = data.results
+  } catch {
+    ElMessage.error('在留資格の取得に失敗しました。')
   }
 }
 
@@ -441,6 +486,74 @@ const seedChecklistItemPresets = async () => {
     ElMessage.error('標準項目の取り込みに失敗しました。')
   } finally {
     seedingChecklistItemPresets.value = false
+  }
+}
+
+const resetResidenceStatusForm = () => {
+  editingResidenceStatusId.value = null
+  residenceStatusForm.value = {
+    name: '',
+    category: '',
+    sort_order: 0,
+    is_active: true,
+  }
+  residenceStatusFormRef.value?.clearValidate()
+}
+
+const openCreateResidenceStatusDialog = () => {
+  resetResidenceStatusForm()
+  residenceStatusDialogVisible.value = true
+}
+
+const openEditResidenceStatusDialog = (item: ResidenceStatusMaster) => {
+  editingResidenceStatusId.value = item.id
+  residenceStatusForm.value = {
+    name: item.name,
+    category: item.category,
+    sort_order: item.sort_order,
+    is_active: item.is_active,
+  }
+  residenceStatusFormRef.value?.clearValidate()
+  residenceStatusDialogVisible.value = true
+}
+
+const submitResidenceStatus = async () => {
+  if (!residenceStatusFormRef.value) return
+  const valid = await residenceStatusFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  residenceStatusSubmitting.value = true
+  try {
+    const payload: ResidenceStatusMasterPayload = {
+      name: residenceStatusForm.value.name.trim(),
+      category: residenceStatusForm.value.category || '',
+      sort_order: residenceStatusForm.value.sort_order,
+      is_active: residenceStatusForm.value.is_active,
+    }
+    if (editingResidenceStatusId.value) {
+      await updateResidenceStatusMaster(editingResidenceStatusId.value, payload)
+    } else {
+      await createResidenceStatusMaster(payload)
+    }
+    ElMessage.success('在留資格を保存しました。')
+    residenceStatusDialogVisible.value = false
+    await fetchResidenceStatusMasters()
+  } catch (error) {
+    ElMessage.error(formatApiError(error, '在留資格の保存に失敗しました。'))
+  } finally {
+    residenceStatusSubmitting.value = false
+  }
+}
+
+const seedResidenceStatuses = async () => {
+  seedingResidenceStatuses.value = true
+  try {
+    const result = await seedStandardResidenceStatusMasters()
+    ElMessage.success(`標準在留資格を取り込みました。（追加：${result.created}件 / 既存：${result.skipped}件）`)
+    await fetchResidenceStatusMasters()
+  } catch {
+    ElMessage.error('標準在留資格の取り込みに失敗しました。')
+  } finally {
+    seedingResidenceStatuses.value = false
   }
 }
 
@@ -1099,6 +1212,7 @@ const generateDemoData = async () => {
 onMounted(() => {
   fetchSettingData()
   fetchChecklistItemPresets()
+  fetchResidenceStatusMasters()
   fetchItemOptions()
   fetchTemplates()
   fetchDeletionHistory()
@@ -1197,6 +1311,33 @@ onMounted(() => {
               layout="total, prev, pager, next"
             />
           </div>
+        </el-tab-pane>
+        <el-tab-pane label="在留資格" name="residence-statuses">
+          <div class="setting-card-header">
+            <span class="setting-card-title">
+              在留資格
+              <el-tooltip placement="right" effect="dark">
+                <template #content>
+                  使用場所：顧客・家族・会社従業員の「在留資格」入力欄の選択肢<br>
+                  影響範囲：ここで無効化しても既存データの表示には影響しません
+                </template>
+                <el-icon class="usage-hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+            <div class="header-actions">
+              <el-button :loading="seedingResidenceStatuses" @click="seedResidenceStatuses">標準項目取込</el-button>
+              <el-button type="primary" @click="openCreateResidenceStatusDialog">新規追加</el-button>
+            </div>
+          </div>
+          <el-table :data="residenceStatusMasters" stripe>
+            <el-table-column prop="name" label="在留資格名" min-width="200" />
+            <el-table-column label="分類" width="140">
+              <template #default="{ row }">{{ getResidenceStatusCategoryLabel(row.category) }}</template>
+            </el-table-column>
+            <el-table-column prop="sort_order" label="順番" width="80" />
+            <el-table-column label="状態" width="80"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '無効' }}</el-tag></template></el-table-column>
+            <el-table-column label="操作" width="90"><template #default="{ row }"><el-button text type="primary" @click="openEditResidenceStatusDialog(row)">編集</el-button></template></el-table-column>
+          </el-table>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -1481,6 +1622,39 @@ onMounted(() => {
       <template #footer>
         <el-button @click="checklistItemPresetDialogVisible = false">キャンセル</el-button>
         <el-button type="primary" :loading="checklistItemPresetSubmitting" @click="submitChecklistItemPreset">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="residenceStatusDialogVisible"
+      :title="editingResidenceStatusId ? '在留資格編集' : '在留資格追加'"
+      width="480px"
+      @closed="resetResidenceStatusForm"
+    >
+      <el-form ref="residenceStatusFormRef" :model="residenceStatusForm" :rules="residenceStatusRules" label-position="top">
+        <el-form-item label="在留資格名" prop="name">
+          <el-input v-model="residenceStatusForm.name" placeholder="技術・人文知識・国際業務など" />
+        </el-form-item>
+        <el-form-item label="分類" prop="category">
+          <el-select v-model="residenceStatusForm.category" clearable class="form-control">
+            <el-option
+              v-for="option in residenceStatusCategoryOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="表示順">
+          <el-input-number v-model="residenceStatusForm.sort_order" :min="0" :step="10" class="form-control" />
+        </el-form-item>
+        <el-form-item label="有効状態">
+          <el-switch v-model="residenceStatusForm.is_active" active-text="有効" inactive-text="無効" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="residenceStatusDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="residenceStatusSubmitting" @click="submitResidenceStatus">保存</el-button>
       </template>
     </el-dialog>
 

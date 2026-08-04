@@ -52,6 +52,14 @@ class CompanyStaff(models.Model):
         on_delete=models.CASCADE,
         related_name='staff_members',
     )
+    customer = models.ForeignKey(
+        Customer,
+        verbose_name='顧客',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='company_staff_roles',
+    )
     name = models.CharField(max_length=100)
     name_kana = models.CharField('フリガナ', max_length=100, blank=True)
     position = models.CharField('役職', max_length=100, blank=True)

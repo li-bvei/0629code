@@ -20,6 +20,23 @@ export interface ListParams {
   case?: number
 }
 
+export interface ResidenceStatusMaster {
+  id: number
+  name: string
+  category: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ResidenceStatusMasterPayload {
+  name: string
+  category?: string
+  sort_order?: number
+  is_active?: boolean
+}
+
 export interface Customer {
   id: number
   name: string
@@ -118,6 +135,8 @@ export interface CompanyStaff {
   id: number
   company: number
   company_name: string
+  customer: number | null
+  customer_name: string
   name: string
   name_kana: string
   position: string
@@ -143,6 +162,7 @@ export interface CompanyStaff {
 
 export interface CompanyStaffPayload {
   company: number
+  customer?: number | null
   name: string
   name_kana?: string
   position?: string

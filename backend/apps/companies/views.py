@@ -10,7 +10,7 @@ class CompanyViewSet(ModelViewSet):
 
 
 class CompanyStaffViewSet(ModelViewSet):
-    queryset = CompanyStaff.objects.select_related('company')
+    queryset = CompanyStaff.objects.select_related('company', 'customer')
     serializer_class = CompanyStaffSerializer
 
     def get_queryset(self):

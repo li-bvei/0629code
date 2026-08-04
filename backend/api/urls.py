@@ -17,7 +17,7 @@ from apps.cases.views import (
 )
 from apps.authentication.views import SystemUserViewSet
 from apps.companies.views import CompanyStaffViewSet, CompanyViewSet
-from apps.customers.views import CustomerViewSet, FamilyMemberViewSet
+from apps.customers.views import CustomerViewSet, FamilyMemberViewSet, ResidenceStatusMasterViewSet
 from apps.documents.views import DocumentViewSet
 from apps.employees.views import EmployeeViewSet
 from apps.reminders.views import ReminderViewSet
@@ -27,6 +27,7 @@ from .views import DashboardDeadlinesView, ReceptionCreateView
 
 router = DefaultRouter()
 router.register('users', SystemUserViewSet, basename='system-user')
+router.register('residence-status-masters', ResidenceStatusMasterViewSet, basename='residence-status-master')
 router.register('customers', CustomerViewSet, basename='customer')
 router.register('family-members', FamilyMemberViewSet, basename='family-member')
 router.register('companies', CompanyViewSet, basename='company')

@@ -1,6 +1,12 @@
 from rest_framework import serializers
 
-from .models import Customer, FamilyMember
+from .models import Customer, FamilyMember, ResidenceStatusMaster
+
+
+class ResidenceStatusMasterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResidenceStatusMaster
+        fields = ['id', 'name', 'category', 'sort_order', 'is_active', 'created_at', 'updated_at']
 
 
 class CustomerSerializer(serializers.ModelSerializer):

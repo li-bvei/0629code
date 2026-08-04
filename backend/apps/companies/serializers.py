@@ -50,6 +50,7 @@ class CompanySerializer(serializers.ModelSerializer):
 
 class CompanyStaffSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.name', read_only=True)
+    customer_name = serializers.CharField(source='customer.name', read_only=True, default='')
 
     class Meta:
         model = CompanyStaff
@@ -57,6 +58,8 @@ class CompanyStaffSerializer(serializers.ModelSerializer):
             'id',
             'company',
             'company_name',
+            'customer',
+            'customer_name',
             'name',
             'name_kana',
             'position',
@@ -79,4 +82,23 @@ class CompanyStaffSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def validate(self, attrs):
+        customer = attrs.get('customer', getattr(self.instance, 'customer', None))
+        employment_end_date = attrs.get(
+            'employment_end_date',
+            getattr(self.instance, 'employment_end_date', None),
+        )
+        if customer and not employment_end_date:
+            conflict = CompanyStaff.objects.filter(
+                customer=customer,
+                employment_end_date__isnull=True,
+            )
+            if self.instance:
+                conflict = conflict.exclude(pk=self.instance.pk)
+            if conflict.exists():
+                raise serializers.ValidationError(
+                    {'customer': 'この顧客は既に他の会社の従業員として在職中です。'}
+                )
+        return attrs
         read_only_fields = ['id', 'company_name', 'created_at', 'updated_at']

@@ -12,24 +12,34 @@ import {
   createCaseChecklistItem,
   deleteCaseChecklistItem,
   getCase,
+  listCaseApplicationCategories,
   listCaseChecklistItemNameSuggestions,
   listCaseChecklistItems,
   listCaseChecklistTemplates,
+  listCaseTypeMasters,
   listChecklistItemPresets,
   previewRegenerateCaseNumber,
   regenerateCaseNumber,
   updateCase,
   updateCaseChecklistItem,
 } from '../api/cases'
+import { listCompanies } from '../api/companies'
+import { listCustomers } from '../api/customers'
+import { listEmployees } from '../api/employees'
 import { createTimeline, listTimelines, updateTimeline } from '../api/timelines'
 import type {
   Case,
+  CaseApplicationCategory,
   CaseChecklistItem,
   CaseChecklistItemPayload,
   CaseChecklistItemType,
   CaseChecklistTemplate,
   CasePayload,
+  CaseTypeMaster,
   ChecklistItemPreset,
+  Company,
+  Customer,
+  Employee,
   ItemNameSuggestion,
   Timeline,
   TimelinePayload,
@@ -78,6 +88,26 @@ const checklistItemFormRef = ref<FormInstance>()
 const applyTemplateDialogVisible = ref(false)
 const selectedChecklistTemplateId = ref<number | null>(null)
 const applyingChecklistTemplate = ref(false)
+const customers = ref<Customer[]>([])
+const companies = ref<Company[]>([])
+const employees = ref<Employee[]>([])
+const caseTypes = ref<CaseTypeMaster[]>([])
+const applicationCategories = ref<CaseApplicationCategory[]>([])
+const basicInfoDialogVisible = ref(false)
+const basicInfoSubmitting = ref(false)
+const basicInfoForm = ref<{
+  case_type_master: number | null
+  application_category: number | null
+  customer: number | null
+  company: number | null
+  responsible_employee: number | null
+}>({
+  case_type_master: null,
+  application_category: null,
+  customer: null,
+  company: null,
+  responsible_employee: null,
+})
 
 const caseId = computed(() => Number(route.params.id))
 const displayStatus = computed(() => getCaseDisplayStatus(caseDetail.value?.status))
@@ -285,11 +315,7 @@ const checklistProgressText = computed(() => {
   return `${completed} / ${total}`
 })
 
-const checklistProgressPercentage = computed(() => {
-  if (!checklistItems.value.length) return 0
-  const completed = checklistItems.value.filter((item) => item.is_completed).length
-  return Math.round((completed / checklistItems.value.length) * 100)
-})
+const checklistProgressPercentage = computed(() => caseDetail.value?.required_items_progress_percent || 0)
 
 const isAgencyHandledParty = (party: string) => (
   ['our_company', 'gyousei', 'tax_accountant'].includes(party)
@@ -871,7 +897,7 @@ const submitChecklistItem = async () => {
       ElMessage.success('案件事項を追加しました。')
     }
     checklistItemDialogVisible.value = false
-    await fetchChecklistItems()
+    await Promise.all([fetchChecklistItems(), fetchCaseDetail()])
   } catch {
     ElMessage.error(editingChecklistItemId.value ? '案件事項の更新に失敗しました。' : '案件事項の追加に失敗しました。')
   } finally {
@@ -888,7 +914,7 @@ const toggleChecklistItemCompleted = async (item: CaseChecklistItem) => {
       completed_by: isCompleted ? (caseDetail.value?.responsible_employee || null) : null,
     })
     ElMessage.success(isCompleted ? '案件事項を完了しました。' : '案件事項を未完了に戻しました。')
-    await fetchChecklistItems()
+    await Promise.all([fetchChecklistItems(), fetchCaseDetail()])
   } catch {
     ElMessage.error('案件事項の更新に失敗しました。')
   }
@@ -907,7 +933,7 @@ const confirmDeleteChecklistItem = async (item: CaseChecklistItem) => {
     )
     await deleteCaseChecklistItem(item.id)
     ElMessage.success('削除しました。')
-    await fetchChecklistItems()
+    await Promise.all([fetchChecklistItems(), fetchCaseDetail()])
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('案件事項の削除に失敗しました。')
@@ -1020,8 +1046,95 @@ const submitCancelCase = async () => {
   }
 }
 
+const fetchBasicInfoOptions = async () => {
+  const [customerData, companyData, employeeData, caseTypeData, applicationCategoryData] = await Promise.all([
+    listCustomers(),
+    listCompanies(),
+    listEmployees({ is_active: true }),
+    listCaseTypeMasters({ is_active: true, ordering: 'sort_order' }),
+    listCaseApplicationCategories({ is_active: true, ordering: 'sort_order' }),
+  ])
+  customers.value = customerData.results
+  companies.value = companyData.results
+  employees.value = employeeData.results
+  caseTypes.value = caseTypeData.results
+  applicationCategories.value = applicationCategoryData.results
+}
+
+const openBasicInfoDialog = () => {
+  if (!caseDetail.value) return
+  basicInfoForm.value = {
+    case_type_master: caseDetail.value.case_type_master,
+    application_category: caseDetail.value.application_category,
+    customer: caseDetail.value.customer,
+    company: caseDetail.value.company,
+    responsible_employee: caseDetail.value.responsible_employee,
+  }
+  basicInfoDialogVisible.value = true
+}
+
+const basicInfoFieldLabels: Record<string, string> = {
+  case_type_master: '案件種別',
+  application_category: '申請区分',
+  customer: '顧客',
+  company: '会社',
+  responsible_employee: '担当者',
+}
+
+const submitBasicInfo = async () => {
+  if (!caseDetail.value) return
+  const current = caseDetail.value
+  const form = basicInfoForm.value
+  const payload: Partial<CasePayload> = {}
+  const changedLines: string[] = []
+
+  const trackRef = (
+    key: 'case_type_master' | 'application_category' | 'customer' | 'company' | 'responsible_employee',
+    oldValue: number | null,
+    newValue: number | null,
+    options: { id: number, name: string }[],
+  ) => {
+    if ((newValue || null) === (oldValue || null)) return
+    payload[key] = newValue
+    const oldLabel = options.find((option) => option.id === oldValue)?.name || '-'
+    const newLabel = options.find((option) => option.id === newValue)?.name || '-'
+    changedLines.push(`${basicInfoFieldLabels[key]}：${oldLabel} → ${newLabel}`)
+  }
+
+  trackRef('case_type_master', current.case_type_master, form.case_type_master, caseTypes.value)
+  trackRef('application_category', current.application_category, form.application_category, applicationCategories.value)
+  trackRef('customer', current.customer, form.customer, customers.value)
+  trackRef('company', current.company, form.company, companies.value)
+  trackRef('responsible_employee', current.responsible_employee, form.responsible_employee, employees.value)
+
+  if (!changedLines.length) {
+    ElMessage.info('変更がありません。')
+    return
+  }
+
+  basicInfoSubmitting.value = true
+  try {
+    await updateCase(caseId.value, payload)
+    await createTimeline({
+      case: caseId.value,
+      occurred_at: getTodayDate(),
+      title: '案件基本情報を修正',
+      content: changedLines.join('\n'),
+      is_visible_to_client: false,
+    })
+    ElMessage.success('案件基本情報を更新しました。')
+    basicInfoDialogVisible.value = false
+    await Promise.all([fetchCaseDetail(), fetchTimelines()])
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '更新に失敗しました。')
+  } finally {
+    basicInfoSubmitting.value = false
+  }
+}
+
 onMounted(() => {
   fetchCaseDetail()
+  fetchBasicInfoOptions()
 })
 </script>
 
@@ -1040,6 +1153,7 @@ onMounted(() => {
           <div class="card-header-row">
             <span>案件基本情報</span>
             <div class="card-header-actions">
+              <el-button @click="openBasicInfoDialog">編集</el-button>
               <el-button :loading="regeneratingCaseNumber" @click="confirmRegenerateCaseNumber">
                 案件番号を再生成
               </el-button>
@@ -1051,7 +1165,7 @@ onMounted(() => {
         </template>
         <el-descriptions v-if="caseDetail" :column="2" border>
           <el-descriptions-item label="案件番号">{{ displayValue(caseDetail.case_number) }}</el-descriptions-item>
-          <el-descriptions-item label="案件種別">{{ displayValue(caseDetail.case_type) }}</el-descriptions-item>
+          <el-descriptions-item label="案件種別">{{ displayValue(caseDetail.case_type_master_name) }}</el-descriptions-item>
           <el-descriptions-item label="申請区分">{{ displayValue(caseDetail.application_category_name) }}</el-descriptions-item>
           <el-descriptions-item label="登録ステータス">
             <el-tag :type="getCaseRegistrationStatusTagType(caseDetail.registration_status)" effect="plain">
@@ -1425,6 +1539,41 @@ onMounted(() => {
       <template #footer>
         <el-button @click="correctionDialogVisible = false">キャンセル</el-button>
         <el-button type="primary" :loading="correctionSubmitting" @click="submitCorrection">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="basicInfoDialogVisible" title="案件基本情報を編集" width="520px">
+      <el-form :model="basicInfoForm" label-position="top">
+        <el-form-item label="案件種別">
+          <el-select v-model="basicInfoForm.case_type_master" filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="caseType in caseTypes" :key="caseType.id" :label="caseType.name" :value="caseType.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="申請区分">
+          <el-select v-model="basicInfoForm.application_category" filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="category in applicationCategories" :key="category.id" :label="category.name" :value="category.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="顧客">
+          <el-select v-model="basicInfoForm.customer" filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="customer in customers" :key="customer.id" :label="customer.name" :value="customer.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="会社">
+          <el-select v-model="basicInfoForm.company" clearable filterable placeholder="選択してください" class="form-control">
+            <el-option v-for="company in companies" :key="company.id" :label="company.name" :value="company.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="担当者">
+          <el-select v-model="basicInfoForm.responsible_employee" clearable filterable placeholder="選択してください" class="form-control">
+            <el-option label="未設定" :value="null" />
+            <el-option v-for="employee in employees" :key="employee.id" :label="employee.name" :value="employee.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="basicInfoDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="basicInfoSubmitting" @click="submitBasicInfo">保存</el-button>
       </template>
     </el-dialog>
 
