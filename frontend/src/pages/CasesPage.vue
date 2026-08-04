@@ -15,7 +15,6 @@ import {
   getCaseRegistrationStatusLabel,
   getCaseRegistrationStatusTagType,
 } from '../utils/caseStatus'
-import { formatDate, formatDateTime } from '../utils/date'
 
 const router = useRouter()
 const loading = ref(false)
@@ -64,12 +63,6 @@ const caseWorkViewOptions = [
 const shouldShowRegistrationStatus = computed(() => (
   filters.value.view === 'all'
 ))
-
-const getCaseProgressNumber = (caseItem: Case) => {
-  if (caseItem.status === 'approved') return caseItem.permission_number || '-'
-  if (caseItem.status === 'applied') return caseItem.application_receipt_number || '-'
-  return caseItem.application_receipt_number || caseItem.permission_number || '-'
-}
 
 const fieldLabels: Record<string, string> = {
   case_type: '案件種別',
@@ -315,35 +308,10 @@ const confirmDeleteCase = async (caseItem: Case) => {
         <el-table-column prop="responsible_employee_name" label="担当者" min-width="140">
           <template #default="{ row }">{{ row.responsible_employee_name || '-' }}</template>
         </el-table-column>
-        <el-table-column label="進捗日" width="130">
-          <template #default="{ row }">{{ formatDate(row.progress_started_at) }}</template>
-        </el-table-column>
-        <el-table-column label="受付番号 / 許可番号" min-width="160" show-overflow-tooltip>
-          <template #default="{ row }">{{ getCaseProgressNumber(row) }}</template>
-        </el-table-column>
         <el-table-column label="審査期間" width="110">
           <template #default="{ row }">
             {{ row.review_duration_days === null ? '-' : `${row.review_duration_days}日` }}
           </template>
-        </el-table-column>
-        <el-table-column label="タスク進捗" width="120">
-          <template #default="{ row }">
-            {{ row.task_completed_count || 0 }} / {{ row.task_total_count || 0 }}
-          </template>
-        </el-table-column>
-        <el-table-column label="次のタスク" min-width="220" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span>{{ row.next_task_title || '-' }}</span>
-            <span v-if="row.next_task_responsible_employee_name" class="muted-inline">
-              （{{ row.next_task_responsible_employee_name }}）
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="受理日" width="130">
-          <template #default="{ row }">{{ formatDate(row.accepted_at) }}</template>
-        </el-table-column>
-        <el-table-column label="更新日時" min-width="160">
-          <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">

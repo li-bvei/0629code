@@ -636,6 +636,8 @@ PDF字段映射未完成
 
 `result_notified_at`（通知日）和 `additional_documents_due_at`（補正資料截止日）不在 `status_service.PROGRESS_INFO_FIELDS` 白名单里，也不在 `_apply_status_business_fields` 读取的 `status_payload` key 里 —— 提交时前端单独比较这两个字段是否变化，变化则额外调用一次 `updateCase(caseId, {...})`（走 `CaseViewSet` 默认的 `PATCH /api/cases/{id}/`，`CaseSerializer` 已包含且可写这两个字段，无需改后端）。
 
+**已修复的 bug（2026-08-04）**：`openProgressUpdateDialog()` 原来给 `result_notified_at` 的默认值是 `caseDetail.value.result_notified_at || today`——只要这个案件从没记录过通知日（值为 `null`），弹窗一打开就会静默预填"今天"。因为通知日走的是上面说的"前端 diff 后单独 PATCH"这条路径，不像其他字段那样受 `new_status` 门控，所以哪怕用户这次弹窗只是想改別的字段（比如許可番号）、根本没注意到通知日这一栏，提交时"今天"跟"原来的 null"一比对就被判定成"改过了"，一起写了进去——用户反馈"我只要修改了[案件]，通知日就会变成当日"正是这个原因。修复：改成 `caseDetail.value.result_notified_at`（不再有 `|| today` 兜底），跟旁边 `additional_documents_due_at` 字段一直以来的写法保持一致——没记录过就留空，逼用户明确点选日期才会写入，避免"顺手改了别的字段、通知日被静默带偏成今天"。
+
 ### 進捗修正（過去の項目を修正）
 
 新增次要入口，用于补录历史数据或修正录入错误，**不改变 `status`**：
@@ -759,6 +761,22 @@ API: `/api/tasks/`、`/api/tasks/{id}/`，支持 `?case={case_id}`。案件列�
 - 路由: `/employees`
 - 功能: 担当者一覧、新規追加、編集、有効 / 無効切换、検索
 - 入口: 案件・担当設定管理页「担当者管理を開く」按钮跳转；没有独立主菜单项。
+
+### ダッシュボード「申請中案件」判断基准 + 案件一覧表示精简（2026-08-04）
+
+用户反馈「申請中案件」有的審査中案件不显示、案件変成許可后仍然停留在这个列表里看不出已经结束、案件一覧列太多没意义、審査期間经常显示"-"。排查后确认根因是**同一个逻辑缺陷**：
+
+- `frontend/src/pages/DashboardPage.vue` 原来的 `inProgressCases` 用 `caseItem.applied_at && !['完了', '中止', 'completed'].includes(caseItem.status)` 判断——`'完了'`/`'中止'` 是日文字符串，`status` 实际存的是英文 code（`completed`/`withdrawn` 等），这两个日文字符串**永远不可能匹配上**，等于排除清单里只有 `'completed'` 真正生效，`approved`（許可）/`rejected`（不許可）/`withdrawn`（取下げ）都没被排除，案件一旦許可、案主也没法从这张表上看出案件已经结束。同时这个判断还依赖 `applied_at` 是否有值——如果某个案件因为历史数据/手动录入原因 `applied_at` 恰好是空的（即使 `status` 已经是 `審査中`），也会被整个排除掉，跟「有的審査中案件不显示」这个反馈完全对应。
+- 修复：改成直接按 `status` 判断是否是"已提交、还没出结果"的阶段，不再依赖 `applied_at` 是否有值，也不再用日文字符串误判：
+  ```js
+  const inProgressStatuses = ['applied', 'under_review', 'additional_documents', 'additional_documents_submitted']
+  ```
+  这四个状态之外（包括 `approved`/`rejected`/`withdrawn`/`completed` 四个终态，以及还没提交的 `consultation`/`accepted`/`collecting_documents`/`preparing_documents`/`ready_to_apply`）都不会出现在「申請中案件」里——案件一旦許可/不許可/取下げ/完了，自然从这张表消失，不需要额外看状态字段。
+- `backend/apps/cases/serializers.py` 的 `get_review_duration_days()` 原来要求 `applied_at` 和 `result_received_at` 同时有值才计算，导致案件还在審査中（还没出结果）时「審査期間」永远显示"-"，用户实际想看的是"已经审查了多少天"这个进行中的计数。改成跟 `get_progress_elapsed_days()` 一样的模式：`result_received_at` 有值就用它，没有值且 `status` 不在 `terminal_statuses`（`approved`/`rejected`/`withdrawn`/`completed`）里就用今天的日期做开放区间计算，案件详情页 `CaseDetailPage.vue` 的「審査期間」展示项复用同一个字段，一并受益。
+- `frontend/src/pages/CasesPage.vue` 案件一覧表格删除了 6 列：進捗日、受付番号 / 許可番号（连同只给这列用的 `getCaseProgressNumber()` 一起删除）、タスク進捗、次のタスク（这两列依赖已经从前端下线的 Task 功能的统计字段，早就是没意义的摆设）、受理日、更新日時。保留列：案件番号、案件種別、現在の進捗、顧客名、会社名、担当者、審査期間、操作。**后端这些字段本身没有删**（`task_total_count` 等仍然在 `CaseSerializer` 里，只是列表页不展示了），遵循一贯的"只在前端隐藏、不删后端"做法。
+- `DashboardPage.vue` 的「申請中案件」「最近更新された案件」两张表都去掉了「ステータス」列——「申請中案件」表本身的存在就代表"状态是进行中"，「最近更新された案件」表本来就不是按状态分类的列表，这一列没有实际信息量。
+
+验证：`manage.py check`、`npm run build` 均通过；浏览器用真实本地数据核对：之前因为「許可」状态被错误保留在「申請中案件」里的 3 条案件（`CASE-2026-0002`/`CASE-2026-0005`/`経管-更新-202607-喬 玉玲-0001`）修复后正确消失，只剩下真正 `審査中` 的 1 条；案件一覧確認列数精简正确、`審査中` 案件的審査期間从"-"变成"20日"这样的具体天数。
 
 ## 4B. 系统安全与账号管理
 

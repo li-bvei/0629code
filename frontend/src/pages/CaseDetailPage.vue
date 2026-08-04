@@ -450,7 +450,7 @@ const openProgressUpdateDialog = (suggestedStatus?: string) => {
     additional_documents_detail: caseDetail.value.additional_documents_detail || '',
     additional_documents_due_at: caseDetail.value.additional_documents_due_at,
     additional_documents_submitted_at: caseDetail.value.additional_documents_submitted_at || today,
-    result_notified_at: caseDetail.value.result_notified_at || today,
+    result_notified_at: caseDetail.value.result_notified_at,
     result_received_at: caseDetail.value.result_received_at || today,
     permission_number: caseDetail.value.permission_number || '',
     result_note: caseDetail.value.result_note || '',

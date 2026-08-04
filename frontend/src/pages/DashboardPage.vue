@@ -19,9 +19,11 @@ const recentCases = computed(() =>
   [...cases.value].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 10),
 )
 
+const inProgressStatuses = ['applied', 'under_review', 'additional_documents', 'additional_documents_submitted']
+
 const inProgressCases = computed(() => (
   [...cases.value]
-    .filter((caseItem) => caseItem.applied_at && !['完了', '中止', 'completed'].includes(caseItem.status))
+    .filter((caseItem) => inProgressStatuses.includes(caseItem.status))
     .sort((a, b) => (a.applied_at || '').localeCompare(b.applied_at || ''))
     .slice(0, 10)
 ))
@@ -137,7 +139,6 @@ onMounted(() => {
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="status" label="ステータス" width="120" />
         </el-table>
         <p v-else class="empty-text">申請中の案件はありません</p>
       </el-card>
@@ -157,7 +158,6 @@ onMounted(() => {
           <el-table-column prop="company_name" label="会社名" min-width="160">
             <template #default="{ row }">{{ row.company_name || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="status" label="ステータス" width="120" />
           <el-table-column label="更新日時" min-width="160">
             <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
           </el-table-column>

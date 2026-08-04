@@ -417,7 +417,10 @@ class CaseSerializer(serializers.ModelSerializer):
         return days if days >= 0 else None
 
     def get_review_duration_days(self, obj):
-        return self.calculate_days(obj.applied_at, obj.result_received_at)
+        end_date = obj.result_received_at
+        if not end_date and obj.status not in self.terminal_statuses:
+            end_date = timezone.localdate()
+        return self.calculate_days(obj.applied_at, end_date)
 
     def get_days_until_additional_request(self, obj):
         return self.calculate_days(obj.applied_at, obj.additional_documents_requested_at)
