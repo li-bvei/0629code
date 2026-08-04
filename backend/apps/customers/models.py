@@ -91,8 +91,24 @@ class FamilyMember(models.Model):
         on_delete=models.CASCADE,
         related_name='family_members',
     )
+    family_customer = models.ForeignKey(
+        Customer,
+        verbose_name='本人（顧客）',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='family_links',
+    )
     relationship = models.CharField(max_length=20, choices=RELATIONSHIP_CHOICES)
-    name = models.CharField(max_length=100)
+    is_dependent = models.BooleanField(default=False)
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # 以下は旧仕様の名残（本人の個人情報を family_customer 経由ではなく直接保持していた頃のフィールド）。
+    # family_customer が設定された行ではアプリケーションコードから読み書きしない。
+    # バックフィル未実施の旧データの一時的な保管場所として残しており、将来のクリーンアップで削除予定。
+    name = models.CharField(max_length=100, blank=True)
     name_kana = models.CharField(max_length=100, blank=True)
     birth_date = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=20, choices=Customer.GENDER_CHOICES, blank=True)
@@ -104,10 +120,6 @@ class FamilyMember(models.Model):
     postal_code = models.CharField('郵便番号', max_length=20, blank=True)
     address = models.CharField(max_length=255, blank=True)
     my_number = EncryptedCharField('マイナンバー', max_length=255, blank=True)
-    is_dependent = models.BooleanField(default=False)
-    note = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'family_members'

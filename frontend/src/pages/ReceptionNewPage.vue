@@ -105,6 +105,7 @@ const getCorporateRegistrationNumber = (corporateNumber?: string) => {
 }
 
 const createEmptyFamilyMember = (): ReceptionFamilyMemberPayload => ({
+  customer: null,
   relationship: '',
   name: '',
   name_kana: '',
@@ -145,10 +146,12 @@ const validateCompany = () => {
 
 const validateFamilyMembers = () => {
   const invalid = form.value.family_members.some((familyMember) => (
-    hasAnyValue(familyMember as Record<string, unknown>) && !familyMember.name?.trim()
+    !familyMember.customer
+    && hasAnyValue(familyMember as Record<string, unknown>)
+    && !familyMember.name?.trim()
   ))
   if (invalid) {
-    ElMessage.error('家族情報を入力する場合は氏名が必須です。')
+    ElMessage.error('家族情報を入力する場合は、既存の顧客を選択するか氏名を入力してください。')
     return false
   }
   return true
@@ -361,77 +364,94 @@ onMounted(async () => {
                   />
                 </el-select>
               </el-form-item>
-              <el-form-item label="フリガナ" class="form-grid-start">
-                <el-input v-model="familyMember.name_kana" />
-              </el-form-item>
-              <el-form-item label="氏名" class="form-grid-start">
-                <el-input v-model="familyMember.name" />
-              </el-form-item>
-              <el-form-item label="生年月日">
-                <el-date-picker
-                  v-model="familyMember.birth_date"
-                  type="date"
-                  format="YYYY-MM-DD"
-                  value-format="YYYY-MM-DD"
-                  placeholder="YYYY-MM-DD"
-                  class="form-control"
-                />
-              </el-form-item>
-              <el-form-item label="性別">
-                <el-select v-model="familyMember.gender" clearable placeholder="選択してください" class="form-control">
-                  <el-option v-for="gender in genderOptions" :key="gender.value" :label="gender.label" :value="gender.value" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="国籍">
-                <el-input v-model="familyMember.nationality" />
-              </el-form-item>
-              <el-form-item label="電話番号">
-                <el-input v-model="familyMember.phone" />
-              </el-form-item>
-              <el-form-item label="郵便番号" class="form-grid-start">
-                <el-input v-model="familyMember.postal_code" />
-              </el-form-item>
-              <el-form-item label="住所" class="form-grid-full">
-                <el-input v-model="familyMember.address" />
-              </el-form-item>
-              <el-form-item label="マイナンバー">
-                <el-input v-model="familyMember.my_number" />
-              </el-form-item>
-              <el-form-item label="在留資格">
-                <el-select
-                  v-model="familyMember.residence_status"
-                  clearable
-                  filterable
-                  allow-create
-                  default-first-option
-                  placeholder="選択してください"
-                  class="form-control"
-                >
-                  <el-option
-                    v-for="status in residenceStatusOptions"
-                    :key="status.id"
-                    :label="status.name"
-                    :value="status.name"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="在留カード番号">
-                <el-input v-model="familyMember.residence_card_no" />
-              </el-form-item>
-              <el-form-item label="在留期限">
-                <el-date-picker
-                  v-model="familyMember.residence_expiry"
-                  type="date"
-                  format="YYYY-MM-DD"
-                  value-format="YYYY-MM-DD"
-                  placeholder="YYYY-MM-DD"
-                  class="form-control"
-                />
-              </el-form-item>
               <el-form-item label="扶養対象">
                 <el-switch v-model="familyMember.is_dependent" active-text="はい" inactive-text="いいえ" />
               </el-form-item>
+              <el-form-item label="既存の顧客から選択" class="form-grid-full">
+                <el-select
+                  v-model="familyMember.customer"
+                  clearable
+                  filterable
+                  placeholder="既に顧客として登録済みの場合はここで選択（未選択なら下で新規登録）"
+                  class="form-control"
+                >
+                  <el-option v-for="option in customers" :key="option.id" :label="option.name" :value="option.id" />
+                </el-select>
+              </el-form-item>
             </div>
+
+            <template v-if="!familyMember.customer">
+              <p class="section-optional-note">既存の顧客に該当しない場合は、新しい人物として以下を入力してください。</p>
+              <div class="form-grid">
+                <el-form-item label="フリガナ" class="form-grid-start">
+                  <el-input v-model="familyMember.name_kana" />
+                </el-form-item>
+                <el-form-item label="氏名" class="form-grid-start">
+                  <el-input v-model="familyMember.name" />
+                </el-form-item>
+                <el-form-item label="生年月日">
+                  <el-date-picker
+                    v-model="familyMember.birth_date"
+                    type="date"
+                    format="YYYY-MM-DD"
+                    value-format="YYYY-MM-DD"
+                    placeholder="YYYY-MM-DD"
+                    class="form-control"
+                  />
+                </el-form-item>
+                <el-form-item label="性別">
+                  <el-select v-model="familyMember.gender" clearable placeholder="選択してください" class="form-control">
+                    <el-option v-for="gender in genderOptions" :key="gender.value" :label="gender.label" :value="gender.value" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="国籍">
+                  <el-input v-model="familyMember.nationality" />
+                </el-form-item>
+                <el-form-item label="電話番号">
+                  <el-input v-model="familyMember.phone" />
+                </el-form-item>
+                <el-form-item label="郵便番号" class="form-grid-start">
+                  <el-input v-model="familyMember.postal_code" />
+                </el-form-item>
+                <el-form-item label="住所" class="form-grid-full">
+                  <el-input v-model="familyMember.address" />
+                </el-form-item>
+                <el-form-item label="マイナンバー">
+                  <el-input v-model="familyMember.my_number" />
+                </el-form-item>
+                <el-form-item label="在留資格">
+                  <el-select
+                    v-model="familyMember.residence_status"
+                    clearable
+                    filterable
+                    allow-create
+                    default-first-option
+                    placeholder="選択してください"
+                    class="form-control"
+                  >
+                    <el-option
+                      v-for="status in residenceStatusOptions"
+                      :key="status.id"
+                      :label="status.name"
+                      :value="status.name"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="在留カード番号">
+                  <el-input v-model="familyMember.residence_card_no" />
+                </el-form-item>
+                <el-form-item label="在留期限">
+                  <el-date-picker
+                    v-model="familyMember.residence_expiry"
+                    type="date"
+                    format="YYYY-MM-DD"
+                    value-format="YYYY-MM-DD"
+                    placeholder="YYYY-MM-DD"
+                    class="form-control"
+                  />
+                </el-form-item>
+              </div>
+            </template>
             <el-form-item label="備考">
               <el-input v-model="familyMember.note" type="textarea" :rows="2" />
             </el-form-item>
@@ -609,11 +629,3 @@ onMounted(async () => {
     </el-form>
   </section>
 </template>
-
-<style scoped>
-.section-optional-note {
-  margin: 0 0 12px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-</style>

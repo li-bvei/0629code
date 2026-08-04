@@ -89,10 +89,29 @@ class CustomerDetailSerializer(CustomerSerializer):
         return CompanySerializer(queryset, many=True, context=self.context).data
 
 
+FAMILY_MEMBER_PERSON_FIELDS = [
+    'name',
+    'name_kana',
+    'birth_date',
+    'gender',
+    'nationality',
+    'residence_status',
+    'residence_card_no',
+    'residence_expiry',
+    'phone',
+    'postal_code',
+    'address',
+    'my_number',
+]
+
+
 class FamilyMemberSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     relationship_display = serializers.CharField(source='get_relationship_display', read_only=True)
-    gender_display = serializers.CharField(source='get_gender_display', read_only=True)
+    gender_display = serializers.SerializerMethodField()
+    passport_no = serializers.SerializerMethodField()
+    passport_expiry = serializers.SerializerMethodField()
+    new_customer = serializers.DictField(write_only=True, required=False)
 
     class Meta:
         model = FamilyMember
@@ -100,23 +119,16 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
             'id',
             'customer',
             'customer_name',
+            'family_customer',
             'relationship',
             'relationship_display',
-            'name',
-            'name_kana',
-            'birth_date',
-            'gender',
+            *FAMILY_MEMBER_PERSON_FIELDS,
             'gender_display',
-            'nationality',
-            'residence_status',
-            'residence_card_no',
-            'residence_expiry',
-            'phone',
-            'postal_code',
-            'address',
-            'my_number',
+            'passport_no',
+            'passport_expiry',
             'is_dependent',
             'note',
+            'new_customer',
             'created_at',
             'updated_at',
         ]
@@ -125,6 +137,50 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
             'customer_name',
             'relationship_display',
             'gender_display',
+            *FAMILY_MEMBER_PERSON_FIELDS,
             'created_at',
             'updated_at',
         ]
+
+    def get_gender_display(self, obj):
+        gender = obj.family_customer.gender if obj.family_customer_id else obj.gender
+        return dict(Customer.GENDER_CHOICES).get(gender, '')
+
+    def get_passport_no(self, obj):
+        return obj.family_customer.passport_no if obj.family_customer_id else ''
+
+    def get_passport_expiry(self, obj):
+        return obj.family_customer.passport_expiry if obj.family_customer_id else None
+
+    def validate(self, attrs):
+        family_customer = attrs.get('family_customer', getattr(self.instance, 'family_customer', None))
+        new_customer_data = attrs.get('new_customer')
+        if self.instance is None and not family_customer and not new_customer_data:
+            raise serializers.ValidationError(
+                {'family_customer': '本人となる顧客を選択するか、新しい顧客情報を入力してください。'}
+            )
+        if family_customer and new_customer_data:
+            raise serializers.ValidationError(
+                {'family_customer': '既存顧客の選択と新規顧客の入力は同時に指定できません。'}
+            )
+        return attrs
+
+    def create(self, validated_data):
+        new_customer_data = validated_data.pop('new_customer', None)
+        if new_customer_data:
+            customer_serializer = CustomerSerializer(data=new_customer_data)
+            customer_serializer.is_valid(raise_exception=True)
+            validated_data['family_customer'] = customer_serializer.save()
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop('new_customer', None)
+        return super().update(instance, validated_data)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.family_customer_id:
+            person = instance.family_customer
+            for field in FAMILY_MEMBER_PERSON_FIELDS:
+                data[field] = getattr(person, field)
+        return data

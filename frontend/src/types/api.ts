@@ -163,22 +163,8 @@ export interface CompanyStaff {
 export interface CompanyStaffPayload {
   company: number
   customer?: number | null
-  name: string
-  name_kana?: string
+  new_customer?: CreateCustomerPayload
   position?: string
-  birth_date?: string | null
-  gender?: string
-  nationality?: string
-  residence_status?: string
-  residence_card_no?: string
-  residence_expiry?: string | null
-  passport_no?: string
-  passport_expiry?: string | null
-  phone?: string
-  email?: string
-  postal_code?: string
-  address?: string
-  my_number?: string
   employment_start_date?: string | null
   employment_end_date?: string | null
   note?: string
@@ -772,6 +758,7 @@ export interface FamilyMember {
   id: number
   customer: number
   customer_name: string
+  family_customer: number | null
   relationship: string
   relationship_display: string
   name: string
@@ -783,6 +770,8 @@ export interface FamilyMember {
   residence_status: string
   residence_card_no: string
   residence_expiry: string | null
+  passport_no: string
+  passport_expiry: string | null
   phone: string
   postal_code: string
   address: string
@@ -795,19 +784,9 @@ export interface FamilyMember {
 
 export interface FamilyMemberPayload {
   customer: number
+  family_customer?: number | null
+  new_customer?: CreateCustomerPayload
   relationship: string
-  name: string
-  name_kana?: string
-  birth_date?: string | null
-  gender?: string
-  nationality?: string
-  phone?: string
-  postal_code?: string
-  address?: string
-  my_number?: string
-  residence_status?: string
-  residence_card_no?: string
-  residence_expiry?: string | null
   is_dependent?: boolean
   note?: string
 }
@@ -832,6 +811,7 @@ export interface ReceptionCustomerPayload {
 }
 
 export interface ReceptionFamilyMemberPayload {
+  customer?: number | null
   relationship?: string
   name?: string
   name_kana?: string

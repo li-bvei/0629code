@@ -52,6 +52,7 @@ class ReceptionCustomerSerializer(serializers.Serializer):
 
 
 class ReceptionFamilyMemberSerializer(serializers.Serializer):
+    customer = serializers.IntegerField(required=False, allow_null=True)
     relationship = serializers.CharField(required=False, allow_blank=True)
     name = serializers.CharField(required=False, allow_blank=True)
     name_kana = serializers.CharField(required=False, allow_blank=True)
@@ -69,8 +70,14 @@ class ReceptionFamilyMemberSerializer(serializers.Serializer):
     note = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
-        if has_any_value(attrs) and not attrs.get('name'):
+        if not has_any_value(attrs):
+            return attrs
+        if attrs.get('customer'):
+            return attrs
+        if not attrs.get('name'):
             raise serializers.ValidationError({'name': '家族の氏名を入力してください。'})
+        if not attrs.get('birth_date'):
+            raise serializers.ValidationError({'birth_date': '新規に顧客として登録する場合は生年月日を入力してください。'})
         return attrs
 
 
@@ -151,12 +158,43 @@ class ReceptionSerializer(serializers.Serializer):
             for family_member_data in family_members_data:
                 if not has_any_value(family_member_data):
                     continue
-                family_member_data['gender'] = normalize_gender(family_member_data.get('gender'))
-                family_member_data['relationship'] = normalize_relationship(
-                    family_member_data.get('relationship'),
-                )
+                existing_customer_id = family_member_data.pop('customer', None)
+                relationship = normalize_relationship(family_member_data.pop('relationship', None))
+                is_dependent = family_member_data.pop('is_dependent', False)
+                note = family_member_data.pop('note', '')
+
+                if existing_customer_id:
+                    try:
+                        family_customer = Customer.objects.get(pk=existing_customer_id)
+                    except Customer.DoesNotExist:
+                        raise serializers.ValidationError(
+                            {'family_members': f'指定された顧客（id={existing_customer_id}）が見つかりません。'}
+                        )
+                else:
+                    family_member_data['gender'] = normalize_gender(family_member_data.get('gender'))
+                    family_customer = Customer.objects.create(
+                        name=family_member_data.get('name', ''),
+                        name_kana=family_member_data.get('name_kana', ''),
+                        birth_date=family_member_data.get('birth_date'),
+                        gender=family_member_data.get('gender', ''),
+                        nationality=family_member_data.get('nationality', ''),
+                        phone=family_member_data.get('phone', ''),
+                        postal_code=family_member_data.get('postal_code', ''),
+                        address=family_member_data.get('address', ''),
+                        my_number=family_member_data.get('my_number', ''),
+                        residence_status=family_member_data.get('residence_status', ''),
+                        residence_card_no=family_member_data.get('residence_card_no', ''),
+                        residence_expiry=family_member_data.get('residence_expiry'),
+                    )
+
                 family_members.append(
-                    FamilyMember.objects.create(customer=customer, **family_member_data),
+                    FamilyMember.objects.create(
+                        customer=customer,
+                        family_customer=family_customer,
+                        relationship=relationship,
+                        is_dependent=is_dependent,
+                        note=note,
+                    ),
                 )
 
             company = None

@@ -2,6 +2,33 @@
 
 ## Current Task
 
+2026-08-04（第二轮）顧客・会社・案件の人物データ統合——single Customer identity（对应 Task #45-55，详见 `AI_CONTEXT.md` 「4D. 顧客・会社・案件の人物データ統合」）：
+
+用户发现同一个真实的人会同时以独立顧客和另一顧客名下的家族情報/会社従業員两种形式各录入一份，改一处不同步到另一处（真实触发场景：配偶从家族滞在转工签需要独立立案，同时案主本人从経営・管理转家族滞在变成配偶的家属，两人身份对调）。用户提供了一份生产库 `mysqldump` 备份用于核对真实数据（排查完已按用户要求删除，未提交仓库，`.gitignore` 已加 `sql/` 防止误提交），核对确认了真实存在的重复案例：余璇（Customer id=7）与她在配偶名下的家族记录「YU XUAN」已经出现状态不一致漂移；孩子也被父母双方各自重复录入。
+
+方案：把 `Customer` 变成系统里唯一的人物身份来源，`FamilyMember`/`CompanyStaff` 只表达"关系"，不再各自存个人信息副本：
+
+1. `FamilyMember` 新增 `family_customer` 外键（安全加法迁移，DB 层暂不强制非空，旧数据兼容）；`CompanyStaff.customer`（task #40 已有）应用层收紧为新建必填，无 migration。
+2. 两个序列化器统一改造：个人信息字段改只读、按 `family_customer`/`customer` 做 overlay；新增 `new_customer` 嵌套写入（选已有顧客或新建二选一，不能都空都给）；`CompanyStaff` 原有跨公司在职冲突校验保留。
+3. `ReceptionSerializer`（新規受付）家族成员支持"选已有顧客"或"新建"，新建时真正创建独立 `Customer` 而不是只存个人字段副本。
+4. `CustomerDetailPage.vue`/`CompanyDetailPage.vue`/`ReceptionNewPage.vue` 前端统一改成"既存の顧客から選択 or 新規登録"二选一交互，卡片新增"紐付く顧客"链接。
+5. `apps/cases/views.py` 残り期限候補、`api/views.py` `DashboardDeadlinesView` 改为读取 `family_customer`/`customer` 关联的 `Customer` 数据。
+6. 新增 `backfill_family_links`/`merge_customers` 两个 management command（均默认 dry-run），已用生产数据副本（本地独立数据库 `gyoseishoshi_erp_prodcopy`，与本地正常开发库 `gyoseishoshi_erp` 隔离）完整验证：17 条历史 `FamilyMember` 全部正确回填（含全半角空格归一化后的自动关联），余璇/呉宇誠夫妻和重复孩子记录的合并 dry-run 均正确识别。
+
+**尚未完成**：生产环境实际执行 `backfill_family_links --apply` 和 `merge_customers`（余璇/呉宇誠、重复孩子）——需要用户先确认"余璇当前状态该以哪边为准"这个业务事实判断，代码不能替用户做这个决定；确认后再按标准流程（先备份、先在数据副本演练）正式上生产。
+
+**顺带发现、本轮未修**：全项目 `<el-form>` 缺 `@submit.prevent`，任意输入框按 Enter 会触发浏览器原生表单提交导致整页刷新丢失未保存输入——验证时意外触发，确认是全项目性旧问题非本轮引入，影响面大，需用户决定是否单独安排修复。
+
+验证：`manage.py check`、`makemigrations --check --dry-run`、`npm run build` 均通过；backend 用 DRF 序列化器直接测试覆盖了 create-with-new_customer / create-with-existing-link / 双空校验 / 双给校验 / CompanyStaff 在职冲突 5 种场景，以及 `ReceptionSerializer`、`DashboardDeadlinesView` 的 overlay 正确性；浏览器端用真实 UI 交互（含 el-select 下拉选择、日期输入）完整跑通了 `CustomerDetailPage.vue` 新增家族（new_customer 路径）和 `CompanyDetailPage.vue` 新增従業員（new_customer 路径），网络请求确认 201 + 数据结构正确，测试数据已清理。
+
+状态：
+
+```text
+已完成（代码部分）。生产数据回填与真实重复记录的合并需要用户确认业务事实后再执行，是本轮唯一未交付部分。
+```
+
+## Previous Task Notes（顧客・会社・案件一批 bug 修复 + 新功能）
+
 2026-08-04 顧客・会社・案件一批 bug 修复 + 新功能（对应 Task #37-43，详见 `AI_CONTEXT.md` 「4C. 顧客・会社・案件本轮修复与新增」）：
 
 1. 全项目 select/option value-vs-code 审计，修复 `CustomerDetailPage.vue`（性别）+ `ReceptionNewPage.vue`（性别+家族関係，新規受付主表单，影响面更大）两处真实 bug，其余约 8 处核对无问题。

@@ -79,41 +79,47 @@ class DashboardDeadlinesView(APIView):
                 case,
             )
 
-        for family_member in FamilyMember.objects.select_related('customer'):
+        for family_member in FamilyMember.objects.select_related('customer', 'family_customer'):
+            person = family_member.family_customer
+            if not person:
+                continue
             case = latest_case(family_member.customer.cases)
             add_deadline(
                 'residence_expiry',
                 'family_member',
-                family_member.name,
+                person.name,
                 '在留期限',
-                family_member.residence_expiry,
+                person.residence_expiry,
                 case,
             )
             add_deadline(
                 'passport_expiry',
                 'family_member',
-                family_member.name,
+                person.name,
                 'パスポート期限',
-                getattr(family_member, 'passport_expiry', None),
+                person.passport_expiry,
                 case,
             )
 
-        for staff_member in CompanyStaff.objects.select_related('company'):
+        for staff_member in CompanyStaff.objects.select_related('company', 'customer'):
+            person = staff_member.customer
+            if not person:
+                continue
             case = latest_case(staff_member.company.cases)
             add_deadline(
                 'residence_expiry',
                 'company_staff',
-                staff_member.name,
+                person.name,
                 '在留期限',
-                staff_member.residence_expiry,
+                person.residence_expiry,
                 case,
             )
             add_deadline(
                 'passport_expiry',
                 'company_staff',
-                staff_member.name,
+                person.name,
                 'パスポート期限',
-                staff_member.passport_expiry,
+                person.passport_expiry,
                 case,
             )
 

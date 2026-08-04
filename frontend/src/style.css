@@ -500,6 +500,12 @@ button {
   color: var(--sunrise-muted);
 }
 
+.section-optional-note {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
 .family-member-list {
   display: flex;
   flex-direction: column;

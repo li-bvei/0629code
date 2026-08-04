@@ -42,6 +42,9 @@ backend/**/*.pyc
 # Logs
 *.log
 
+# Production DB backups (contains real customer PII, never commit)
+sql/
+
 # Local caches
 .pytest_cache/
 .mypy_cache/

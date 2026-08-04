@@ -14,7 +14,7 @@ import {
   listCompanyStaff,
   updateCompanyStaff,
 } from '../api/companyStaff'
-import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, Customer, Employee, ResidenceStatusMaster } from '../types/api'
+import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, CreateCustomerPayload, Customer, Employee, ResidenceStatusMaster } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -46,7 +46,11 @@ const caseForm = ref<CasePayload>({
 
 const companyId = computed(() => Number(route.params.id))
 
-const genderOptions = ['男性', '女性', 'その他']
+const genderOptions = [
+  { label: '男性', value: 'male' },
+  { label: '女性', value: 'female' },
+  { label: 'その他', value: 'other' },
+]
 
 const sortedStaffMembers = computed(() => (
   [...staffMembers.value].sort((left, right) => {
@@ -57,12 +61,39 @@ const sortedStaffMembers = computed(() => (
   })
 ))
 
-const staffForm = ref<CompanyStaffPayload>({
+interface StaffEditForm {
+  company: number
+  customer: number | null
+  position: string
+  employment_start_date: string | null
+  employment_end_date: string | null
+  note: string
+  name: string
+  name_kana: string
+  birth_date: string | null
+  gender: string
+  nationality: string
+  residence_status: string
+  residence_card_no: string
+  residence_expiry: string | null
+  passport_no: string
+  passport_expiry: string | null
+  phone: string
+  email: string
+  postal_code: string
+  address: string
+  my_number: string
+}
+
+const staffForm = ref<StaffEditForm>({
   company: 0,
   customer: null,
+  position: '',
+  employment_start_date: null,
+  employment_end_date: null,
+  note: '',
   name: '',
   name_kana: '',
-  position: '',
   birth_date: null,
   gender: '',
   nationality: '',
@@ -76,13 +107,33 @@ const staffForm = ref<CompanyStaffPayload>({
   postal_code: '',
   address: '',
   my_number: '',
-  employment_start_date: null,
-  employment_end_date: null,
-  note: '',
 })
 
-const staffRules: FormRules<CompanyStaffPayload> = {
-  name: [{ required: true, message: '氏名を入力してください。', trigger: 'blur' }],
+const staffRules: FormRules<StaffEditForm> = {
+  name: [
+    {
+      validator: (_rule, value, callback) => {
+        if (!staffForm.value.customer && !value) {
+          callback(new Error('既存の顧客を選択するか、氏名を入力してください。'))
+          return
+        }
+        callback()
+      },
+      trigger: 'blur',
+    },
+  ],
+  birth_date: [
+    {
+      validator: (_rule, value, callback) => {
+        if (!staffForm.value.customer && !value) {
+          callback(new Error('新規に顧客として登録する場合は生年月日を入力してください。'))
+          return
+        }
+        callback()
+      },
+      trigger: 'change',
+    },
+  ],
 }
 
 const caseRules: FormRules<CasePayload> = {
@@ -175,9 +226,12 @@ const resetStaffForm = () => {
   staffForm.value = {
     company: companyId.value,
     customer: null,
+    position: '',
+    employment_start_date: null,
+    employment_end_date: null,
+    note: '',
     name: '',
     name_kana: '',
-    position: '',
     birth_date: null,
     gender: '',
     nationality: '',
@@ -191,9 +245,6 @@ const resetStaffForm = () => {
     postal_code: '',
     address: '',
     my_number: '',
-    employment_start_date: null,
-    employment_end_date: null,
-    note: '',
   }
   staffFormRef.value?.clearValidate()
 }
@@ -206,57 +257,30 @@ const openCreateStaffDialog = async () => {
   staffDialogVisible.value = true
 }
 
-const handleStaffCustomerSelect = (customerId: number | null) => {
-  const customer = customers.value.find((item) => item.id === customerId)
-  if (!customer) {
-    staffForm.value = { ...staffForm.value, customer: null }
-    return
-  }
-  staffForm.value = {
-    ...staffForm.value,
-    customer: customer.id,
-    name: customer.name,
-    name_kana: customer.name_kana,
-    birth_date: customer.birth_date,
-    gender: customer.gender,
-    nationality: customer.nationality,
-    residence_status: customer.residence_status,
-    residence_card_no: customer.residence_card_no,
-    residence_expiry: customer.residence_expiry,
-    passport_no: customer.passport_no,
-    passport_expiry: customer.passport_expiry,
-    phone: customer.phone,
-    email: customer.email,
-    postal_code: customer.postal_code,
-    address: customer.address,
-    my_number: customer.my_number,
-  }
-}
-
 const openEditStaffDialog = (staff: CompanyStaff) => {
   editingStaffId.value = staff.id
   staffForm.value = {
     company: companyId.value,
     customer: staff.customer,
-    name: staff.name,
-    name_kana: staff.name_kana,
     position: staff.position,
-    birth_date: staff.birth_date,
-    gender: staff.gender,
-    nationality: staff.nationality,
-    residence_status: staff.residence_status,
-    residence_card_no: staff.residence_card_no,
-    residence_expiry: staff.residence_expiry,
-    passport_no: staff.passport_no,
-    passport_expiry: staff.passport_expiry,
-    phone: staff.phone,
-    email: staff.email,
-    postal_code: staff.postal_code,
-    address: staff.address,
-    my_number: staff.my_number,
     employment_start_date: staff.employment_start_date,
     employment_end_date: staff.employment_end_date,
     note: staff.note,
+    name: '',
+    name_kana: '',
+    birth_date: null,
+    gender: '',
+    nationality: '',
+    residence_status: '',
+    residence_card_no: '',
+    residence_expiry: null,
+    passport_no: '',
+    passport_expiry: null,
+    phone: '',
+    email: '',
+    postal_code: '',
+    address: '',
+    my_number: '',
   }
   staffFormRef.value?.clearValidate()
   staffDialogVisible.value = true
@@ -270,9 +294,34 @@ const submitStaff = async () => {
 
   staffSubmitting.value = true
   try {
-    const payload = {
-      ...staffForm.value,
+    const payload: CompanyStaffPayload = {
       company: companyId.value,
+      position: staffForm.value.position,
+      employment_start_date: staffForm.value.employment_start_date,
+      employment_end_date: staffForm.value.employment_end_date,
+      note: staffForm.value.note,
+    }
+    if (staffForm.value.customer) {
+      payload.customer = staffForm.value.customer
+    } else {
+      const newCustomer: CreateCustomerPayload = {
+        name: staffForm.value.name,
+        name_kana: staffForm.value.name_kana,
+        birth_date: staffForm.value.birth_date || '',
+        gender: staffForm.value.gender,
+        nationality: staffForm.value.nationality,
+        residence_status: staffForm.value.residence_status,
+        residence_card_no: staffForm.value.residence_card_no,
+        residence_expiry: staffForm.value.residence_expiry,
+        passport_no: staffForm.value.passport_no,
+        passport_expiry: staffForm.value.passport_expiry,
+        phone: staffForm.value.phone,
+        email: staffForm.value.email,
+        postal_code: staffForm.value.postal_code,
+        address: staffForm.value.address,
+        my_number: staffForm.value.my_number,
+      }
+      payload.new_customer = newCustomer
     }
     if (editingStaffId.value) {
       await updateCompanyStaff(editingStaffId.value, payload)
@@ -471,79 +520,92 @@ onMounted(() => {
       @closed="resetStaffForm"
     >
       <el-form ref="staffFormRef" :model="staffForm" :rules="staffRules" label-position="top">
-        <el-form-item label="既存の顧客から選択（任意）">
-          <el-select
-            :model-value="staffForm.customer"
-            clearable
-            filterable
-            placeholder="選択すると氏名などを自動入力します"
-            class="form-control"
-            @update:model-value="handleStaffCustomerSelect"
-          >
-            <el-option v-for="customer in customers" :key="customer.id" :label="customer.name" :value="customer.id" />
-          </el-select>
-        </el-form-item>
         <div class="form-grid">
-          <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start">
-            <el-input v-model="staffForm.name_kana" />
-          </el-form-item>
-          <el-form-item label="氏名" prop="name" class="form-grid-start">
-            <el-input v-model="staffForm.name" />
-          </el-form-item>
           <el-form-item label="役職" prop="position">
             <el-input v-model="staffForm.position" />
           </el-form-item>
-          <el-form-item label="生年月日" prop="birth_date">
-            <el-date-picker v-model="staffForm.birth_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
-          </el-form-item>
-          <el-form-item label="性別" prop="gender">
-            <el-select v-model="staffForm.gender" clearable placeholder="選択してください" class="form-control">
-              <el-option v-for="gender in genderOptions" :key="gender" :label="gender" :value="gender" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="国籍" prop="nationality">
-            <el-input v-model="staffForm.nationality" />
-          </el-form-item>
-          <el-form-item label="在留資格" prop="residence_status">
+          <el-form-item label="既存の顧客から選択" class="form-grid-full">
             <el-select
-              v-model="staffForm.residence_status"
+              v-model="staffForm.customer"
               clearable
               filterable
-              allow-create
-              default-first-option
-              placeholder="選択してください"
+              placeholder="既に顧客として登録済みの場合はここで選択（未選択なら下で新規登録）"
               class="form-control"
             >
-              <el-option v-for="status in residenceStatusOptions" :key="status.id" :label="status.name" :value="status.name" />
+              <el-option v-for="customer in customers" :key="customer.id" :label="customer.name" :value="customer.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="在留カード番号" prop="residence_card_no">
-            <el-input v-model="staffForm.residence_card_no" />
-          </el-form-item>
-          <el-form-item label="在留期限" prop="residence_expiry">
-            <el-date-picker v-model="staffForm.residence_expiry" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
-          </el-form-item>
-          <el-form-item label="パスポート番号" prop="passport_no">
-            <el-input v-model="staffForm.passport_no" />
-          </el-form-item>
-          <el-form-item label="パスポート期限" prop="passport_expiry">
-            <el-date-picker v-model="staffForm.passport_expiry" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
-          </el-form-item>
-          <el-form-item label="電話番号" prop="phone">
-            <el-input v-model="staffForm.phone" />
-          </el-form-item>
-          <el-form-item label="メール" prop="email">
-            <el-input v-model="staffForm.email" />
-          </el-form-item>
-          <el-form-item label="郵便番号" prop="postal_code" class="form-grid-start">
-            <el-input v-model="staffForm.postal_code" />
-          </el-form-item>
-          <el-form-item label="住所" prop="address" class="form-grid-full">
-            <el-input v-model="staffForm.address" />
-          </el-form-item>
-          <el-form-item label="マイナンバー" prop="my_number">
-            <el-input v-model="staffForm.my_number" />
-          </el-form-item>
+        </div>
+
+        <template v-if="!staffForm.customer">
+          <p class="section-optional-note">既存の顧客に該当しない場合は、新しい人物として以下を入力してください。</p>
+          <div class="form-grid">
+            <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start">
+              <el-input v-model="staffForm.name_kana" />
+            </el-form-item>
+            <el-form-item label="氏名" prop="name" class="form-grid-start">
+              <el-input v-model="staffForm.name" />
+            </el-form-item>
+            <el-form-item label="生年月日" prop="birth_date">
+              <el-date-picker v-model="staffForm.birth_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
+            </el-form-item>
+            <el-form-item label="性別" prop="gender">
+              <el-select v-model="staffForm.gender" clearable placeholder="選択してください" class="form-control">
+                <el-option v-for="gender in genderOptions" :key="gender.value" :label="gender.label" :value="gender.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="国籍" prop="nationality">
+              <el-input v-model="staffForm.nationality" />
+            </el-form-item>
+            <el-form-item label="在留資格" prop="residence_status">
+              <el-select
+                v-model="staffForm.residence_status"
+                clearable
+                filterable
+                allow-create
+                default-first-option
+                placeholder="選択してください"
+                class="form-control"
+              >
+                <el-option v-for="status in residenceStatusOptions" :key="status.id" :label="status.name" :value="status.name" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="在留カード番号" prop="residence_card_no">
+              <el-input v-model="staffForm.residence_card_no" />
+            </el-form-item>
+            <el-form-item label="在留期限" prop="residence_expiry">
+              <el-date-picker v-model="staffForm.residence_expiry" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
+            </el-form-item>
+            <el-form-item label="パスポート番号" prop="passport_no">
+              <el-input v-model="staffForm.passport_no" />
+            </el-form-item>
+            <el-form-item label="パスポート期限" prop="passport_expiry">
+              <el-date-picker v-model="staffForm.passport_expiry" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
+            </el-form-item>
+            <el-form-item label="電話番号" prop="phone">
+              <el-input v-model="staffForm.phone" />
+            </el-form-item>
+            <el-form-item label="メール" prop="email">
+              <el-input v-model="staffForm.email" />
+            </el-form-item>
+            <el-form-item label="郵便番号" prop="postal_code" class="form-grid-start">
+              <el-input v-model="staffForm.postal_code" />
+            </el-form-item>
+            <el-form-item label="住所" prop="address" class="form-grid-full">
+              <el-input v-model="staffForm.address" />
+            </el-form-item>
+            <el-form-item label="マイナンバー" prop="my_number">
+              <el-input v-model="staffForm.my_number" />
+            </el-form-item>
+          </div>
+        </template>
+        <p v-else class="section-optional-note">
+          氏名・生年月日などの個人情報は選択した顧客の情報を使用します。変更する場合は
+          <router-link class="text-link" :to="`/customers/${staffForm.customer}`">その顧客の詳細ページ</router-link>
+          から編集してください。
+        </p>
+
+        <div class="form-grid">
           <el-form-item label="入社日" prop="employment_start_date">
             <el-date-picker v-model="staffForm.employment_start_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
           </el-form-item>

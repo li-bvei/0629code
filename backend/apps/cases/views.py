@@ -503,14 +503,20 @@ class CaseViewSet(ModelViewSet):
                 ],
             )
 
-        for family_member in customer.family_members.all():
-            add_residence_candidates('家族', family_member.name, family_member.residence_expiry)
-            add_passport_candidates('家族', family_member.name, getattr(family_member, 'passport_expiry', None))
+        for family_member in customer.family_members.select_related('family_customer').all():
+            person = family_member.family_customer
+            if not person:
+                continue
+            add_residence_candidates('家族', person.name, person.residence_expiry)
+            add_passport_candidates('家族', person.name, person.passport_expiry)
 
         if case.company:
-            for staff_member in case.company.staff_members.all():
-                add_residence_candidates('会社従業員', staff_member.name, staff_member.residence_expiry)
-                add_passport_candidates('会社従業員', staff_member.name, staff_member.passport_expiry)
+            for staff_member in case.company.staff_members.select_related('customer').all():
+                person = staff_member.customer
+                if not person:
+                    continue
+                add_residence_candidates('会社従業員', person.name, person.residence_expiry)
+                add_passport_candidates('会社従業員', person.name, person.passport_expiry)
 
         if case.company and case.company.fiscal_month:
             fiscal_month = int(case.company.fiscal_month)

@@ -66,7 +66,7 @@ class CustomerViewSet(ModelViewSet):
 
 
 class FamilyMemberViewSet(ModelViewSet):
-    queryset = FamilyMember.objects.select_related('customer')
+    queryset = FamilyMember.objects.select_related('customer', 'family_customer')
     serializer_class = FamilyMemberSerializer
 
     def get_queryset(self):

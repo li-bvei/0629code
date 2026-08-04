@@ -857,6 +857,57 @@ cd frontend && npm run build
 
 已排查现有 6 个 `CaseChecklistTemplate` 内容，发现重复/冲突条目（経営・管理更新模板的重复「住民票」+ sort_order 冲突、需要用户确认「納税証明書（その3）」是否与「法人税納税証明書」重复；技人国ビザ更新模板重复「給与明細/源泉徴収票」；永住許可申請模板重复「課税証明書/納税証明書/在留履歴確認/出入国履歴確認」），并整理出「よくある項目」目录可扩充的约 30+ 候选新条目（分"有把握的官方机构文件"和"不确定的自备材料"两类）。**这部分内容改动尚未实施**——按用户明确要求（"テンプレート你做好内容先把内容给我，我同意后在进行"），需要先把具体修改清单发给用户确认后才能动手，跟本轮其他 7 项改动分开处理。
 
+## 4D. 顧客・会社・案件の人物データ統合（single Customer identity, 2026-08-04）
+
+### 背景
+
+用户发现同一个真实的人，会同时以「独立顧客（Customer）」和「另一顧客名下的家族情報（FamilyMember）」/「会社の従業員（CompanyStaff）」两种形式各录入一份，姓名/生年月日等个人信息重复维护，改一处不会同步到另一处。触发场景：配偶原本是「家族滞在」挂在案主名下，之后自己申请转「技術・人文知識・国際業務」（工签）需要独立立案；而案主本人则从「経営・管理」转「家族滞在」，变成配偶的家属——两个人的"顧客/家族"身份互相对调，暴露出旧模型的根本缺陷：`Case.customer` 只能挂 `Customer`，而 `FamilyMember`/`CompanyStaff` 过去是完全独立的一张"个人信息副本"，没有任何字段指回对应的 `Customer` 记录。
+
+真实生产数据核对（用户提供了一份 `mysqldump` 备份用于排查，排查后已删除，未提交到仓库）中确认了这个案例：`余璇`（`Customer id=7`，状态显示"家族滞在"）同时又以「YU XUAN」的名字作为 `FamilyMember`（挂在配偶 `呉宇誠` 名下，状态已经手动改成"技術・人文知識・国際業務"）——两边数据已经出现真实的不一致漂移，正是本次要解决的问题本身的实例。同时发现孩子也被父母双方各自重复录入了一次（`呉一二` / `WU YIER`，同一生日）。
+
+### 核心方案：`Customer` 成为系统里唯一的"人"身份来源
+
+`FamilyMember`、`CompanyStaff` 不再各自存一份姓名/生年月日/在留資格等个人信息，只负责表达"关系"，人的信息只在 `Customer` 表里存一份，通过外键指过去：
+
+- `backend/apps/customers/models.py`：`FamilyMember` 新增 `family_customer` 外键（指向 `Customer`，`on_delete=PROTECT`，当前阶段 DB 层仍允许为空，用于兼容尚未回填的旧数据）。原有的 `name`/`name_kana`/`birth_date`/`gender`/`nationality`/`residence_status`/`residence_card_no`/`residence_expiry`/`phone`/`postal_code`/`address`/`my_number` 字段**保留在数据库里但不再是权威数据源**（迁移 `apps/customers/migrations/0008_family_member_family_customer.py`，只新增字段，未删除任何列，属于安全的加法迁移）。
+- `backend/apps/companies/models.py`：`CompanyStaff.customer`（本轮之前的 task #40 已加）沿用不变，本轮只是在应用层把它从"可选"变成"新建时必须选择或新建顾客"，**没有产生新的 migration**。
+- 两边的 legacy 个人信息列都是刻意保留、不删除的"过渡期兜底"——遵循本项目一贯的"先隐藏/软废弃、观察一段时间后再彻底删除"风格。等生产数据回填 + 观察一段时间确认无误后，可以单独再做一次迁移把这些废弃列真正删掉。
+
+### 序列化器：读时叠加（overlay）、写时收紧
+
+`FamilyMemberSerializer`（`apps/customers/serializers.py`）和 `CompanyStaffSerializer`（`apps/companies/serializers.py`）都改成同一套模式：
+
+- 个人信息字段在 `Meta.read_only_fields` 里标记只读，API 不再接受直接写入（阻止"选了关联顧客又顺手改了一遍本地字段"这种新的重复录入）。
+- `to_representation()` 里，如果 `family_customer`/`customer` 已设置，用它的实际字段值覆盖输出（对旧数据、尚未回填的行，退回读取遗留列的值，保证过渡期不炸页面）。
+- `create()` 支持一个 write-only 的 `new_customer` 嵌套字段：不选已有顧客时，前端把新人物的完整信息塞进 `new_customer`，序列化器内部先用 `CustomerSerializer` 校验创建一条新 `Customer`，再把它设为 `family_customer`/`customer`，整个过程在一次请求内完成（前端操作步骤不变，只是内部不再重复存两份）。
+- `validate()` 强制"要么选 `family_customer`/`customer`，要么给 `new_customer`，二选一，不能都空也不能都给"——这是"不存在例外"这条要求在代码里的落地。
+- `CompanyStaffSerializer` 原有的"同一顧客不能同时在职于两家公司"校验完全保留，改造后仍然生效（已用真实 4 个场景的 shell 测试验证：新建+关联新人、新建+关联既有人、双方都不给报错、双方都给也报错、跨公司在职冲突报错）。
+
+### `ReceptionSerializer`（新規受付）同步改造
+
+`api/serializers.py`：`ReceptionFamilyMemberSerializer` 新增可选 `customer` 字段（选择已存在的顧客，跳过新建）；没给的话沿用旧逻辑但改成显式创建一条新 `Customer` 再建 `FamilyMember` 关联（不再是把一堆个人字段直接怼进 `FamilyMember.objects.create()`）。已用 `ReceptionSerializer` 直接测试验证：配偶选已有顧客时不产生新顧客，孩子未选顧客时正确新建。前端 `ReceptionNewPage.vue` 每个家族成员行新增"既存の顧客から選択"下拉，选中后隐藏个人信息输入区，未选中保持原有填写体验不变。
+
+### 前端
+
+`frontend/src/pages/CustomerDetailPage.vue`（家族情報）和 `frontend/src/pages/CompanyDetailPage.vue`（従業員情報）的新增/编辑弹窗改成统一模式：顶部一个"既存の顧客から選択"下拉（`filterable`，`CustomerDetailPage.vue` 会排除当前顧客自己），选中则隐藏下方个人信息输入区并提示"个人信息以该顧客为准，需要改请去TA自己的顧客详情页"；不选则展开个人信息输入区，提交时打包进 `new_customer`。家族/従業員卡片新增「紐付く顧客」一行，是指向对应 `Customer` 详情页的链接（`CompanyDetailPage.vue` 之前已有类似的従業員→顧客链接，这次家族卡片也补上）。
+
+`frontend/src/types/api.ts`：`FamilyMember`/`CompanyStaff` 新增 `family_customer`/沿用 `customer`，新增 `passport_no`/`passport_expiry`（FamilyMember 过去没有护照字段，通过 overlay 从 `Customer` 上顺带补齐了这个历史缺口）；`FamilyMemberPayload`/`CompanyStaffPayload` 大幅精简，个人信息字段从 payload 里整体移除，改为 `family_customer`/`customer` + `new_customer`。
+
+### 现有数据回填 + 合并工具（management commands，只在本地/员工手动执行，不在部署流程里自动跑）
+
+`backend/apps/customers/management/commands/`：
+
+- `backfill_family_links.py`：给现有 `FamilyMember`/`CompanyStaff` 中还没有 `family_customer`/`customer` 的行找到或建立对应 `Customer`。姓名匹配时会去除全半角空格差异再比较（真实数据里发现"呉宇誠" vs "呉　宇誠"这种全角空格差异会导致本该匹配上的记录被判定为不同人）；精确匹配（去空格后姓名+生日完全一致）到唯一一条现有 `Customer` 就自动关联，匹配不到就新建一条 `Customer` 承接数据；同姓名同生日的多条 `FamilyMember`（比如父母双方各自重复录入的同一个孩子）会被识别为同一人合并到一条新建的 `Customer`；只有生日相同但姓名不同的情况（比如这次真实发现的"呉一二"/"WU YIER"）**不会自动合并**，只在输出里列出来提醒人工核对。默认 dry-run，需要 `--apply` 才真正写库。
+- `merge_customers.py`：`python manage.py merge_customers <keep_id> <duplicate_id> [--apply]`，用于把已确认是同一人的两条独立 `Customer` 合并——通过 Django `_meta.get_fields()` 动态找出所有指向 `Customer` 的反向关系（`Case.customer`、`FamilyMember.customer`/`family_customer`、`Company.representative_customer`、`CompanyStaff.customer`、`TaxRenewalVoucherRecord.customer` 等，不用手动维护列表，新增关联字段会自动被覆盖到），把 `duplicate_id` 的引用批量转指到 `keep_id`。**不会自动删除 `duplicate_id` 这条 `Customer` 记录本身**——迁移完人工核对无误后手动删，避免命令本身产生不可逆操作。默认 dry-run。
+
+两个命令都已经用用户提供的真实生产数据副本（导入到本地一个独立的 `gyoseishoshi_erp_prodcopy` 数据库，不影响本地正常开发用的 `gyoseishoshi_erp`）跑通验证：`backfill_family_links --apply` 正确处理了全部 17 条历史 `FamilyMember`，`呉宇誠` 因为空格归一化成功自动关联到已有顧客；`merge_customers` 对余璇/呉宇誠这对夫妻、以及重复的孩子记录，dry-run 都正确识别出唯一需要付け替え的 1 条 `FamilyMember.family_customer` 引用。**这两个合并操作尚未在真实生产库执行**——需要用户先确认"余璇当前状态到底以家族滞在还是技術・人文知識・国際業務为准"（这是业务事实判断，不能由代码猜），确认后再按 `docs/DEPLOY.md` 一贯的"先备份、先在数据副本演练"流程正式上生产。
+
+### 已知限制 / 后续可做
+
+- 遗留个人信息列还没有从数据库删除，属于过渡期的刻意选择，不是遗漏。
+- 生产环境实际执行 `backfill_family_links --apply` 和具体的 `merge_customers` 合并操作，需要用户对"哪些记录是同一人"和"合并后以谁的状态数据为准"做最终确认后才能进行，这是本轮唯一还没有交付完成的部分。
+- **顺带发现一个跟本轮改动无关但值得记录的问题**：项目里所有 `<el-form>` 都没有加 `@submit.prevent`，Element Plus 的 `el-form` 会渲染出真正的 `<form>` 标签，在任意输入框里按 Enter 会触发浏览器原生表单提交（整页刷新，未保存的输入全部丢失）。验证本轮改动时意外触发过，确认是全项目性的旧问题，不是本轮引入的，本轮没有顺手修——影响面大（每个页面的每个表单）且不在本次任务范围内，需要用户决定是否要单独安排修复。
+
 ## 5. 返签 visa 表补充现状
 
 状态: 已存在并在使用；以下为模板、字体和字段兼容细节。
