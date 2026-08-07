@@ -199,10 +199,22 @@ class AccountingVoucher(models.Model):
         (VOUCHER_TYPE_RECEIPT, '領収書'),
     )
 
+    HONORIFIC_ONCHU = '御中'
+    HONORIFIC_SAMA = '様'
+    HONORIFIC_NONE = ''
+    HONORIFIC_CHOICES = (
+        (HONORIFIC_ONCHU, '御中'),
+        (HONORIFIC_SAMA, '様'),
+        (HONORIFIC_NONE, 'なし'),
+    )
+
     voucher_type = models.CharField('帳票種別', max_length=20, choices=VOUCHER_TYPE_CHOICES)
     voucher_number = models.CharField('帳票番号', max_length=50, unique=True, blank=True)
     issue_date = models.DateField('発行日')
     recipient_name = models.CharField('宛先会社名', max_length=255, blank=True)
+    recipient_honorific = models.CharField(
+        '敬称', max_length=10, choices=HONORIFIC_CHOICES, default=HONORIFIC_ONCHU, blank=True,
+    )
     recipient_postal_code = models.CharField('宛先郵便番号', max_length=20, blank=True)
     recipient_address = models.TextField('宛先住所', blank=True)
     title = models.CharField('件名 / 但し書き', max_length=255, blank=True)

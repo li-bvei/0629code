@@ -424,6 +424,23 @@
   grid-column: 1 / -1;
 }
 
+.voucher-recipient-control {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.voucher-recipient-control .el-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.voucher-honorific-select {
+  flex: 0 0 96px;
+  width: 96px;
+  min-width: 0;
+}
+
 .voucher-line-section {
   padding: 14px;
   margin-bottom: 18px;
@@ -491,6 +508,18 @@
   flex: 1 1 140px;
   min-width: 0;
   max-width: 100%;
+}
+
+.voucher-unit-price-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.voucher-price-type-select {
+  width: 100%;
+  min-width: 0;
 }
 
 .voucher-line-delete {

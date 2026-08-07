@@ -6,6 +6,11 @@ TAX_CATEGORY_8 = 'tax_8'
 TAX_CATEGORY_NON_TAXABLE = 'non_taxable'
 DEFAULT_TAX_CATEGORY = TAX_CATEGORY_10
 
+PRICE_TYPE_TAX_INCLUDED = 'tax_included'
+PRICE_TYPE_TAX_EXCLUDED = 'tax_excluded'
+DEFAULT_PRICE_TYPE = PRICE_TYPE_TAX_INCLUDED
+PRICE_TYPES = {PRICE_TYPE_TAX_INCLUDED, PRICE_TYPE_TAX_EXCLUDED}
+
 TAX_CATEGORY_LABELS = {
     TAX_CATEGORY_10: '10％',
     TAX_CATEGORY_8: '8％',
@@ -50,11 +55,31 @@ def normalize_tax_category(value):
     return tax_category
 
 
+def normalize_price_type(value):
+    price_type = str(value or DEFAULT_PRICE_TYPE).strip()
+    if price_type not in PRICE_TYPES:
+        raise VoucherCalculationError('金額の税区分は税込・税抜から選択してください。')
+    return price_type
+
+
 def line_tax_parts(line_total, tax_category):
     if tax_category == TAX_CATEGORY_NON_TAXABLE:
         return line_total, Decimal('0')
     tax_excluded = (line_total / TAX_DIVISORS[tax_category]).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
     return tax_excluded, line_total - tax_excluded
+
+
+def line_amounts_from_raw(raw_amount, tax_category, price_type):
+    """quantity×単価 の生の金額から、税区分・税込/税抜の入力方式に応じて
+    (税込金額, 税抜金額, 消費税額) を算出する。"""
+    if tax_category == TAX_CATEGORY_NON_TAXABLE:
+        return raw_amount, raw_amount, Decimal('0')
+    if price_type == PRICE_TYPE_TAX_EXCLUDED:
+        tax_excluded = raw_amount
+        tax_amount = (tax_excluded * TAX_RATES[tax_category]).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        return tax_excluded + tax_amount, tax_excluded, tax_amount
+    tax_excluded, tax_amount = line_tax_parts(raw_amount, tax_category)
+    return raw_amount, tax_excluded, tax_amount
 
 
 def calculate_voucher_amounts(line_items):
@@ -81,12 +106,13 @@ def calculate_voucher_amounts(line_items):
         quantity = to_decimal(item.get('quantity'))
         unit_price = to_decimal(item.get('unit_price'))
         tax_category = normalize_tax_category(item.get('tax_category'))
+        price_type = normalize_price_type(item.get('price_type'))
 
         if not item_name and quantity == 0 and unit_price == 0:
             continue
 
-        line_total = (quantity * unit_price).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
-        tax_excluded, tax_amount = line_tax_parts(line_total, tax_category)
+        raw_amount = (quantity * unit_price).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        line_total, tax_excluded, tax_amount = line_amounts_from_raw(raw_amount, tax_category, price_type)
 
         if tax_category == TAX_CATEGORY_10:
             summary['subtotal_10'] += tax_excluded
@@ -109,6 +135,7 @@ def calculate_voucher_amounts(line_items):
             'line_total': int(line_total),
             'tax_category': tax_category,
             'tax_category_label': TAX_CATEGORY_LABELS[tax_category],
+            'price_type': price_type if tax_category != TAX_CATEGORY_NON_TAXABLE else PRICE_TYPE_TAX_INCLUDED,
             'tax_excluded_amount': int(tax_excluded),
             'tax_amount': int(tax_amount),
         })

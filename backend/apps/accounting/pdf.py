@@ -268,7 +268,12 @@ def issuer_lines(voucher):
 
 def recipient_with_honorific(voucher):
     name = (voucher.recipient_name or '').strip()
-    return f'{name}　　　　御中' if name else '御中'
+    honorific = getattr(voucher, 'recipient_honorific', None)
+    if honorific is None:
+        honorific = '御中'
+    if not name:
+        return honorific
+    return f'{name}　　　　{honorific}' if honorific else name
 
 
 def get_line_items(voucher):
@@ -325,6 +330,7 @@ def parse_bank_info(bank_info):
     result = {
         'bank_name': '',
         'branch_name': '',
+        'account_type': '',
         'account_number': '',
         'recipient_name': '',
         'recipient_address': DEFAULT_ISSUER['issuer_address'],
@@ -343,7 +349,11 @@ def parse_bank_info(bank_info):
 
     if len(lines) >= 2:
         second_line_parts = [part.strip() for part in lines[1].replace('　', ' ').split() if part.strip()]
-        result['account_number'] = ' '.join(second_line_parts) if second_line_parts else lines[1]
+        if len(second_line_parts) >= 2:
+            result['account_type'] = second_line_parts[0]
+            result['account_number'] = ' '.join(second_line_parts[1:])
+        else:
+            result['account_number'] = ' '.join(second_line_parts) if second_line_parts else lines[1]
 
     for line in lines[2:]:
         if '口座名義' in line:
@@ -551,19 +561,17 @@ def build_invoice_pdf(voucher, with_seal=False):
     item_padding = pdfmetrics.stringWidth('ああああ', font_name, 10) + 10
     unit_w = 24 * mm
     qty_w = 14 * mm
-    tax_w = 15 * mm
     amount_w = 26 * mm
     min_note_w = 26 * mm
-    max_item_w = content_w - unit_w - qty_w - tax_w - amount_w - min_note_w
+    max_item_w = content_w - unit_w - qty_w - amount_w - min_note_w
     item_w = min(max_item_w, max(58 * mm, longest_item_width + item_padding))
-    note_w = content_w - item_w - unit_w - qty_w - tax_w - amount_w
-    col_widths = [item_w, unit_w, qty_w, tax_w, amount_w, note_w]
+    note_w = content_w - item_w - unit_w - qty_w - amount_w
+    col_widths = [item_w, unit_w, qty_w, amount_w, note_w]
     detail_rows = [[
         {'text': '適用', 'align': 'center', 'bold': True},
-        {'text': '単価（税込）', 'align': 'center', 'bold': True, 'size': 8},
+        {'text': '単価', 'align': 'center', 'bold': True, 'size': 8},
         {'text': '数量', 'align': 'center', 'bold': True},
-        {'text': '税区分', 'align': 'center', 'bold': True, 'size': 8},
-        {'text': '金額（税込）', 'align': 'center', 'bold': True, 'size': 8},
+        {'text': '金額', 'align': 'center', 'bold': True, 'size': 8},
         {'text': '備考', 'align': 'center', 'bold': True},
     ]]
 
@@ -572,7 +580,6 @@ def build_invoice_pdf(voucher, with_seal=False):
             {'text': str(item.get('item_name') or ''), 'align': 'left'},
             {'text': yen(item.get('unit_price')) if item.get('unit_price') not in (None, '') else '', 'align': 'right'},
             {'text': plain_number(item.get('quantity')), 'align': 'center'},
-            {'text': get_line_tax_label(item), 'align': 'center', 'size': 8},
             {'text': yen(get_line_total(item)) if item.get('item_name') or item.get('line_total') not in (None, '') else '', 'align': 'right'},
             {'text': '', 'align': 'left'},
         ])
@@ -584,10 +591,9 @@ def build_invoice_pdf(voucher, with_seal=False):
             {'text': ''},
             {'text': ''},
             {'text': ''},
-            {'text': ''},
         ])
 
-    summary_rows = build_invoice_summary_rows(voucher, leading_blank_span=4, merge_label=True)
+    summary_rows = build_invoice_summary_rows(voucher, leading_blank_span=3, merge_label=True)
     detail_rows.extend(summary_rows)
 
     summary_start_index = len(detail_rows) - len(summary_rows)
@@ -606,6 +612,7 @@ def build_invoice_pdf(voucher, with_seal=False):
     bank_rows = [
         [{'text': '銀行名'}, {'text': bank['bank_name'] or bank['raw']}],
         [{'text': '銀行支店名'}, {'text': bank['branch_name']}],
+        [{'text': '預金種目'}, {'text': bank['account_type']}],
         [{'text': '口座番号'}, {'text': bank['account_number']}],
         [{'text': '受取人名（口座名）'}, {'text': bank['recipient_name']}],
         [{'text': '受取人住所'}, {'text': bank['recipient_address']}],
@@ -615,7 +622,7 @@ def build_invoice_pdf(voucher, with_seal=False):
         margin_x,
         y,
         [52 * mm, content_w - 52 * mm],
-        [7.5 * mm, 7.5 * mm, 7.5 * mm, 7.5 * mm, 12 * mm],
+        [7.5 * mm, 7.5 * mm, 7.5 * mm, 7.5 * mm, 7.5 * mm, 12 * mm],
         bank_rows,
         font_name,
         font_size=10,
@@ -690,7 +697,7 @@ def build_receipt_pdf(voucher, with_seal=False):
     y -= 8 * mm
     receipt_rows = [[
         {'text': '品　名', 'align': 'center', 'bold': True, 'fill': header_fill},
-        {'text': '金額（税込）', 'align': 'center', 'bold': True, 'fill': header_fill, 'size': 8},
+        {'text': '金額', 'align': 'center', 'bold': True, 'fill': header_fill, 'size': 8},
         {'text': '摘　要', 'align': 'center', 'bold': True, 'fill': header_fill},
     ]]
 
@@ -710,7 +717,13 @@ def build_receipt_pdf(voucher, with_seal=False):
         ])
 
     receipt_summary_start = len(receipt_rows)
-    receipt_rows.extend(build_invoice_summary_rows(voucher, leading_blank_span=1))
+    # 領収書は上部の「合計金額」枠で税込金額を一度だけ示すため、明細表の下に
+    # 小計/消費税/合計の内訳は出さない。収入印紙欄の高さ確保のためだけに
+    # 罫線なしの空行を残す（行数を変えると stamp_top_y の計算がずれるため）。
+    receipt_rows.extend([
+        [{'text': '', 'border': False}, {'text': '', 'border': False}, {'text': '', 'border': False}]
+        for _ in range(3)
+    ])
 
     receipt_col_widths = [content_w * 0.52, content_w * 0.22, content_w * 0.26]
     receipt_row_heights = [

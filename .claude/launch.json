@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--port", "5174"],
       "port": 5174
+    },
+    {
+      "name": "backend-dev",
+      "runtimeExecutable": "backend/.venv/bin/python",
+      "runtimeArgs": ["backend/manage.py", "runserver", "127.0.0.1:8000"],
+      "port": 8000
     }
   ]
 }

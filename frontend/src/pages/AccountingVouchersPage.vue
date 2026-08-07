@@ -18,6 +18,7 @@ import type {
   AccountingVoucher,
   AccountingVoucherLineItem,
   AccountingVoucherPayload,
+  AccountingVoucherPriceType,
   AccountingVoucherTaxCategory,
   AccountingVoucherType,
   VoucherItemTemplate,
@@ -91,6 +92,10 @@ const taxCategoryOptions: { label: string; value: AccountingVoucherTaxCategory }
   { label: '8％', value: 'tax_8' },
   { label: '非課税', value: 'non_taxable' },
 ]
+const priceTypeOptions: { label: string; value: AccountingVoucherPriceType }[] = [
+  { label: '税込', value: 'tax_included' },
+  { label: '税抜', value: 'tax_excluded' },
+]
 
 const getTodayDate = () => {
   const date = new Date()
@@ -107,12 +112,14 @@ const createLineItem = (): AccountingVoucherLineItem => ({
   unit_price: '',
   line_total: 0,
   tax_category: TAX_CATEGORY_10,
+  price_type: 'tax_included',
 })
 
 const voucherForm = ref<AccountingVoucherPayload>({
   voucher_type: 'invoice',
   issue_date: getTodayDate(),
   recipient_name: '',
+  recipient_honorific: '御中',
   recipient_postal_code: '',
   recipient_address: '',
   title: '',
@@ -132,10 +139,6 @@ const rules: FormRules<AccountingVoucherPayload> = {
   issue_date: [{ required: true, message: '発行日を入力してください。', trigger: 'change' }],
 }
 
-const getLineTotal = (item: AccountingVoucherLineItem) => {
-  return Math.round(Number(item.quantity || 0) * Number(item.unit_price || 0))
-}
-
 const getTaxCategory = (item: AccountingVoucherLineItem): AccountingVoucherTaxCategory => {
   return taxCategoryOptions.some((option) => option.value === item.tax_category)
     ? item.tax_category as AccountingVoucherTaxCategory
@@ -146,15 +149,43 @@ const getTaxCategoryLabel = (item: AccountingVoucherLineItem) => {
   return taxCategoryOptions.find((option) => option.value === getTaxCategory(item))?.label || '10％'
 }
 
-const getTaxExcludedAmount = (item: AccountingVoucherLineItem) => {
-  const lineTotal = getLineTotal(item)
-  const taxCategory = getTaxCategory(item)
-  if (taxCategory === 'non_taxable') return lineTotal
-  if (taxCategory === 'tax_8') return Math.round(lineTotal / 1.08)
-  return Math.round(lineTotal / 1.1)
+const getPriceType = (item: AccountingVoucherLineItem): AccountingVoucherPriceType => {
+  return priceTypeOptions.some((option) => option.value === item.price_type)
+    ? item.price_type as AccountingVoucherPriceType
+    : 'tax_included'
 }
 
-const getLineTaxAmount = (item: AccountingVoucherLineItem) => getLineTotal(item) - getTaxExcludedAmount(item)
+const getRawAmount = (item: AccountingVoucherLineItem) => {
+  return Math.round(Number(item.quantity || 0) * Number(item.unit_price || 0))
+}
+
+// 税抜入力の場合：入力金額＝税抜金額として税額を上乗せする。
+// 税込入力（従来通り）の場合：入力金額＝税込金額として税額を割り戻す。
+// 非課税の場合：入力方式に関わらず入力金額をそのまま使う（税額は常に0）。
+const getTaxExcludedAmount = (item: AccountingVoucherLineItem) => {
+  const raw = getRawAmount(item)
+  const taxCategory = getTaxCategory(item)
+  if (taxCategory === 'non_taxable') return raw
+  if (getPriceType(item) === 'tax_excluded') return raw
+  return Math.round(raw / (taxCategory === 'tax_8' ? 1.08 : 1.1))
+}
+
+const getLineTaxAmount = (item: AccountingVoucherLineItem) => {
+  const taxCategory = getTaxCategory(item)
+  if (taxCategory === 'non_taxable') return 0
+  const taxExcluded = getTaxExcludedAmount(item)
+  if (getPriceType(item) === 'tax_excluded') {
+    return Math.round(taxExcluded * (taxCategory === 'tax_8' ? 0.08 : 0.10))
+  }
+  return getRawAmount(item) - taxExcluded
+}
+
+const getLineTotal = (item: AccountingVoucherLineItem) => {
+  const taxCategory = getTaxCategory(item)
+  if (taxCategory === 'non_taxable') return getRawAmount(item)
+  if (getPriceType(item) === 'tax_excluded') return getTaxExcludedAmount(item) + getLineTaxAmount(item)
+  return getRawAmount(item)
+}
 
 const taxSummary = computed(() => {
   return (voucherForm.value.line_items || []).reduce(
@@ -318,6 +349,7 @@ const resetForm = () => {
     voucher_type: 'invoice',
     issue_date: getTodayDate(),
     recipient_name: '',
+    recipient_honorific: '御中',
     recipient_postal_code: '',
     recipient_address: '',
     title: '',
@@ -347,6 +379,7 @@ const openEditDialog = (voucher: AccountingVoucher) => {
     voucher_type: voucher.voucher_type,
     issue_date: voucher.issue_date,
     recipient_name: voucher.recipient_name,
+    recipient_honorific: voucher.recipient_honorific || '御中',
     recipient_postal_code: voucher.recipient_postal_code,
     recipient_address: voucher.recipient_address,
     title: voucher.title,
@@ -361,6 +394,7 @@ const openEditDialog = (voucher: AccountingVoucher) => {
           unit_price: voucher.amount,
           line_total: voucher.amount,
           tax_category: TAX_CATEGORY_10,
+          price_type: 'tax_included',
         }],
     note: voucher.note,
     payment_due_date: voucher.payment_due_date,
@@ -515,6 +549,7 @@ const normalizeLineItems = () => {
       unit_price: Number(item.unit_price || 0),
       line_total: getLineTotal(item),
       tax_category: getTaxCategory(item),
+      price_type: getPriceType(item),
       tax_excluded_amount: getTaxExcludedAmount(item),
       tax_amount: getLineTaxAmount(item),
     }))
@@ -801,7 +836,14 @@ onMounted(() => {
             />
           </el-form-item>
           <el-form-item label="宛先会社名" prop="recipient_name" class="accounting-dialog-full">
-            <el-input v-model="voucherForm.recipient_name" />
+            <div class="voucher-recipient-control">
+              <el-input v-model="voucherForm.recipient_name" placeholder="会社名または個人名" />
+              <el-select v-model="voucherForm.recipient_honorific" class="voucher-honorific-select">
+                <el-option label="御中" value="御中" />
+                <el-option label="様" value="様" />
+                <el-option label="なし" value="" />
+              </el-select>
+            </div>
             <el-button
               v-if="!showRecipientDetail"
               text
@@ -877,8 +919,23 @@ onMounted(() => {
                 <el-form-item label="数量">
                   <el-input v-model="item.quantity" inputmode="decimal" />
                 </el-form-item>
-                <el-form-item label="単価（税込）" class="voucher-nowrap-form-item">
-                  <el-input v-model="item.unit_price" inputmode="numeric" />
+                <el-form-item label="単価" class="voucher-nowrap-form-item">
+                  <div class="voucher-unit-price-control">
+                    <el-input v-model="item.unit_price" inputmode="numeric" />
+                    <el-select
+                      v-if="getTaxCategory(item) !== 'non_taxable'"
+                      v-model="item.price_type"
+                      size="small"
+                      class="voucher-price-type-select"
+                    >
+                      <el-option
+                        v-for="option in priceTypeOptions"
+                        :key="option.value"
+                        :label="option.label"
+                        :value="option.value"
+                      />
+                    </el-select>
+                  </div>
                 </el-form-item>
                 <el-form-item label="税区分">
                   <el-select v-model="item.tax_category" class="form-control">

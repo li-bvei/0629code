@@ -240,6 +240,7 @@ export interface AccountingProjectExpensePayload {
 
 export type AccountingVoucherType = 'invoice' | 'receipt'
 export type AccountingVoucherTaxCategory = 'tax_10' | 'tax_8' | 'non_taxable'
+export type AccountingVoucherPriceType = 'tax_included' | 'tax_excluded'
 
 export interface AccountingVoucherLineItem {
   item_name: string
@@ -248,6 +249,7 @@ export interface AccountingVoucherLineItem {
   line_total?: number | string
   tax_category?: AccountingVoucherTaxCategory
   tax_category_label?: string
+  price_type?: AccountingVoucherPriceType
   tax_excluded_amount?: number | string
   tax_amount?: number | string
 }
@@ -270,6 +272,7 @@ export interface AccountingVoucher {
   voucher_number: string
   issue_date: string
   recipient_name: string
+  recipient_honorific: string
   recipient_postal_code: string
   recipient_address: string
   title: string
@@ -298,6 +301,7 @@ export interface AccountingVoucherPayload {
   voucher_type: AccountingVoucherType
   issue_date: string
   recipient_name?: string
+  recipient_honorific?: string
   recipient_postal_code?: string
   recipient_address?: string
   title?: string
