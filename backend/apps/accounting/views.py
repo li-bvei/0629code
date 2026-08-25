@@ -45,7 +45,7 @@ from .serializers import (
     VoucherItemTemplateSerializer,
 )
 from .seifu_notice_pdf import seifu_notice_pdf_response
-from .tax_renewal_pdf import SUPPORTED_TEMPLATE_KEY, tax_renewal_pdf_response
+from .tax_renewal_pdf import SUPPORTED_TEMPLATE_KEYS, tax_renewal_pdf_response
 from .tax_renewal_templates import get_tax_renewal_templates
 from .visa_return_pdf import visa_return_pdf_response
 
@@ -606,7 +606,7 @@ class SeifuNoticePdfRecordViewSet(ModelViewSet):
 
 
 class TaxRenewalVoucherRecordViewSet(ModelViewSet):
-    queryset = TaxRenewalVoucherRecord.objects.select_related('company', 'customer', 'employee', 'created_by')
+    queryset = TaxRenewalVoucherRecord.objects.select_related('case', 'company', 'customer', 'employee', 'created_by')
     serializer_class = TaxRenewalVoucherRecordSerializer
 
     def get_queryset(self):
@@ -636,10 +636,10 @@ class TaxRenewalVoucherRecordViewSet(ModelViewSet):
     def generate_pdf(self, request, pk=None):
         record = self.get_object()
         template_key = request.data.get('template_key') if isinstance(request.data, dict) else None
-        if template_key != SUPPORTED_TEMPLATE_KEY:
+        if template_key not in SUPPORTED_TEMPLATE_KEYS:
             return Response({'detail': 'PDF字段映射未完成'}, status=status.HTTP_400_BAD_REQUEST)
         if template_key not in (record.selected_templates or []):
-            return Response({'detail': '该记录未选择社会保险纳入证明兼委任状。'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': '该记录未选择此模板。'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             return tax_renewal_pdf_response(record, template_key)
         except FileNotFoundError as exc:

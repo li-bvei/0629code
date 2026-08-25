@@ -1,0 +1,101 @@
+{
+  "fields": {
+    "submit_date_reiwa": {
+      "label": "提出日（令和/年/月/日）",
+      "page": 1,
+      "type": "split",
+      "render_mode": "split",
+      "split_pattern": "-",
+      "font_size": 9.0,
+      "align": "center",
+      "valign": "top",
+      "x": 50.0,
+      "y": 82.5,
+      "width": 20.0,
+      "height": 12.0,
+      "parts": [
+        { "x": 50.0, "y": 82.5, "width": 20.0 },
+        { "x": 83.0, "y": 82.5, "width": 20.0 },
+        { "x": 116.0, "y": 82.5, "width": 20.0 }
+      ]
+    },
+    "company_postal_code": {
+      "label": "事業所所在地（郵便番号）",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 9.0,
+      "align": "left",
+      "valign": "top",
+      "x": 95.0,
+      "y": 100.5,
+      "width": 90.0,
+      "height": 12.0
+    },
+    "company_address": {
+      "label": "事業所所在地",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 9.0,
+      "align": "left",
+      "valign": "top",
+      "x": 110.0,
+      "y": 141.0,
+      "width": 370.0,
+      "height": 14.0
+    },
+    "company_name": {
+      "label": "事業所名称",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 9.0,
+      "align": "left",
+      "valign": "top",
+      "x": 110.0,
+      "y": 191.0,
+      "width": 370.0,
+      "height": 14.0
+    },
+    "company_phone": {
+      "label": "電話番号",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 205.0,
+      "y": 208.0,
+      "width": 270.0,
+      "height": 12.0
+    },
+    "representative_kana": {
+      "label": "事業主氏名（フリガナ）",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 145.0,
+      "y": 238.0,
+      "width": 165.0,
+      "height": 14.0
+    },
+    "representative_name": {
+      "label": "事業主氏名",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 9.0,
+      "align": "left",
+      "valign": "top",
+      "x": 130.0,
+      "y": 250.5,
+      "width": 180.0,
+      "height": 12.0
+    }
+  }
+}

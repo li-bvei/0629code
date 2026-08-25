@@ -528,8 +528,11 @@ export interface TaxRenewalFormData {
   company_number?: string
   company_address?: string
   company_phone?: string
+  pension_number?: string
   representative_name?: string
   representative_kana?: string
+  representative_postal_code?: string
+  representative_address?: string
   representative_birth_date?: string | null
   applicant_name?: string
   applicant_kana?: string
@@ -585,6 +588,8 @@ export interface TaxRenewalVoucherRecord {
   title: string
   category: TaxRenewalCategory
   category_display?: string
+  case?: number | null
+  case_number?: string
   company?: number | null
   company_name?: string
   customer?: number | null
@@ -609,6 +614,7 @@ export interface TaxRenewalVoucherRecord {
 export interface TaxRenewalVoucherPayload {
   title: string
   category: TaxRenewalCategory
+  case?: number | null
   company?: number | null
   customer?: number | null
   employee?: number | null

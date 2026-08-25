@@ -306,6 +306,7 @@ PROGRESS_INFO_FIELDS = {
     'result_received_at': '結果日',
     'permission_number': '許可番号',
     'result_note': '備考',
+    'residence_card_received_at': '在留カード受取日',
     'withdrawn_at': '取下げ日',
     'completed_at': '完了日',
 }
@@ -315,6 +316,7 @@ DATE_PROGRESS_INFO_FIELDS = {
     'additional_documents_requested_at',
     'additional_documents_submitted_at',
     'result_received_at',
+    'residence_card_received_at',
     'withdrawn_at',
     'completed_at',
 }

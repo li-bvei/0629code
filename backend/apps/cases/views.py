@@ -55,7 +55,7 @@ from .status_service import (
     get_required_checklist_progress,
     update_case_progress_info,
 )
-from .utils import generate_case_number
+from .utils import apply_checklist_template_to_case, generate_case_number
 
 
 class ActiveOrderingMixin:
@@ -505,10 +505,12 @@ class CaseViewSet(ModelViewSet):
 
         for family_member in customer.family_members.select_related('family_customer').all():
             person = family_member.family_customer
-            if not person:
-                continue
-            add_residence_candidates('家族', person.name, person.residence_expiry)
-            add_passport_candidates('家族', person.name, person.passport_expiry)
+            if person:
+                add_residence_candidates('家族', person.name, person.residence_expiry)
+                add_passport_candidates('家族', person.name, person.passport_expiry)
+            else:
+                # family_customer 未紐付けの旧仕様レコード。パスポート期限はこの段階のデータに存在しない。
+                add_residence_candidates('家族', family_member.name, family_member.residence_expiry)
 
         if case.company:
             for staff_member in case.company.staff_members.select_related('customer').all():
@@ -589,39 +591,7 @@ class CaseViewSet(ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        template_items = list(template.items.filter(is_active=True, deleted_at__isnull=True).order_by('sort_order', 'id'))
-        current_max_order = (
-            CaseChecklistItem.objects
-            .filter(case=case)
-            .order_by('-sort_order')
-            .values_list('sort_order', flat=True)
-            .first()
-            or 0
-        )
-
-        created_items = []
-        with transaction.atomic():
-            for index, template_item in enumerate(template_items, start=1):
-                created_items.append(CaseChecklistItem.objects.create(
-                    case=case,
-                    source_template_item=template_item,
-                    category=template_item.category,
-                    name=template_item.name,
-                    item_type=template_item.item_type,
-                    quantity=template_item.quantity,
-                    unit=template_item.unit,
-                    is_required=template_item.is_required,
-                    note=template_item.description,
-                    responsible_party=template_item.responsible_party,
-                    acquisition_place=template_item.acquisition_place,
-                    required_details=template_item.required_details,
-                    internal_note=template_item.internal_note,
-                    customer_note=template_item.customer_note,
-                    is_visible_to_customer=template_item.is_visible_to_customer,
-                    importance_level=template_item.importance_level,
-                    sort_order=current_max_order + index,
-                ))
-
+        created_items = apply_checklist_template_to_case(case, template)
         serializer = CaseChecklistItemSerializer(created_items, many=True)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

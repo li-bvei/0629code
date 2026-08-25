@@ -31,12 +31,16 @@ const companyForm = ref<CreateCompanyPayload>({
   representative_customer: null,
   representative_name: '',
   representative_name_kana: '',
+  representative_postal_code: '',
+  representative_address: '',
   corporate_number: '',
   email: '',
   phone: '',
   postal_code: '',
   address: '',
   fiscal_month: '',
+  establishment_symbol: '',
+  establishment_number: '',
   bank_name: '',
   bank_branch: '',
   bank_account_type: '',
@@ -91,12 +95,16 @@ const resetForm = () => {
     representative_customer: null,
     representative_name: '',
     representative_name_kana: '',
+    representative_postal_code: '',
+    representative_address: '',
     corporate_number: '',
     email: '',
     phone: '',
     postal_code: '',
     address: '',
     fiscal_month: '',
+    establishment_symbol: '',
+    establishment_number: '',
     bank_name: '',
     bank_branch: '',
     bank_account_type: '',
@@ -118,12 +126,16 @@ const openEditDialog = (company: Company) => {
     representative_customer: company.representative_customer,
     representative_name: company.representative_name,
     representative_name_kana: company.representative_name_kana,
+    representative_postal_code: company.representative_postal_code,
+    representative_address: company.representative_address,
     corporate_number: company.corporate_number,
     email: company.email,
     phone: company.phone,
     postal_code: company.postal_code,
     address: company.address,
     fiscal_month: company.fiscal_month,
+    establishment_symbol: company.establishment_symbol,
+    establishment_number: company.establishment_number,
     bank_name: company.bank_name,
     bank_branch: company.bank_branch,
     bank_account_type: company.bank_account_type,
@@ -269,6 +281,12 @@ const confirmDeleteCompany = async (company: Company) => {
         <el-form-item label="代表者氏名" prop="representative_name">
           <el-input v-model="companyForm.representative_name" />
         </el-form-item>
+        <el-form-item label="代表者郵便番号" prop="representative_postal_code">
+          <el-input v-model="companyForm.representative_postal_code" />
+        </el-form-item>
+        <el-form-item label="代表者住所" prop="representative_address">
+          <el-input v-model="companyForm.representative_address" />
+        </el-form-item>
         <el-form-item label="法人番号" prop="corporate_number">
           <el-input v-model="companyForm.corporate_number" />
         </el-form-item>
@@ -296,6 +314,12 @@ const confirmDeleteCompany = async (company: Company) => {
               :value="month"
             />
           </el-select>
+        </el-form-item>
+        <el-form-item label="事業所整理記号（年金の記号）" prop="establishment_symbol">
+          <el-input v-model="companyForm.establishment_symbol" placeholder="例：12イロ" />
+        </el-form-item>
+        <el-form-item label="事業所番号" prop="establishment_number">
+          <el-input v-model="companyForm.establishment_number" placeholder="例：123456" />
         </el-form-item>
         <div class="form-section-title">銀行情報</div>
         <el-form-item label="銀行名" prop="bank_name">

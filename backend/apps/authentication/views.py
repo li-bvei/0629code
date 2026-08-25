@@ -14,6 +14,7 @@ from .serializers import (
     ResetPasswordSerializer,
     SystemUserCreateSerializer,
     SystemUserSerializer,
+    SystemUserUpdateSerializer,
 )
 
 
@@ -88,15 +89,9 @@ class SystemUserViewSet(viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
-        allowed_fields = {'is_active'}
-        if set(request.data.keys()) - allowed_fields:
-            return Response(
-                {'detail': 'is_active のみ変更できます。'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if 'is_active' in request.data:
-            instance.is_active = bool(request.data['is_active'])
-            instance.save(update_fields=['is_active'])
+        serializer = SystemUserUpdateSerializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(SystemUserSerializer(instance).data)
 
     @action(detail=True, methods=['post'], url_path='reset-password')

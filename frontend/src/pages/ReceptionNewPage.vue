@@ -27,6 +27,8 @@ const customers = ref<Customer[]>([])
 const caseTypes = ref<CaseTypeMaster[]>([])
 const applicationCategories = ref<CaseApplicationCategory[]>([])
 const residenceStatusOptions = ref<ResidenceStatusMaster[]>([])
+const showCompanySection = ref(false)
+const showCaseSection = ref(false)
 
 const genderOptions = [
   { label: '男性', value: 'male' },
@@ -69,12 +71,16 @@ const form = ref<ReceptionPayload>({
     representative_customer_is_current_customer: true,
     representative_name: '',
     representative_name_kana: '',
+    representative_postal_code: '',
+    representative_address: '',
     corporate_number: '',
     email: '',
     phone: '',
     postal_code: '',
     address: '',
     fiscal_month: '',
+    establishment_symbol: '',
+    establishment_number: '',
     bank_name: '',
     bank_branch: '',
     bank_account_type: '',
@@ -181,6 +187,8 @@ const buildPayload = (): ReceptionPayload => {
     company.representative_customer = null
     company.representative_name = ''
     company.representative_name_kana = ''
+    company.representative_postal_code = ''
+    company.representative_address = ''
   }
 
   return {
@@ -459,8 +467,14 @@ onMounted(async () => {
         </el-card>
 
         <el-card shadow="never">
-          <template #header>会社情報</template>
-          <div class="form-grid">
+          <template #header>
+            <div class="card-header-row">
+              <span>会社情報（任意）</span>
+              <el-button v-if="!showCompanySection" text type="primary" @click="showCompanySection = true">追加する</el-button>
+            </div>
+          </template>
+          <p v-if="!showCompanySection" class="section-optional-note">会社に関連する案件の場合のみ入力してください。</p>
+          <div v-if="showCompanySection" class="form-grid">
             <el-form-item label="会社名フリガナ" prop="company.name_kana" class="form-grid-start">
               <el-input v-model="form.company.name_kana" />
             </el-form-item>
@@ -509,6 +523,22 @@ onMounted(async () => {
             >
               <el-input v-model="form.company.representative_name" />
             </el-form-item>
+            <el-form-item
+              v-if="!form.company.representative_customer_is_current_customer"
+              label="代表者郵便番号"
+              prop="company.representative_postal_code"
+              class="form-grid-start"
+            >
+              <el-input v-model="form.company.representative_postal_code" />
+            </el-form-item>
+            <el-form-item
+              v-if="!form.company.representative_customer_is_current_customer"
+              label="代表者住所"
+              prop="company.representative_address"
+              class="form-grid-start"
+            >
+              <el-input v-model="form.company.representative_address" />
+            </el-form-item>
             <el-form-item label="法人番号" prop="company.corporate_number">
               <el-input v-model="form.company.corporate_number" />
             </el-form-item>
@@ -537,6 +567,12 @@ onMounted(async () => {
                 />
               </el-select>
             </el-form-item>
+            <el-form-item label="事業所整理記号（年金の記号）" prop="company.establishment_symbol">
+              <el-input v-model="form.company.establishment_symbol" placeholder="例：12イロ" />
+            </el-form-item>
+            <el-form-item label="事業所番号" prop="company.establishment_number">
+              <el-input v-model="form.company.establishment_number" placeholder="例：123456" />
+            </el-form-item>
             <div class="form-section-title">銀行情報</div>
             <el-form-item label="銀行名" prop="company.bank_name">
               <el-input v-model="form.company.bank_name" />
@@ -561,9 +597,14 @@ onMounted(async () => {
         </el-card>
 
         <el-card shadow="never">
-          <template #header>案件情報</template>
-          <p class="section-optional-note">まだ案件化しない場合は空欄のままで構いません。顧客情報だけ登録されます。</p>
-          <div class="form-grid">
+          <template #header>
+            <div class="card-header-row">
+              <span>案件情報（任意）</span>
+              <el-button v-if="!showCaseSection" text type="primary" @click="showCaseSection = true">追加する</el-button>
+            </div>
+          </template>
+          <p v-if="!showCaseSection" class="section-optional-note">まだ案件化しない場合は追加不要です。顧客情報だけ登録されます。</p>
+          <div v-if="showCaseSection" class="form-grid">
             <el-form-item label="案件番号">
               <el-input model-value="自動生成" disabled />
             </el-form-item>

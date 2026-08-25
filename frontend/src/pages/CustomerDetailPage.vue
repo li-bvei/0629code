@@ -87,6 +87,22 @@ const familyForm = ref<FamilyEditForm>({
 const familyCustomerOptions = computed(() => (
   allCustomers.value.filter((item) => item.id !== customerId.value)
 ))
+
+const caseTargetOptions = computed(() => {
+  const seen = new Set<number>()
+  const options: { id: number; label: string }[] = []
+  if (customer.value) {
+    options.push({ id: customerId.value, label: `${customer.value.name}（本人）` })
+    seen.add(customerId.value)
+  }
+  for (const member of familyMembers.value) {
+    if (!member.family_customer || seen.has(member.family_customer)) continue
+    seen.add(member.family_customer)
+    const relationship = getFamilyRelationshipLabel(member) || '家族'
+    options.push({ id: member.family_customer, label: `${member.name}（${relationship}）` })
+  }
+  return options
+})
 const customerForm = ref<UpdateCustomerPayload>({
   name: '',
   name_kana: '',
@@ -211,6 +227,7 @@ const familyRules: FormRules<FamilyEditForm> = {
   ],
 }
 const caseRules: FormRules<CasePayload> = {
+  customer: [{ required: true, message: '対象顧客を選択してください。', trigger: 'change' }],
   case_type_master: [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
   application_category: [{ required: true, message: '申請区分を選択してください。', trigger: 'change' }],
 }
@@ -315,6 +332,10 @@ const openCreateCaseDialog = async () => {
   caseDialogVisible.value = true
 }
 
+const handleCaseTargetChange = (targetId: number) => {
+  caseForm.value.company = targetId === customerId.value ? (relatedCompanies.value[0]?.id || null) : null
+}
+
 const submitCase = async () => {
   if (!caseFormRef.value) return
   const valid = await caseFormRef.value.validate().catch(() => false)
@@ -323,7 +344,6 @@ const submitCase = async () => {
   try {
     await createCase({
       ...caseForm.value,
-      customer: customerId.value,
       company: caseForm.value.company || null,
       responsible_employee: caseForm.value.responsible_employee || null,
     })
@@ -385,18 +405,18 @@ const startEditFamilyMember = async (familyMember: FamilyMember) => {
     family_customer: familyMember.family_customer,
     is_dependent: familyMember.is_dependent,
     note: familyMember.note,
-    name: '',
-    name_kana: '',
-    birth_date: null,
-    gender: '',
-    nationality: '',
-    phone: '',
-    postal_code: '',
-    address: '',
+    name: familyMember.name || '',
+    name_kana: familyMember.name_kana || '',
+    birth_date: familyMember.birth_date || null,
+    gender: familyMember.gender || '',
+    nationality: familyMember.nationality || '',
+    phone: familyMember.phone || '',
+    postal_code: familyMember.postal_code || '',
+    address: familyMember.address || '',
     my_number: '',
-    residence_status: '',
-    residence_card_no: '',
-    residence_expiry: null,
+    residence_status: familyMember.residence_status || '',
+    residence_card_no: familyMember.residence_card_no || '',
+    residence_expiry: familyMember.residence_expiry || null,
   }
   familyFormRef.value?.clearValidate()
   familyEditTarget.value = familyMember.id
@@ -645,9 +665,15 @@ onMounted(() => {
                 <router-link v-if="familyMember.family_customer" class="text-link" :to="`/customers/${familyMember.family_customer}`">
                   {{ familyMember.name }}
                 </router-link>
-                <span v-else>-</span>
+                <div v-else class="family-unlinked-hint">
+                  <span>独立した顧客情報がありません（この人の案件を作成するには顧客登録が必要です）</span>
+                  <el-button text type="primary" :disabled="familyEditTarget !== null" @click="startEditFamilyMember(familyMember)">
+                    顧客として登録する
+                  </el-button>
+                </div>
               </el-descriptions-item>
               <el-descriptions-item label="フリガナ" :span="2">{{ displayValue(familyMember.name_kana) }}</el-descriptions-item>
+              <el-descriptions-item label="氏名" :span="2">{{ displayValue(familyMember.name) }}</el-descriptions-item>
               <el-descriptions-item label="関係">{{ displayValue(familyMember.relationship_display) }}</el-descriptions-item>
               <el-descriptions-item label="生年月日">{{ formatDate(familyMember.birth_date) }}</el-descriptions-item>
               <el-descriptions-item label="性別">{{ displayValue(familyMember.gender_display) }}</el-descriptions-item>
@@ -911,6 +937,17 @@ onMounted(() => {
 
     <el-dialog v-model="caseDialogVisible" title="案件追加" width="560px">
       <el-form ref="caseFormRef" :model="caseForm" :rules="caseRules" label-position="top">
+        <el-form-item label="対象顧客" prop="customer">
+          <el-select
+            v-model="caseForm.customer"
+            filterable
+            placeholder="選択してください"
+            class="form-control"
+            @change="handleCaseTargetChange"
+          >
+            <el-option v-for="option in caseTargetOptions" :key="option.id" :label="option.label" :value="option.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="案件種別" prop="case_type_master">
           <el-select v-model="caseForm.case_type_master" filterable placeholder="選択してください" class="form-control">
             <el-option v-for="caseType in caseTypes" :key="caseType.id" :label="caseType.name" :value="caseType.id" />
@@ -955,5 +992,13 @@ onMounted(() => {
 .family-edit-title {
   margin: 0 0 12px;
   font-size: 15px;
+}
+
+.family-unlinked-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--el-text-color-secondary, #909399);
 }
 </style>

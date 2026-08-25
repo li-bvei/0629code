@@ -60,44 +60,34 @@ class DashboardDeadlinesView(APIView):
                 **case_data(case),
             })
 
+        # 実在する Customer は「本人の案件」「家族滞在の対象」「会社スタッフ」の複数経路から
+        # 同じ人物にたどり着くことがある（例：本人の案件も持ち、別会社のスタッフでもある）。
+        # customer_id を鍵に1人1エントリへ集約し、案件番号は本人の案件を優先、なければ
+        # 家族／会社側で見つかった案件で補完する。
+        customer_entries = {}
         for customer in Customer.objects.all():
-            case = latest_case(customer.cases)
-            add_deadline(
-                'residence_expiry',
-                'customer',
-                customer.name,
-                '在留期限',
-                customer.residence_expiry,
-                case,
-            )
-            add_deadline(
-                'passport_expiry',
-                'customer',
-                customer.name,
-                'パスポート期限',
-                customer.passport_expiry,
-                case,
-            )
+            customer_entries[customer.id] = {
+                'name': customer.name,
+                'residence_expiry': customer.residence_expiry,
+                'passport_expiry': customer.passport_expiry,
+                'case': latest_case(customer.cases),
+            }
 
         for family_member in FamilyMember.objects.select_related('customer', 'family_customer'):
             person = family_member.family_customer
-            if not person:
+            if person:
+                entry = customer_entries.get(person.id)
+                if entry and entry['case'] is None:
+                    entry['case'] = latest_case(family_member.customer.cases)
                 continue
+            # family_customer 未紐付けの旧仕様レコード。パスポート期限はこの段階のデータに存在しない。
             case = latest_case(family_member.customer.cases)
             add_deadline(
                 'residence_expiry',
                 'family_member',
-                person.name,
+                family_member.name,
                 '在留期限',
-                person.residence_expiry,
-                case,
-            )
-            add_deadline(
-                'passport_expiry',
-                'family_member',
-                person.name,
-                'パスポート期限',
-                person.passport_expiry,
+                family_member.residence_expiry,
                 case,
             )
 
@@ -105,22 +95,26 @@ class DashboardDeadlinesView(APIView):
             person = staff_member.customer
             if not person:
                 continue
-            case = latest_case(staff_member.company.cases)
+            entry = customer_entries.get(person.id)
+            if entry and entry['case'] is None:
+                entry['case'] = latest_case(staff_member.company.cases)
+
+        for entry in customer_entries.values():
             add_deadline(
                 'residence_expiry',
-                'company_staff',
-                person.name,
+                'customer',
+                entry['name'],
                 '在留期限',
-                person.residence_expiry,
-                case,
+                entry['residence_expiry'],
+                entry['case'],
             )
             add_deadline(
                 'passport_expiry',
-                'company_staff',
-                person.name,
+                'customer',
+                entry['name'],
                 'パスポート期限',
-                person.passport_expiry,
-                case,
+                entry['passport_expiry'],
+                entry['case'],
             )
 
         for company in Company.objects.all():

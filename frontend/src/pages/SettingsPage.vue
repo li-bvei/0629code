@@ -9,6 +9,7 @@ import {
   listUsers,
   resetUserPassword,
   setUserActive,
+  updateUser,
 } from '../api/users'
 import { useAuthStore } from '../stores/auth'
 import type { SystemUser, SystemUserCreatePayload } from '../types/api'
@@ -141,6 +142,55 @@ const submitCreateUser = async () => {
   }
 }
 
+const editDialogVisible = ref(false)
+const editFormRef = ref<FormInstance>()
+const editSubmitting = ref(false)
+const editingUserId = ref<number | null>(null)
+const editForm = ref({
+  username: '',
+  last_name: '',
+  first_name: '',
+  is_superuser: false,
+})
+
+const editRules: FormRules = {
+  username: [{ required: true, message: 'ユーザー名を入力してください。', trigger: 'blur' }],
+}
+
+const openEditDialog = (user: SystemUser) => {
+  editingUserId.value = user.id
+  editForm.value = {
+    username: user.username,
+    last_name: user.last_name,
+    first_name: user.first_name,
+    is_superuser: user.is_superuser,
+  }
+  editFormRef.value?.clearValidate()
+  editDialogVisible.value = true
+}
+
+const submitEditUser = async () => {
+  if (!editFormRef.value || editingUserId.value === null) return
+  const valid = await editFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  editSubmitting.value = true
+  try {
+    await updateUser(editingUserId.value, editForm.value)
+    ElMessage.success('アカウント情報を更新しました。')
+    editDialogVisible.value = false
+    await fetchUsers(currentPage.value)
+  } catch (error: any) {
+    const detail =
+      error?.response?.data?.username?.[0] ||
+      error?.response?.data?.is_superuser?.[0] ||
+      'アカウント情報の更新に失敗しました。'
+    ElMessage.error(detail)
+  } finally {
+    editSubmitting.value = false
+  }
+}
+
 const toggleUserActive = async (user: SystemUser) => {
   try {
     await setUserActive(user.id, !user.is_active)
@@ -247,6 +297,7 @@ onMounted(() => {
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item @click="openEditDialog(row)">ユーザー名・権限を編集</el-dropdown-item>
                   <el-dropdown-item @click="confirmResetPassword(row)">パスワードを再設定</el-dropdown-item>
                   <el-dropdown-item divided @click="toggleUserActive(row)">
                     {{ row.is_active ? '無効化' : '有効化' }}
@@ -287,6 +338,31 @@ onMounted(() => {
       <template #footer>
         <el-button @click="createDialogVisible = false">キャンセル</el-button>
         <el-button type="primary" :loading="createSubmitting" @click="submitCreateUser">追加</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="editDialogVisible" title="ユーザー名・権限を編集" width="480px">
+      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-position="top">
+        <el-form-item label="ユーザー名" prop="username">
+          <el-input v-model="editForm.username" />
+        </el-form-item>
+        <el-form-item label="姓">
+          <el-input v-model="editForm.last_name" />
+        </el-form-item>
+        <el-form-item label="名">
+          <el-input v-model="editForm.first_name" />
+        </el-form-item>
+        <el-form-item label="権限">
+          <el-radio-group v-model="editForm.is_superuser">
+            <el-radio :value="false">一般</el-radio>
+            <el-radio :value="true">root</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="editDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="editSubmitting" @click="submitEditUser">保存</el-button>
       </template>
     </el-dialog>
   </section>

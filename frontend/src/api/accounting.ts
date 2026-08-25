@@ -519,6 +519,7 @@ export const generateTaxRenewalRecordPdf = async (
     writtenFieldCount: response.headers['x-written-field-count'] as string | undefined,
     skippedEmptyFieldCount: response.headers['x-skipped-empty-field-count'] as string | undefined,
     warningFields: response.headers['x-warning-fields'] as string | undefined,
+    missingRequiredFields: response.headers['x-missing-required-fields'] as string | undefined,
   }
 }
 

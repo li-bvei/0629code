@@ -254,6 +254,7 @@ class SeifuNoticePdfRecordSerializer(serializers.ModelSerializer):
 class TaxRenewalVoucherRecordSerializer(serializers.ModelSerializer):
     category_display = serializers.CharField(source='get_category_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    case_number = serializers.CharField(source='case.case_number', read_only=True)
     company_name = serializers.CharField(source='company.name', read_only=True)
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     employee_name = serializers.CharField(source='employee.name', read_only=True)

@@ -14,6 +14,12 @@ from .tax_renewal_templates import get_tax_renewal_templates
 
 
 SUPPORTED_TEMPLATE_KEY = 'social_insurance_payment_certificate_power_of_attorney'
+SUPPORTED_TEMPLATE_KEYS = {
+    SUPPORTED_TEMPLATE_KEY,
+    'pension_office_application',
+    'pension_insured_qualification_acquisition',
+    'dependent_change_notification',
+}
 MAPPING_DIR = Path(settings.BASE_DIR) / 'assets' / 'pdf_templates' / 'zei' / 'field_mappings'
 FONT_DIR = Path(settings.BASE_DIR) / 'assets' / 'fonts'
 FONT_PATH = FONT_DIR / 'YuMincho.ttf'
@@ -49,6 +55,7 @@ class TaxRenewalPdfStats:
     written_field_count: int = 0
     skipped_empty_field_count: int = 0
     warning_fields: list[str] = field(default_factory=list)
+    missing_required_fields: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -62,7 +69,7 @@ def generate_tax_renewal_template_pdf(record, template_key):
 
 
 def generate_tax_renewal_template_pdf_result(record, template_key):
-    if template_key != SUPPORTED_TEMPLATE_KEY:
+    if template_key not in SUPPORTED_TEMPLATE_KEYS:
         raise ValueError('PDF字段映射未完成')
 
     template = get_template(template_key)
@@ -78,6 +85,7 @@ def generate_tax_renewal_template_pdf_result(record, template_key):
         raise FileNotFoundError(f'PDF生成用字体不存在：{FONT_PATH}')
 
     data = build_record_data(record)
+    required_fields = set(template.get('required_fields') or [])
     stats = TaxRenewalPdfStats(mapping_field_count=len(fields))
     doc = fitz.open(template['file_path'])
     try:
@@ -92,6 +100,9 @@ def generate_tax_renewal_template_pdf_result(record, template_key):
             value = resolve_field_value(str(field_key), data)
             if value == '':
                 stats.skipped_empty_field_count += 1
+                canonical_key = FIELD_ALIASES.get(str(field_key), str(field_key))
+                if canonical_key in required_fields or str(field_key) in required_fields:
+                    stats.missing_required_fields.append(canonical_key)
                 continue
             if field['page'] < 1 or field['page'] > doc.page_count:
                 stats.warning_fields.append(str(field_key))
@@ -119,16 +130,19 @@ def generate_tax_renewal_template_pdf_result(record, template_key):
 
 def tax_renewal_pdf_response(record, template_key):
     result = generate_tax_renewal_template_pdf_result(record, template_key)
+    template = get_template(template_key)
+    document_label = Path(template['filename']).stem if template.get('filename') else template_key
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    filename = f'社会保険納入証明書兼委任状_{safe_filename(record.title)}_{timestamp}.pdf'
+    filename = f'{document_label}_{safe_filename(record.title)}_{timestamp}.pdf'
     response = HttpResponse(result.pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = (
-        f'attachment; filename="social_insurance.pdf"; filename*=UTF-8\'\'{quote(filename)}'
+        f'attachment; filename="{template_key}.pdf"; filename*=UTF-8\'\'{quote(filename)}'
     )
     response['X-Mapping-Field-Count'] = str(result.stats.mapping_field_count)
     response['X-Written-Field-Count'] = str(result.stats.written_field_count)
     response['X-Skipped-Empty-Field-Count'] = str(result.stats.skipped_empty_field_count)
     response['X-Warning-Fields'] = quote(','.join(result.stats.warning_fields))
+    response['X-Missing-Required-Fields'] = quote(','.join(result.stats.missing_required_fields))
     return response
 
 
@@ -190,6 +204,32 @@ def japanese_era_year(value):
     return str(year)
 
 
+def reiwa_date_parts(value):
+    """'YYYY-MM-DD' -> '令和年-月-日' の3値を '-' 区切りにした文字列（draw_split_field 用）。"""
+    try:
+        year_str, month_str, day_str = str(value).split('-')
+        year = int(year_str)
+        month = int(month_str)
+        day = int(day_str)
+    except (TypeError, ValueError):
+        return ''
+    era_year = year - 2018 if year >= 2019 else year
+    return f'{era_year}-{month}-{day}'
+
+
+def split_japanese_name(value):
+    """氏名／フリガナを姓・名の2値に分割する。この画面（Company/Customer）の氏名は
+    「姓　名」の形で半角/全角スペース区切りで入力される運用が既に定着しているため、
+    それに従って分割する。区切りが無い場合は全体を姓側に入れ、名側は空にする。"""
+    if not value:
+        return '', ''
+    normalized = str(value).replace('　', ' ').strip()
+    parts = normalized.split(' ', 1)
+    if len(parts) == 2 and parts[1]:
+        return parts[0].strip(), parts[1].strip()
+    return normalized, ''
+
+
 def build_record_data(record):
     form_data = record.form_data if isinstance(record.form_data, dict) else {}
     data = {}
@@ -213,11 +253,17 @@ def build_record_data(record):
         'company_number': object_value(company, 'corporate_number') or object_value(company, 'corporate_registration_number'),
         'company_address': object_value(company, 'address'),
         'company_phone': object_value(company, 'phone'),
+        'company_postal_code': object_value(company, 'postal_code'),
+        'establishment_symbol': object_value(company, 'establishment_symbol'),
+        'establishment_number': object_value(company, 'establishment_number'),
         'representative_name': object_value(company, 'representative_name'),
         'representative_kana': object_value(company, 'representative_name_kana'),
+        'representative_postal_code': object_value(company, 'representative_postal_code'),
+        'representative_address': object_value(company, 'representative_address'),
         'applicant_name': object_value(customer, 'name'),
         'applicant_kana': object_value(customer, 'name_kana'),
         'applicant_address': object_value(customer, 'address'),
+        'applicant_postal_code': object_value(customer, 'postal_code'),
         'applicant_phone': object_value(customer, 'phone'),
         'applicant_birth_date': object_value(customer, 'birth_date'),
         'employee_name': object_value(employee, 'name'),
@@ -235,6 +281,19 @@ def build_record_data(record):
         data['establishment_symbol'] = data['social_insurance_symbol']
     if not data.get('establishment_number') and data.get('social_insurance_office_number'):
         data['establishment_number'] = data['social_insurance_office_number']
+    if not data.get('submit_date_reiwa') and data.get('submit_date'):
+        data['submit_date_reiwa'] = reiwa_date_parts(data['submit_date'])
+
+    # 姓・名を別々の枠に分けて印字する様式向け（例：年金新規適用届の①事業主氏名）。
+    # フォーム側に姓/名の入力欄は無いため、既存の「姓　名」形式の氏名から都度分割する。
+    if not data.get('representative_name1') and not data.get('representative_name2'):
+        data['representative_name1'], data['representative_name2'] = split_japanese_name(data.get('representative_name'))
+    if not data.get('representative_kana1') and not data.get('representative_kana2'):
+        data['representative_kana1'], data['representative_kana2'] = split_japanese_name(data.get('representative_kana'))
+    if not data.get('applicant_name1') and not data.get('applicant_name2'):
+        data['applicant_name1'], data['applicant_name2'] = split_japanese_name(data.get('applicant_name'))
+    if not data.get('applicant_kana1') and not data.get('applicant_kana2'):
+        data['applicant_kana1'], data['applicant_kana2'] = split_japanese_name(data.get('applicant_kana'))
 
     return data
 

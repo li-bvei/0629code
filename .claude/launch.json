@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "frontend-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--port", "5174"],
+      "runtimeExecutable": "/Users/tatsuya/Documents/Projects/0629code/frontend/dev.sh",
+      "runtimeArgs": [],
       "port": 5174
     },
     {

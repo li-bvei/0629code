@@ -1,6 +1,7 @@
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.utils import timezone
 
 TOKYO_TZ = ZoneInfo('Asia/Tokyo')
@@ -58,3 +59,64 @@ def generate_case_number(case_type_master, application_category, customer=None, 
             max_sequence = max(max_sequence, int(suffix))
 
     return f'{number_prefix}{max_sequence + 1:04d}'
+
+
+def apply_checklist_template_to_case(case, template):
+    from .models import CaseChecklistItem
+
+    template_items = list(
+        template.items.filter(is_active=True, deleted_at__isnull=True).order_by('sort_order', 'id')
+    )
+    current_max_order = (
+        CaseChecklistItem.objects
+        .filter(case=case)
+        .order_by('-sort_order')
+        .values_list('sort_order', flat=True)
+        .first()
+        or 0
+    )
+
+    created_items = []
+    with transaction.atomic():
+        for index, template_item in enumerate(template_items, start=1):
+            created_items.append(CaseChecklistItem.objects.create(
+                case=case,
+                source_template_item=template_item,
+                category=template_item.category,
+                name=template_item.name,
+                item_type=template_item.item_type,
+                quantity=template_item.quantity,
+                unit=template_item.unit,
+                is_required=template_item.is_required,
+                note=template_item.description,
+                responsible_party=template_item.responsible_party,
+                acquisition_place=template_item.acquisition_place,
+                required_details=template_item.required_details,
+                internal_note=template_item.internal_note,
+                customer_note=template_item.customer_note,
+                is_visible_to_customer=template_item.is_visible_to_customer,
+                importance_level=template_item.importance_level,
+                sort_order=current_max_order + index,
+            ))
+    return created_items
+
+
+def auto_apply_default_checklist_template(case):
+    """案件種別・申請区分に一致するテンプレートがあれば、新規作成直後の案件に自動適用する。
+    既存の必要資料を上書きしないよう、作成直後（必要資料が空の状態）でのみ呼び出すこと。
+    """
+    from .models import CaseChecklistTemplate
+
+    if not case.case_type_master_id or not case.application_category_id:
+        return []
+
+    template = CaseChecklistTemplate.objects.filter(
+        case_type_master_id=case.case_type_master_id,
+        application_category_id=case.application_category_id,
+        is_active=True,
+        deleted_at__isnull=True,
+    ).order_by('sort_order', 'id').first()
+    if not template:
+        return []
+
+    return apply_checklist_template_to_case(case, template)

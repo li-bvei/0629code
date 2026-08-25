@@ -88,10 +88,6 @@ const handleLogout = async () => {
             <el-icon><Tickets /></el-icon>
             <span>案件一覧</span>
           </el-menu-item>
-          <el-menu-item index="/case-checklists">
-            <el-icon><List /></el-icon>
-            <span>案件・担当設定管理</span>
-          </el-menu-item>
           <el-menu-item index="/customers">
             <el-icon><User /></el-icon>
             <span>顧客管理</span>
@@ -182,7 +178,14 @@ const handleLogout = async () => {
             <el-icon><Setting /></el-icon>
             <span>システム</span>
           </template>
-          <el-menu-item index="/settings">設定</el-menu-item>
+          <el-menu-item index="/case-checklists">
+            <el-icon><List /></el-icon>
+            <span>案件・担当設定管理</span>
+          </el-menu-item>
+          <el-menu-item index="/settings">
+            <el-icon><Setting /></el-icon>
+            <span>設定</span>
+          </el-menu-item>
         </el-sub-menu>
       </el-menu>
     </aside>

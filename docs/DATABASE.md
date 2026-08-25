@@ -136,3 +136,13 @@ Portal 相关数据应支持：
 - 外部系统同步记录
 
 这些能力不进入 MVP，除非有明确业务需求。
+
+## 10. 近期字段变更（2026-08）
+
+以下字段/关系为近期新增，详细业务背景见 `AI_CONTEXT.md` 对应小节，此处只记录数据库层面的事实：
+
+- `cases.residence_card_received_at`（可选日期）：在留カード受取日，不是新的 `status` 枚举值，只是一个普通日期字段，跟"許可"状态一起使用。
+- `case_checklist_templates.case_type_master_id` / `application_category_id`（均可选外键，`on_delete=SET_NULL`）：模板与「案件種別＋申請区分」的对应关系，用于新建案件时自动套用材料清单。
+- `companies.establishment_symbol` / `establishment_number`（均为可选自由文本）：厚生年金/社会保険相关的「事業所整理記号」「事業所番号」，公司级编号，不是每个案件各自的。
+- `tax_renewal_voucher_records.case_id`（可选外键，指向 `cases`，`on_delete=SET_NULL`）：税务证明记录关联到具体案件，用于自动带出该案件的顧客/会社/担当者，减少重复选择。**这不是"一个案件对应一份税务证明"的强约束**——`case` 可以为空，一个案件下也可以有多份不同用途的税务证明记录。
+- `customers.family_members`（`FamilyMember`）：配偶/兄弟姐妹（对称关系）新增了服务层的自动反向链接行为——给 A 添加"配偶 B"且 B 已是独立顧客时，会自动在 B 名下也生成一条"配偶 A"的 `FamilyMember`，避免两边各录一次。这不是数据库约束层面的变化（没有新增表/字段），是 `backend/apps/customers/utils.py` 里的应用层同步逻辑，在 `FamilyMemberSerializer` 保存后触发。

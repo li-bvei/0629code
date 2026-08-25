@@ -8,6 +8,8 @@ from .zei_pdf_diagnostics import tax_renewal_pdf_diagnostics, tax_renewal_pdf_nu
 from .zei_pdf_position_debug import (
     zei_pdf_position_mapping,
     zei_pdf_position_preview,
+    zei_pdf_position_record_data,
+    zei_pdf_position_records,
     zei_pdf_position_templates,
     zei_pdf_position_test_pdf,
 )
@@ -67,5 +69,7 @@ urlpatterns = [
     path('zei-pdf-position-debug/mapping/', zei_pdf_position_mapping, name='zei-pdf-position-debug-mapping'),
     path('zei-pdf-position-debug/preview/', zei_pdf_position_preview, name='zei-pdf-position-debug-preview'),
     path('zei-pdf-position-debug/test-pdf/', zei_pdf_position_test_pdf, name='zei-pdf-position-debug-test-pdf'),
+    path('zei-pdf-position-debug/records/', zei_pdf_position_records, name='zei-pdf-position-debug-records'),
+    path('zei-pdf-position-debug/record-data/', zei_pdf_position_record_data, name='zei-pdf-position-debug-record-data'),
     *router.urls,
 ]

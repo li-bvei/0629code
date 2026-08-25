@@ -94,6 +94,8 @@ export interface Company {
   representative_customer_name: string
   representative_name: string
   representative_name_kana: string
+  representative_postal_code: string
+  representative_address: string
   corporate_number: string
   corporate_registration_number: string
   email: string
@@ -101,6 +103,8 @@ export interface Company {
   postal_code: string
   address: string
   fiscal_month: string
+  establishment_symbol: string
+  establishment_number: string
   bank_name: string
   bank_branch: string
   bank_account_type: string
@@ -116,6 +120,8 @@ export interface CreateCompanyPayload {
   representative_customer?: number | null
   representative_name?: string
   representative_name_kana?: string
+  representative_postal_code?: string
+  representative_address?: string
   corporate_number?: string
   corporate_registration_number?: string
   email?: string
@@ -123,6 +129,8 @@ export interface CreateCompanyPayload {
   postal_code?: string
   address?: string
   fiscal_month?: string
+  establishment_symbol?: string
+  establishment_number?: string
   bank_name?: string
   bank_branch?: string
   bank_account_type?: string
@@ -208,6 +216,7 @@ export interface Case {
   result_notified_at: string | null
   result_received_at: string | null
   result_note: string
+  residence_card_received_at: string | null
   withdrawn_at: string | null
   completed_at: string | null
   archived_at: string | null
@@ -266,6 +275,7 @@ export interface CasePayload {
   result_notified_at?: string | null
   result_received_at?: string | null
   result_note?: string
+  residence_card_received_at?: string | null
   withdrawn_at?: string | null
   completed_at?: string | null
   archived_at?: string | null
@@ -424,6 +434,7 @@ export interface CaseStatusPayload {
   additional_documents_submitted_at?: string | null
   result_received_at?: string | null
   result_note?: string
+  residence_card_received_at?: string | null
   withdrawn_at?: string | null
   completed_at?: string | null
 }
@@ -530,6 +541,10 @@ export interface CaseChecklistTemplate {
   id: number
   name: string
   description: string
+  case_type_master: number | null
+  case_type_master_name: string | null
+  application_category: number | null
+  application_category_name: string | null
   is_active: boolean
   sort_order: number
   deleted_at: string | null
@@ -542,6 +557,8 @@ export interface CaseChecklistTemplate {
 export interface CaseChecklistTemplatePayload {
   name: string
   description?: string
+  case_type_master?: number | null
+  application_category?: number | null
   is_active?: boolean
   sort_order?: number
 }
@@ -836,6 +853,8 @@ export interface ReceptionCompanyPayload {
   representative_customer_is_current_customer?: boolean
   representative_name?: string
   representative_name_kana?: string
+  representative_postal_code?: string
+  representative_address?: string
   corporate_number?: string
   corporate_registration_number?: string
   email?: string
@@ -843,6 +862,8 @@ export interface ReceptionCompanyPayload {
   postal_code?: string
   address?: string
   fiscal_month?: string
+  establishment_symbol?: string
+  establishment_number?: string
   bank_name?: string
   bank_branch?: string
   bank_account_type?: string
@@ -888,4 +909,12 @@ export interface SystemUserCreatePayload {
   password: string
   first_name?: string
   last_name?: string
+}
+
+export interface SystemUserUpdatePayload {
+  username?: string
+  first_name?: string
+  last_name?: string
+  is_active?: boolean
+  is_superuser?: boolean
 }

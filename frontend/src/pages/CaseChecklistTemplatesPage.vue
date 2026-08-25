@@ -205,6 +205,8 @@ const materialNoticeOptions = ref({
 const templateForm = ref<CaseChecklistTemplatePayload>({
   name: '',
   description: '',
+  case_type_master: null,
+  application_category: null,
   is_active: true,
   sort_order: 0,
 })
@@ -736,6 +738,8 @@ const resetTemplateForm = () => {
   templateForm.value = {
     name: '',
     description: '',
+    case_type_master: null,
+    application_category: null,
     is_active: true,
     sort_order: (templates.value.reduce((max, item) => Math.max(max, item.sort_order || 0), 0) || 0) + 1,
   }
@@ -752,6 +756,8 @@ const openEditTemplateDialog = (template: CaseChecklistTemplate) => {
   templateForm.value = {
     name: template.name,
     description: template.description,
+    case_type_master: template.case_type_master,
+    application_category: template.application_category,
     is_active: template.is_active,
     sort_order: template.sort_order,
   }
@@ -1382,6 +1388,14 @@ onMounted(() => {
         <template #header>テンプレート一覧</template>
         <el-table :data="templates" stripe highlight-current-row row-key="id" @row-click="selectTemplate">
           <el-table-column prop="name" label="名称" min-width="180" />
+          <el-table-column label="自動適用条件" min-width="180">
+            <template #default="{ row }">
+              <span v-if="row.case_type_master_name && row.application_category_name">
+                {{ row.case_type_master_name }} / {{ row.application_category_name }}
+              </span>
+              <span v-else class="empty-text">未設定</span>
+            </template>
+          </el-table-column>
           <el-table-column label="項目数" width="90">
             <template #default="{ row }">{{ row.item_count }}</template>
           </el-table-column>
@@ -1671,6 +1685,21 @@ onMounted(() => {
         <el-form-item label="説明" prop="description">
           <el-input v-model="templateForm.description" type="textarea" :rows="3" />
         </el-form-item>
+        <p class="section-optional-note">
+          案件種別・申請区分を両方指定すると、その組み合わせで案件を新規作成した際にこのテンプレートが自動的に適用されます（任意）。
+        </p>
+        <div class="form-grid">
+          <el-form-item label="案件種別（自動適用条件）" prop="case_type_master">
+            <el-select v-model="templateForm.case_type_master" clearable filterable placeholder="指定しない" class="form-control">
+              <el-option v-for="caseType in caseTypes" :key="caseType.id" :label="caseType.name" :value="caseType.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="申請区分（自動適用条件）" prop="application_category">
+            <el-select v-model="templateForm.application_category" clearable filterable placeholder="指定しない" class="form-control">
+              <el-option v-for="category in applicationCategories" :key="category.id" :label="category.name" :value="category.id" />
+            </el-select>
+          </el-form-item>
+        </div>
         <div class="form-grid">
           <el-form-item label="表示順" prop="sort_order">
             <el-input-number v-model="templateForm.sort_order" :min="1" :step="1" class="form-control" />

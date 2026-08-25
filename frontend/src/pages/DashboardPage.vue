@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { listDashboardDeadlines } from '../api/dashboard'
 import { listCases } from '../api/cases'
 import type { Case, DashboardDeadline } from '../types/api'
+import { caseStageGroups, isCaseWithdrawn } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 import { diffDaysFromToday } from '../utils/reminder'
 
@@ -18,6 +19,33 @@ const deadlineItems = computed(() =>
 const recentCases = computed(() =>
   [...cases.value].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 10),
 )
+
+const activeCases = computed(() => cases.value.filter((caseItem) => !isCaseWithdrawn(caseItem.status)))
+
+const residenceCardPendingCount = computed(() => (
+  cases.value.filter((caseItem) => caseItem.status === 'approved' && !caseItem.residence_card_received_at).length
+))
+
+const withdrawnCount = computed(() => (
+  cases.value.filter((caseItem) => isCaseWithdrawn(caseItem.status)).length
+))
+
+const stageSummary = computed(() => {
+  const counts = caseStageGroups.map((group) => ({
+    key: group.key,
+    label: group.label,
+    count: activeCases.value.filter((caseItem) => group.statuses.includes(caseItem.status)).length,
+  }))
+  // 「完了」は末尾に来るので、その手前に「在留カード受取待ち」を独立した数値として挟み込む。
+  const completedIndex = counts.findIndex((item) => item.key === 'completed')
+  counts.splice(completedIndex, 0, {
+    key: 'residence_card_pending',
+    label: '在留カード受取待ち',
+    count: residenceCardPendingCount.value,
+  })
+  counts.push({ key: 'withdrawn', label: '取下げ', count: withdrawnCount.value })
+  return counts
+})
 
 const inProgressStatuses = ['applied', 'under_review', 'additional_documents', 'additional_documents_submitted']
 
@@ -86,6 +114,16 @@ onMounted(() => {
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
 
     <div v-loading="loading" class="detail-grid">
+      <el-card shadow="never" class="stage-summary-card">
+        <template #header>案件の進捗状況</template>
+        <div class="stage-summary-grid">
+          <div v-for="item in stageSummary" :key="item.key" class="stage-summary-item" :class="`is-${item.key}`">
+            <span class="stage-summary-count">{{ item.count }}</span>
+            <span class="stage-summary-label">{{ item.label }}</span>
+          </div>
+        </div>
+      </el-card>
+
       <el-card shadow="never">
         <template #header>期限提醒</template>
         <el-table v-if="deadlineItems.length" :data="deadlineItems" stripe>
@@ -167,3 +205,44 @@ onMounted(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+.stage-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stage-summary-item {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 8px;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-light);
+}
+
+.stage-summary-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  line-height: 1.3;
+}
+
+.stage-summary-item.is-residence_card_pending .stage-summary-count {
+  color: var(--el-color-primary);
+}
+
+.stage-summary-item.is-withdrawn .stage-summary-count {
+  color: var(--el-text-color-secondary);
+}
+
+.stage-summary-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 4px;
+  text-align: center;
+}
+</style>

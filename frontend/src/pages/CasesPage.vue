@@ -32,6 +32,8 @@ const pageSize = 20
 const dialogVisible = ref(false)
 const editingCaseId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
+const customerSearchLoading = ref(false)
+let customerSearchTimer: ReturnType<typeof setTimeout> | null = null
 const filters = ref({
   view: 'incomplete',
 })
@@ -134,6 +136,28 @@ onMounted(() => {
   fetchSelectOptions()
 })
 
+const searchCustomers = async (query: string) => {
+  customerSearchLoading.value = true
+  try {
+    const data = await listCustomers(query ? { search: query } : undefined)
+    customers.value = data.results
+  } catch {
+    ElMessage.error('顧客の検索に失敗しました。')
+  } finally {
+    customerSearchLoading.value = false
+  }
+}
+
+const handleCustomerSearch = (query: string) => {
+  if (customerSearchTimer) clearTimeout(customerSearchTimer)
+  customerSearchTimer = setTimeout(() => searchCustomers(query), 300)
+}
+
+const ensureCustomerOption = (id: number | null, name?: string | null) => {
+  if (!id || customers.value.some((item) => item.id === id)) return
+  customers.value = [{ id, name: name || '' } as Customer, ...customers.value]
+}
+
 const resetForm = () => {
   editingCaseId.value = null
   caseForm.value = {
@@ -170,6 +194,7 @@ const openEditDialog = (caseItem: Case) => {
     result_notified_at: caseItem.result_notified_at,
     completed_at: caseItem.completed_at,
   }
+  ensureCustomerOption(caseItem.customer, caseItem.customer_name)
   formRef.value?.clearValidate()
   dialogVisible.value = true
 }
@@ -384,7 +409,16 @@ const confirmDeleteCase = async (caseItem: Case) => {
             </el-select>
           </el-form-item>
           <el-form-item label="顧客" prop="customer">
-            <el-select v-model="caseForm.customer" filterable placeholder="選択してください" class="form-control">
+            <el-select
+              v-model="caseForm.customer"
+              filterable
+              remote
+              reserve-keyword
+              :remote-method="handleCustomerSearch"
+              :loading="customerSearchLoading"
+              placeholder="氏名で検索してください"
+              class="form-control"
+            >
               <el-option
                 v-for="customer in customers"
                 :key="customer.id"

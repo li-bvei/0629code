@@ -13,6 +13,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .models import TaxRenewalVoucherRecord
+from .tax_renewal_pdf import build_record_data
+from .tax_renewal_pdf import resolve_field_value as resolve_record_field_value
 from .tax_renewal_templates import get_tax_renewal_templates
 
 
@@ -205,6 +208,7 @@ def zei_pdf_position_templates(request):
         rows.append({
             'key': template['key'],
             'name': template['name'],
+            'category': template['category'],
             'filename': template.get('filename') or '',
             'file_exists': template['file_exists'],
             'page_count': len(pages),
@@ -213,6 +217,51 @@ def zei_pdf_position_templates(request):
             'mapping_field_count': mapping_field_count,
         })
     return Response(rows)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def zei_pdf_position_records(request):
+    """位置調整ツールの「実データ」選択肢一覧。既存の一覧 API と同じデータだが、
+    このツール専用に軽量なフィールドだけ返す。"""
+    category = request.query_params.get('category')
+    queryset = TaxRenewalVoucherRecord.objects.select_related('company', 'customer').order_by('-updated_at')
+    if category:
+        queryset = queryset.filter(category=category)
+    rows = [
+        {
+            'id': record.id,
+            'title': record.title,
+            'category': record.category,
+            'company_name': record.company.name if record.company else '',
+            'customer_name': record.customer.name if record.customer else '',
+        }
+        for record in queryset[:100]
+    ]
+    return Response(rows)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def zei_pdf_position_record_data(request):
+    """指定したレコードを実際の PDF 生成と同じロジック（build_record_data）で解決し、
+    位置調整ツールのプレビューに使えるフィールド値一式を返す。"""
+    record_id = request.query_params.get('record_id')
+    if not record_id:
+        return error_response('record_id は必須です')
+    try:
+        record = TaxRenewalVoucherRecord.objects.select_related(
+            'case', 'company', 'customer', 'employee',
+        ).get(pk=record_id)
+    except (TaxRenewalVoucherRecord.DoesNotExist, ValueError):
+        return error_response('レコードが見つかりません', status.HTTP_404_NOT_FOUND)
+    return Response({
+        'record_id': record.id,
+        'title': record.title,
+        'company_name': record.company.name if record.company else '',
+        'customer_name': record.customer.name if record.customer else '',
+        'data': build_record_data(record),
+    })
 
 
 @api_view(['GET', 'POST'])
@@ -282,6 +331,17 @@ def zei_pdf_position_test_pdf(request):
     if not fields:
         return error_response('mapping 没有字段')
 
+    record_data = None
+    record_id = request.data.get('record_id')
+    if record_id:
+        try:
+            record = TaxRenewalVoucherRecord.objects.select_related(
+                'case', 'company', 'customer', 'employee',
+            ).get(pk=record_id)
+        except (TaxRenewalVoucherRecord.DoesNotExist, ValueError):
+            return error_response('レコードが見つかりません', status.HTTP_404_NOT_FOUND)
+        record_data = build_record_data(record)
+
     font_path = find_debug_font()
     doc = fitz.open(template['file_path'])
     warnings = []
@@ -293,6 +353,12 @@ def zei_pdf_position_test_pdf(request):
             if not isinstance(field, dict):
                 continue
             field = normalize_field(field_key, field)
+            if record_data is not None:
+                # 実データが用意されている場合、そのフィールドの解決値があれば test_value を差し替える。
+                # 実レコードに値が無いフィールドは、位置がどこにあるか分かるよう手動の test_value/label のまま残す。
+                resolved = resolve_record_field_value(field_key, record_data)
+                if resolved:
+                    field['test_value'] = resolved
             page_number = field['page']
             if page_number < 1 or page_number > doc.page_count:
                 continue

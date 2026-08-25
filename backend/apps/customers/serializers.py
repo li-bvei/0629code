@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import Customer, FamilyMember, ResidenceStatusMaster
+from .utils import sync_reverse_family_link
 
 
 class ResidenceStatusMasterSerializer(serializers.ModelSerializer):
@@ -171,11 +172,19 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
             customer_serializer = CustomerSerializer(data=new_customer_data)
             customer_serializer.is_valid(raise_exception=True)
             validated_data['family_customer'] = customer_serializer.save()
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+        sync_reverse_family_link(instance)
+        return instance
 
     def update(self, instance, validated_data):
-        validated_data.pop('new_customer', None)
-        return super().update(instance, validated_data)
+        new_customer_data = validated_data.pop('new_customer', None)
+        if new_customer_data:
+            customer_serializer = CustomerSerializer(data=new_customer_data)
+            customer_serializer.is_valid(raise_exception=True)
+            validated_data['family_customer'] = customer_serializer.save()
+        instance = super().update(instance, validated_data)
+        sync_reverse_family_link(instance)
+        return instance
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
