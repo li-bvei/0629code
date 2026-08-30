@@ -1,6 +1,31 @@
 from rest_framework import serializers
 
-from .models import Reminder
+from .models import DismissedDeadline, Reminder
+
+
+class DismissedDeadlineSerializer(serializers.ModelSerializer):
+    dismissed_by_name = serializers.CharField(source='dismissed_by.username', read_only=True)
+
+    class Meta:
+        model = DismissedDeadline
+        fields = [
+            'id',
+            'source_type',
+            'source_id',
+            'deadline_type',
+            'deadline_date',
+            'dismissed_by',
+            'dismissed_by_name',
+            'note',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'dismissed_by', 'dismissed_by_name', 'created_at']
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['dismissed_by'] = request.user
+        return super().create(validated_data)
 
 
 class ReminderSerializer(serializers.ModelSerializer):

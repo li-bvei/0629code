@@ -12,6 +12,9 @@ class ResidenceStatusMasterSerializer(serializers.ModelSerializer):
 
 class CustomerSerializer(serializers.ModelSerializer):
     cases_count = serializers.SerializerMethodField()
+    is_dependent = serializers.SerializerMethodField()
+    primary_applicant = serializers.SerializerMethodField()
+    dependents_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Customer
@@ -34,13 +37,50 @@ class CustomerSerializer(serializers.ModelSerializer):
             'my_number',
             'note',
             'cases_count',
+            'is_dependent',
+            'primary_applicant',
+            'dependents_count',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'cases_count', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'cases_count', 'is_dependent', 'primary_applicant', 'dependents_count',
+            'created_at', 'updated_at',
+        ]
 
     def get_cases_count(self, obj):
         return obj.cases.count()
+
+    def _primary_family_link(self, obj):
+        # 顧客一覧では「誰かの家族（配偶者・子など）として登録されているか」を判定したいだけなので、
+        # 複数の family_links がある場合でも先頭の1件だけ見れば十分。
+        # ViewSet 側で prefetch_related('family_links__customer') 済みの前提で
+        # obj.family_links.all() を呼ぶ（ここで select_related 等を追加すると
+        # prefetch のキャッシュが使われず1行ごとに追加クエリが発生するので避ける）。
+        links = list(obj.family_links.all())
+        return links[0] if links else None
+
+    def get_is_dependent(self, obj):
+        return self._primary_family_link(obj) is not None
+
+    def get_primary_applicant(self, obj):
+        link = self._primary_family_link(obj)
+        if not link:
+            return None
+        return {
+            'id': link.customer_id,
+            'name': link.customer.name,
+            'relationship': link.relationship,
+            'relationship_display': link.get_relationship_display(),
+        }
+
+    def get_dependents_count(self, obj):
+        # ViewSet 側で Count アノテーションが付いていればそれを使い、無ければ都度カウントする
+        # （CustomerDetailSerializer 経由の retrieve など、アノテーション無しでも動くように）。
+        annotated = getattr(obj, 'dependents_count_annotated', None)
+        if annotated is not None:
+            return annotated
+        return obj.family_members.filter(family_customer__isnull=False).count()
 
 
 class CustomerDetailSerializer(CustomerSerializer):

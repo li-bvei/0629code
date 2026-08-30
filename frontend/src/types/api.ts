@@ -18,6 +18,7 @@ export interface ListParams {
   customer?: number
   company?: number
   case?: number
+  exclude_dependents?: boolean
 }
 
 export interface ResidenceStatusMaster {
@@ -56,6 +57,9 @@ export interface Customer {
   my_number: string
   note: string
   cases_count: number
+  is_dependent: boolean
+  primary_applicant: { id: number; name: string; relationship: string; relationship_display: string } | null
+  dependents_count: number
   created_at: string
   updated_at: string
 }
@@ -650,6 +654,7 @@ export interface CaseChecklistTemplateItemMoveResult {
 export interface DashboardDeadline {
   type: string
   target_type: string
+  target_id: number
   target_name: string
   deadline_label: string
   deadline_date: string
@@ -658,6 +663,14 @@ export interface DashboardDeadline {
   case_id: number | null
   case_number: string
   case_type: string
+}
+
+export interface DismissedDeadlinePayload {
+  source_type: string
+  source_id: number
+  deadline_type: string
+  deadline_date: string
+  note?: string
 }
 
 export interface Employee {

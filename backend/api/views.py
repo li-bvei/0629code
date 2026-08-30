@@ -1,6 +1,7 @@
 import calendar
 from datetime import date
 
+from django.db.models import Max
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -9,8 +10,18 @@ from rest_framework.views import APIView
 from apps.cases.models import Case
 from apps.companies.models import Company, CompanyStaff
 from apps.customers.models import Customer, FamilyMember
+from apps.reminders.models import DismissedDeadline
 
 from .serializers import ReceptionSerializer
+
+# 案件がこの状態になっていれば「もう動きが無い案件」とみなし、期限提醒には出さない
+# （完了・取下げ・不許可）。審査中や書類対応中など、まだ進行中の案件は
+# 期限が過ぎていても引き続き表示する。
+TERMINAL_CASE_STATUSES = {
+    Case.STATUS_COMPLETED,
+    Case.STATUS_WITHDRAWN,
+    Case.STATUS_REJECTED,
+}
 
 
 class ReceptionCreateView(APIView):
@@ -21,114 +32,167 @@ class ReceptionCreateView(APIView):
         return Response(result, status=status.HTTP_201_CREATED)
 
 
+def build_dashboard_deadlines(today, include_dismissed=False):
+    """ダッシュボードの期限提醒一覧を計算する。
+
+    include_dismissed=True のときは、非表示（DismissedDeadline）・案件終了による
+    自動除外のフィルタを一切かけず、期限日ベースの生データをすべて返す
+    （一括非表示アクションが「今まさに表示されている過期項目」を漏れなく拾うために使う）。
+    """
+    items = []
+
+    dismissed_map = {}
+    if not include_dismissed:
+        dismissed_map = {
+            (row['source_type'], row['source_id'], row['deadline_type'], row['deadline_date']): row['created_at']
+            for row in DismissedDeadline.objects.values('source_type', 'source_id', 'deadline_type', 'deadline_date', 'created_at')
+        }
+
+    # 非表示にした後で「その人物／会社について新しい案件が作られた」場合は、
+    # 非表示の効力を失わせて再度表示する（"直到我新建关于他的新项目"）。
+    customer_latest_case_at = dict(
+        Case.objects.values('customer_id').annotate(latest=Max('created_at')).values_list('customer_id', 'latest')
+    )
+    company_latest_case_at = dict(
+        Case.objects.exclude(company__isnull=True)
+        .values('company_id').annotate(latest=Max('created_at')).values_list('company_id', 'latest')
+    )
+    family_member_head_customer_id = dict(FamilyMember.objects.values_list('id', 'customer_id'))
+
+    def dismissal_is_stale(target_type, target_id, dismissed_at):
+        if target_type == 'customer':
+            latest = customer_latest_case_at.get(target_id)
+        elif target_type == 'company':
+            latest = company_latest_case_at.get(target_id)
+        elif target_type == 'family_member':
+            head_id = family_member_head_customer_id.get(target_id)
+            latest = customer_latest_case_at.get(head_id) if head_id else None
+        else:
+            latest = None
+        return latest is not None and latest > dismissed_at
+
+    def latest_case(queryset):
+        return queryset.select_related('customer', 'company').order_by('-updated_at', '-id').first()
+
+    def case_data(case):
+        if case is None:
+            return {
+                'case_id': None,
+                'case_number': '-',
+                'case_type': '-',
+            }
+        return {
+            'case_id': case.id,
+            'case_number': case.case_number,
+            'case_type': case.case_type,
+        }
+
+    def add_deadline(deadline_type, target_type, target_id, target_name, deadline_label, deadline_date, case):
+        if not deadline_date:
+            return
+        # 案件が完了・取下げ・不許可で終わっていれば、期限をどれだけ過ぎていても
+        # もう動きが無いはずなので出さない（案件が無い場合は判断材料が無いので出し続ける）。
+        if not include_dismissed and case is not None and case.status in TERMINAL_CASE_STATUSES:
+            return
+        key = (target_type, target_id, deadline_type, deadline_date)
+        if key in dismissed_map and not dismissal_is_stale(target_type, target_id, dismissed_map[key]):
+            return
+        days_left = (deadline_date - today).days
+        if days_left > 180:
+            return
+        status_value = 'overdue' if days_left < 0 else 'today' if days_left == 0 else 'upcoming'
+        items.append({
+            'type': deadline_type,
+            'target_type': target_type,
+            'target_id': target_id,
+            'target_name': target_name,
+            'deadline_label': deadline_label,
+            'deadline_date': deadline_date.isoformat(),
+            'days_left': days_left,
+            'status': status_value,
+            **case_data(case),
+        })
+
+    # 実在する Customer は「本人の案件」「家族滞在の対象」「会社スタッフ」の複数経路から
+    # 同じ人物にたどり着くことがある（例：本人の案件も持ち、別会社のスタッフでもある）。
+    # customer_id を鍵に1人1エントリへ集約し、案件番号は本人の案件を優先、なければ
+    # 家族／会社側で見つかった案件で補完する。
+    customer_entries = {}
+    for customer in Customer.objects.all():
+        customer_entries[customer.id] = {
+            'name': customer.name,
+            'residence_expiry': customer.residence_expiry,
+            'passport_expiry': customer.passport_expiry,
+            'case': latest_case(customer.cases),
+        }
+
+    for family_member in FamilyMember.objects.select_related('customer', 'family_customer'):
+        person = family_member.family_customer
+        if person:
+            entry = customer_entries.get(person.id)
+            if entry and entry['case'] is None:
+                entry['case'] = latest_case(family_member.customer.cases)
+            continue
+        # family_customer 未紐付けの旧仕様レコード。パスポート期限はこの段階のデータに存在しない。
+        case = latest_case(family_member.customer.cases)
+        add_deadline(
+            'residence_expiry',
+            'family_member',
+            family_member.id,
+            family_member.name,
+            '在留期限',
+            family_member.residence_expiry,
+            case,
+        )
+
+    for staff_member in CompanyStaff.objects.select_related('company', 'customer'):
+        person = staff_member.customer
+        if not person:
+            continue
+        entry = customer_entries.get(person.id)
+        if entry and entry['case'] is None:
+            entry['case'] = latest_case(staff_member.company.cases)
+
+    for customer_id, entry in customer_entries.items():
+        add_deadline(
+            'residence_expiry',
+            'customer',
+            customer_id,
+            entry['name'],
+            '在留期限',
+            entry['residence_expiry'],
+            entry['case'],
+        )
+        add_deadline(
+            'passport_expiry',
+            'customer',
+            customer_id,
+            entry['name'],
+            'パスポート期限',
+            entry['passport_expiry'],
+            entry['case'],
+        )
+
+    for company in Company.objects.all():
+        fiscal_deadline = DashboardDeadlinesView.get_next_fiscal_declaration_deadline(company.fiscal_month, today)
+        add_deadline(
+            'fiscal_declaration',
+            'company',
+            company.id,
+            company.name,
+            '決算申告期限',
+            fiscal_deadline,
+            latest_case(company.cases),
+        )
+
+    items.sort(key=lambda item: (item['days_left'], item['deadline_date'], item['target_name']))
+    return items
+
+
 class DashboardDeadlinesView(APIView):
     def get(self, request):
         today = timezone.localdate()
-        items = []
-
-        def latest_case(queryset):
-            return queryset.select_related('customer', 'company').order_by('-updated_at', '-id').first()
-
-        def case_data(case):
-            if case is None:
-                return {
-                    'case_id': None,
-                    'case_number': '-',
-                    'case_type': '-',
-                }
-            return {
-                'case_id': case.id,
-                'case_number': case.case_number,
-                'case_type': case.case_type,
-            }
-
-        def add_deadline(deadline_type, target_type, target_name, deadline_label, deadline_date, case):
-            if not deadline_date:
-                return
-            days_left = (deadline_date - today).days
-            if days_left > 180:
-                return
-            status_value = 'overdue' if days_left < 0 else 'today' if days_left == 0 else 'upcoming'
-            items.append({
-                'type': deadline_type,
-                'target_type': target_type,
-                'target_name': target_name,
-                'deadline_label': deadline_label,
-                'deadline_date': deadline_date.isoformat(),
-                'days_left': days_left,
-                'status': status_value,
-                **case_data(case),
-            })
-
-        # 実在する Customer は「本人の案件」「家族滞在の対象」「会社スタッフ」の複数経路から
-        # 同じ人物にたどり着くことがある（例：本人の案件も持ち、別会社のスタッフでもある）。
-        # customer_id を鍵に1人1エントリへ集約し、案件番号は本人の案件を優先、なければ
-        # 家族／会社側で見つかった案件で補完する。
-        customer_entries = {}
-        for customer in Customer.objects.all():
-            customer_entries[customer.id] = {
-                'name': customer.name,
-                'residence_expiry': customer.residence_expiry,
-                'passport_expiry': customer.passport_expiry,
-                'case': latest_case(customer.cases),
-            }
-
-        for family_member in FamilyMember.objects.select_related('customer', 'family_customer'):
-            person = family_member.family_customer
-            if person:
-                entry = customer_entries.get(person.id)
-                if entry and entry['case'] is None:
-                    entry['case'] = latest_case(family_member.customer.cases)
-                continue
-            # family_customer 未紐付けの旧仕様レコード。パスポート期限はこの段階のデータに存在しない。
-            case = latest_case(family_member.customer.cases)
-            add_deadline(
-                'residence_expiry',
-                'family_member',
-                family_member.name,
-                '在留期限',
-                family_member.residence_expiry,
-                case,
-            )
-
-        for staff_member in CompanyStaff.objects.select_related('company', 'customer'):
-            person = staff_member.customer
-            if not person:
-                continue
-            entry = customer_entries.get(person.id)
-            if entry and entry['case'] is None:
-                entry['case'] = latest_case(staff_member.company.cases)
-
-        for entry in customer_entries.values():
-            add_deadline(
-                'residence_expiry',
-                'customer',
-                entry['name'],
-                '在留期限',
-                entry['residence_expiry'],
-                entry['case'],
-            )
-            add_deadline(
-                'passport_expiry',
-                'customer',
-                entry['name'],
-                'パスポート期限',
-                entry['passport_expiry'],
-                entry['case'],
-            )
-
-        for company in Company.objects.all():
-            fiscal_deadline = self.get_next_fiscal_declaration_deadline(company.fiscal_month, today)
-            add_deadline(
-                'fiscal_declaration',
-                'company',
-                company.name,
-                '決算申告期限',
-                fiscal_deadline,
-                latest_case(company.cases),
-            )
-
-        items.sort(key=lambda item: (item['days_left'], item['deadline_date'], item['target_name']))
+        items = build_dashboard_deadlines(today)
         return Response(items)
 
     @staticmethod

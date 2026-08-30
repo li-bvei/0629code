@@ -10,7 +10,8 @@ import {
   listResidenceStatusMasters,
   updateCustomer,
 } from '../api/customers'
-import type { CreateCustomerPayload, Customer, ResidenceStatusMaster } from '../types/api'
+import { listFamilyMembers } from '../api/familyMembers'
+import type { CreateCustomerPayload, Customer, FamilyMember, ResidenceStatusMaster } from '../types/api'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const router = useRouter()
@@ -24,6 +25,9 @@ const currentPage = ref(1)
 const pageSize = 20
 const searchKeyword = ref('')
 const residenceStatusFilter = ref('')
+const showDependents = ref(false)
+const familyMembersByCustomer = ref<Record<number, FamilyMember[]>>({})
+const familyMembersLoading = ref<Record<number, boolean>>({})
 const dialogVisible = ref(false)
 const editingCustomerId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
@@ -60,14 +64,33 @@ const fetchCustomers = async (page = currentPage.value) => {
       page,
       search: keyword || undefined,
       residence_status: residenceStatusFilter.value || undefined,
+      exclude_dependents: showDependents.value ? undefined : true,
     })
     customers.value = data.results
     total.value = data.count
     currentPage.value = page
+    familyMembersByCustomer.value = {}
   } catch {
     errorMessage.value = 'データの取得に失敗しました。'
   } finally {
     loading.value = false
+  }
+}
+
+const toggleShowDependents = () => {
+  fetchCustomers(1)
+}
+
+const loadFamilyMembers = async (customer: Customer) => {
+  if (familyMembersByCustomer.value[customer.id] || familyMembersLoading.value[customer.id]) return
+  familyMembersLoading.value[customer.id] = true
+  try {
+    const data = await listFamilyMembers({ customer: customer.id })
+    familyMembersByCustomer.value[customer.id] = data.results
+  } catch {
+    familyMembersByCustomer.value[customer.id] = []
+  } finally {
+    familyMembersLoading.value[customer.id] = false
   }
 }
 
@@ -212,14 +235,52 @@ const confirmDeleteCustomer = async (customer: Customer) => {
         <el-button type="primary" @click="searchCustomers">検索</el-button>
         <el-button @click="clearSearch">クリア</el-button>
       </div>
+      <div class="dependents-switch-row">
+        <el-switch
+          v-model="showDependents"
+          active-text="家族も含めて全件表示"
+          inactive-text="主申請人のみ表示"
+          @change="toggleShowDependents"
+        />
+      </div>
     </el-card>
 
     <el-card shadow="never">
-      <el-table v-loading="loading" :data="customers" stripe>
+      <el-table v-loading="loading" :data="customers" stripe @expand-change="loadFamilyMembers">
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div class="family-expand">
+              <template v-if="familyMembersLoading[row.id]">
+                <el-text type="info">読み込み中…</el-text>
+              </template>
+              <template v-else-if="!familyMembersByCustomer[row.id]?.length">
+                <el-text type="info">家族情報の登録はありません。</el-text>
+              </template>
+              <template v-else>
+                <div v-for="member in familyMembersByCustomer[row.id]" :key="member.id" class="family-expand-row">
+                  <el-tag size="small" effect="plain">{{ member.relationship_display }}</el-tag>
+                  <router-link
+                    v-if="member.family_customer"
+                    class="text-link"
+                    :to="`/customers/${member.family_customer}`"
+                  >{{ member.name || '未入力' }}</router-link>
+                  <span v-else>{{ member.name || '未入力' }}</span>
+                  <span class="family-expand-birth">{{ formatDate(member.birth_date) }}</span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column label="氏名" min-width="160">
+        <el-table-column label="氏名" min-width="200">
           <template #default="{ row }">
             <router-link class="text-link" :to="`/customers/${row.id}`">{{ row.name }}</router-link>
+            <el-tag v-if="row.is_dependent && row.primary_applicant" size="small" type="info" class="dependent-tag">
+              {{ row.primary_applicant.name }}の{{ row.primary_applicant.relationship_display }}
+            </el-tag>
+            <el-tag v-else-if="row.dependents_count" size="small" type="success" class="dependent-tag">
+              家族 {{ row.dependents_count }}名
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="生年月日" width="130">
@@ -357,3 +418,29 @@ const confirmDeleteCustomer = async (customer: Customer) => {
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.dependents-switch-row {
+  margin-top: 12px;
+}
+
+.dependent-tag {
+  margin-left: 8px;
+}
+
+.family-expand {
+  padding: 8px 24px;
+}
+
+.family-expand-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.family-expand-birth {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+</style>
