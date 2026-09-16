@@ -546,6 +546,33 @@ class VisaReturnApplicationViewSet(ModelViewSet):
         user = self.request.user if self.request.user.is_authenticated else None
         serializer.save(created_by=user)
 
+    @action(detail=False, methods=['post'], url_path='bulk-create')
+    def bulk_create(self, request):
+        applications = request.data.get('applications') if isinstance(request.data, dict) else None
+        if not isinstance(applications, list) or not applications:
+            return Response(
+                {'applications': ['申請人データを1件以上指定してください。']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(applications) > 100:
+            return Response(
+                {'applications': ['一度に作成できるのは100件までです。']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=applications, many=True)
+        serializer.is_valid(raise_exception=True)
+        user = request.user if request.user.is_authenticated else None
+        with transaction.atomic():
+            created = serializer.save(created_by=user)
+        return Response(
+            {
+                'created': len(created),
+                'applications': self.get_serializer(created, many=True).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
         application = self.get_object()

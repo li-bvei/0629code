@@ -24,6 +24,7 @@ import type {
   VisaReturnMaritalStatus,
 } from '../types/accounting'
 import { formatDate } from '../utils/date'
+import VisaReturnBatchDrawer from '../components/VisaReturnBatchDrawer.vue'
 import './accounting/accounting.css'
 
 type VisaReturnForm = VisaReturnApplicationPayload & {
@@ -36,6 +37,7 @@ const submitting = ref(false)
 const dialogVisible = ref(false)
 const detailVisible = ref(false)
 const templateDrawerVisible = ref(false)
+const batchDrawerVisible = ref(false)
 const applications = ref<VisaReturnApplication[]>([])
 const guarantorTemplates = ref<VisaGuarantorTemplate[]>([])
 const selectedApplication = ref<VisaReturnApplication | null>(null)
@@ -51,6 +53,7 @@ const filters = ref({
 })
 const templateSearch = ref('')
 const templateLoading = ref(false)
+const selectedGuarantorTemplateId = ref<number | null>(null)
 
 const createEmptyTemplateForm = (): VisaGuarantorTemplatePayload => ({
   name: '',
@@ -350,6 +353,7 @@ const applyGuarantorTemplate = (templateId?: number | string) => {
 
 const resetForm = () => {
   editingId.value = null
+  selectedGuarantorTemplateId.value = null
   form.value = createEmptyForm()
   formRef.value?.clearValidate()
 }
@@ -357,6 +361,16 @@ const resetForm = () => {
 const openCreateDialog = () => {
   resetForm()
   dialogVisible.value = true
+}
+
+const openBatchDrawer = async () => {
+  if (!guarantorTemplates.value.length) await fetchGuarantorTemplates()
+  batchDrawerVisible.value = true
+}
+
+const openTemplatesFromBatch = async () => {
+  batchDrawerVisible.value = false
+  await openTemplateDrawer()
 }
 
 const openEditDialog = (application: VisaReturnApplication) => {
@@ -388,6 +402,8 @@ const openEditDialog = (application: VisaReturnApplication) => {
     note: application.note,
   }
   formRef.value?.clearValidate()
+  const templateId = Number((application.guarantor_snapshot as Record<string, unknown>)?.guarantor_template_id)
+  selectedGuarantorTemplateId.value = Number.isFinite(templateId) ? templateId : null
   dialogVisible.value = true
 }
 
@@ -589,13 +605,20 @@ onMounted(() => {
       <div class="page-header-row">
         <div>
           <h1>返签 visa 表作成</h1>
-          <p>返签 visa 表の申請情報を登録し、テンプレート PDF を出力できます。</p>
+          <p>担保人を一度選び、複数の申請人を続けて登録・PDF 出力できます。</p>
         </div>
         <div class="accounting-toolbar">
           <el-button @click="openTemplateDrawer">在日担保人模板管理</el-button>
-          <el-button type="primary" @click="openCreateDialog">新規作成</el-button>
+          <el-button @click="openCreateDialog">1名を詳細入力</el-button>
+          <el-button type="primary" @click="openBatchDrawer">多人一括作成</el-button>
         </div>
       </div>
+    </div>
+
+    <div class="visa-quick-flow" aria-label="一括作成の流れ">
+      <div><strong>1. 担保人を選ぶ</strong><span>公文・清風などの登録情報を全員へ反映</span></div>
+      <div><strong>2. 申請人をまとめる</strong><span>顧客データ、空欄入力、Excel 貼付に対応</span></div>
+      <div><strong>3. 一度に保存</strong><span>人数分の記録をまとめて作成</span></div>
     </div>
 
     <el-card class="accounting-filter-card" shadow="never">
@@ -826,6 +849,7 @@ onMounted(() => {
           <div class="form-section-title visa-return-full">在日保証人情報</div>
           <el-form-item label="在日担保人模板选择" class="visa-return-full">
             <el-select
+              v-model="selectedGuarantorTemplateId"
               clearable
               filterable
               class="form-control"
@@ -906,6 +930,13 @@ onMounted(() => {
         <el-button type="primary" :loading="submitting" @click="submitApplication">保存</el-button>
       </template>
     </el-dialog>
+
+    <VisaReturnBatchDrawer
+      v-model="batchDrawerVisible"
+      :guarantor-templates="guarantorTemplates"
+      @saved="fetchApplications(1)"
+      @manage-templates="openTemplatesFromBatch"
+    />
 
     <el-drawer v-model="templateDrawerVisible" title="在日担保人模板管理" size="760px">
       <div class="visa-template-drawer">
@@ -1044,6 +1075,34 @@ onMounted(() => {
   gap: 0 16px;
 }
 
+.visa-quick-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.visa-quick-flow > div {
+  display: flex;
+  min-height: 70px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 13px 16px;
+  border: 1px solid rgba(170, 212, 244, 0.58);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.visa-quick-flow strong {
+  color: var(--sunrise-text);
+  font-size: 13px;
+}
+
+.visa-quick-flow span {
+  margin-top: 4px;
+  color: var(--sunrise-muted);
+  font-size: 12px;
+}
+
 .visa-return-full {
   grid-column: 1 / -1;
 }
@@ -1115,6 +1174,7 @@ onMounted(() => {
 }
 
 @media (max-width: 720px) {
+  .visa-quick-flow,
   .visa-return-form,
   .visa-return-detail-row {
     grid-template-columns: 1fr;
