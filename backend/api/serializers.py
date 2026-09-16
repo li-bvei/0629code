@@ -7,6 +7,7 @@ from apps.cases.utils import auto_apply_default_checklist_template
 from apps.customers.models import Customer, FamilyMember
 from apps.customers.utils import sync_reverse_family_link
 from apps.timelines.models import Timeline
+from apps.timelines.services import record_case_event
 
 
 def has_any_value(data):
@@ -145,36 +146,66 @@ class ReceptionCaseSerializer(serializers.Serializer):
 
 
 class ReceptionSerializer(serializers.Serializer):
-    customer = ReceptionCustomerSerializer()
+    # 新規受付 STEP1 で既存顧客が確定した場合は existing_customer_id を渡す。
+    # その場合 customer（新規作成データ）は不要。
+    existing_customer_id = serializers.IntegerField(required=False, allow_null=True)
+    # 既存会社を選んだ場合は existing_company_id を渡す。その場合 company（新規作成データ）は不要。
+    existing_company_id = serializers.IntegerField(required=False, allow_null=True)
+    customer = ReceptionCustomerSerializer(required=False)
     family_members = ReceptionFamilyMemberSerializer(many=True, required=False)
     company = ReceptionCompanySerializer(required=False)
     case = ReceptionCaseSerializer(required=False)
 
+    def validate(self, attrs):
+        if not attrs.get('existing_customer_id') and not attrs.get('customer'):
+            raise serializers.ValidationError(
+                {'customer': '既存顧客を選択するか、新規顧客情報を入力してください。'}
+            )
+        if attrs.get('existing_customer_id'):
+            if not Customer.objects.filter(pk=attrs['existing_customer_id']).exists():
+                raise serializers.ValidationError(
+                    {'existing_customer_id': '指定された顧客が見つかりません。'}
+                )
+        if attrs.get('existing_company_id'):
+            if not Company.objects.filter(pk=attrs['existing_company_id']).exists():
+                raise serializers.ValidationError(
+                    {'existing_company_id': '指定された会社が見つかりません。'}
+                )
+        return attrs
+
     def create(self, validated_data):
-        customer_data = validated_data['customer']
+        existing_customer_id = validated_data.get('existing_customer_id')
+        existing_company_id = validated_data.get('existing_company_id')
+        customer_data = validated_data.get('customer')
         family_members_data = validated_data.get('family_members', [])
         company_data = validated_data.get('company') or {}
         case_data = validated_data.get('case') or {}
 
         with transaction.atomic():
-            customer_data['gender'] = normalize_gender(customer_data.get('gender'))
-            customer = Customer.objects.create(**customer_data)
+            if existing_customer_id:
+                customer = Customer.objects.get(pk=existing_customer_id)
+                customer_reused = True
+            else:
+                customer_data = dict(customer_data)
+                customer_data['gender'] = normalize_gender(customer_data.get('gender'))
+                customer = Customer.objects.create(**customer_data)
+                customer_reused = False
 
             family_members = []
             for family_member_data in family_members_data:
                 if not has_any_value(family_member_data):
                     continue
-                existing_customer_id = family_member_data.pop('customer', None)
+                family_member_existing_customer_id = family_member_data.pop('customer', None)
                 relationship = normalize_relationship(family_member_data.pop('relationship', None))
                 is_dependent = family_member_data.pop('is_dependent', False)
                 note = family_member_data.pop('note', '')
 
-                if existing_customer_id:
+                if family_member_existing_customer_id:
                     try:
-                        family_customer = Customer.objects.get(pk=existing_customer_id)
+                        family_customer = Customer.objects.get(pk=family_member_existing_customer_id)
                     except Customer.DoesNotExist:
                         raise serializers.ValidationError(
-                            {'family_members': f'指定された顧客（id={existing_customer_id}）が見つかりません。'}
+                            {'family_members': f'指定された顧客（id={family_member_existing_customer_id}）が見つかりません。'}
                         )
                 else:
                     family_member_data['gender'] = normalize_gender(family_member_data.get('gender'))
@@ -204,20 +235,27 @@ class ReceptionSerializer(serializers.Serializer):
                 family_members.append(family_member)
 
             company = None
-            representative_customer_is_current_customer = company_data.pop(
-                'representative_customer_is_current_customer',
-                False,
-            )
-            representative_customer_id = company_data.pop('representative_customer', None)
-            if has_any_value(company_data) or representative_customer_id:
-                if representative_customer_is_current_customer:
-                    company_data['representative_customer'] = customer
-                elif representative_customer_id:
-                    company_data['representative_customer_id'] = representative_customer_id
-                company = Company.objects.create(**company_data)
+            company_reused = False
+            if existing_company_id:
+                company = Company.objects.get(pk=existing_company_id)
+                company_reused = True
+            else:
+                representative_customer_is_current_customer = company_data.pop(
+                    'representative_customer_is_current_customer',
+                    False,
+                )
+                representative_customer_id = company_data.pop('representative_customer', None)
+                if has_any_value(company_data) or representative_customer_id:
+                    if representative_customer_is_current_customer:
+                        company_data['representative_customer'] = customer
+                    elif representative_customer_id:
+                        company_data['representative_customer_id'] = representative_customer_id
+                    company = Company.objects.create(**company_data)
 
             case = None
+            checklist_items = []
             if case_data.get('case_type_master') and case_data.get('application_category'):
+                actor = getattr(self.context.get('request'), 'user', None)
                 case = Case.objects.create(
                     case_type_master=case_data['case_type_master'],
                     application_category=case_data['application_category'],
@@ -226,18 +264,30 @@ class ReceptionSerializer(serializers.Serializer):
                     responsible_employee_id=case_data.get('responsible_employee'),
                     accepted_at=case_data.get('accepted_at'),
                 )
-                Timeline.objects.create(
-                    case=case,
-                    title='新規受付',
-                    content='新規受付ページから案件を作成しました。',
-                    is_visible_to_client=False,
+                record_case_event(
+                    case,
+                    Timeline.EVENT_CASE_CREATED,
+                    '新規受付',
+                    description=(
+                        '新規受付から案件を作成しました。'
+                        + ('（既存顧客を使用）' if customer_reused else '（新規顧客を登録）')
+                    ),
+                    actor=actor,
+                    metadata={
+                        'customer_reused': customer_reused,
+                        'customer_id': customer.id,
+                        'source': 'reception',
+                    },
                 )
-                auto_apply_default_checklist_template(case)
+                checklist_items = auto_apply_default_checklist_template(case) or []
 
         return {
             'customer': customer.id,
+            'customer_reused': customer_reused,
             'company': company.id if company else None,
+            'company_reused': company_reused,
             'case': case.id if case else None,
             'case_number': case.case_number if case else None,
+            'checklist_item_count': len(checklist_items),
             'family_members': [family_member.id for family_member in family_members],
         }

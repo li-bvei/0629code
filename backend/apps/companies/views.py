@@ -1,3 +1,4 @@
+from rest_framework.filters import SearchFilter
 from rest_framework.viewsets import ModelViewSet
 
 from .models import Company, CompanyStaff
@@ -7,6 +8,15 @@ from .serializers import CompanySerializer, CompanyStaffSerializer
 class CompanyViewSet(ModelViewSet):
     queryset = Company.objects.select_related('representative_customer')
     serializer_class = CompanySerializer
+    filter_backends = [SearchFilter]
+    # リモート検索セレクタ用：会社名・フリガナ・代表者名・法人番号で引ける。
+    search_fields = [
+        'name',
+        'name_kana',
+        'representative_name',
+        'representative_name_kana',
+        'corporate_number',
+    ]
 
 
 class CompanyStaffViewSet(ModelViewSet):

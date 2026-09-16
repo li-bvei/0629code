@@ -1,5 +1,7 @@
 # ROADMAP
 
+> 高层路线图。接手项目时先阅读 docs/AI_HANDOFF.md；本文件保留原始 MVP 路线，最新 P0/P1/P2 优先级以 AI_HANDOFF.md 为准。
+
 
 ## 1. MVP Milestones
 

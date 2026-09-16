@@ -5,7 +5,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { createCase, listCaseApplicationCategories, listCases, listCaseTypeMasters } from '../api/cases'
-import { getCompany } from '../api/companies'
+import { getCompany, updateCompany } from '../api/companies'
 import { listCustomers, listResidenceStatusMasters } from '../api/customers'
 import { listEmployees } from '../api/employees'
 import {
@@ -14,7 +14,10 @@ import {
   listCompanyStaff,
   updateCompanyStaff,
 } from '../api/companyStaff'
-import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, CreateCustomerPayload, Customer, Employee, ResidenceStatusMaster } from '../types/api'
+import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
+import { bankAccountTypeOptions, fiscalMonthOptions } from '../constants/options'
+import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, CreateCompanyPayload, CreateCustomerPayload, Customer, Employee, ResidenceStatusMaster } from '../types/api'
+import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -36,6 +39,11 @@ const employees = ref<Employee[]>([])
 const caseTypes = ref<CaseTypeMaster[]>([])
 const applicationCategories = ref<CaseApplicationCategory[]>([])
 const residenceStatusOptions = ref<ResidenceStatusMaster[]>([])
+const activeSection = ref<'overview' | 'staff' | 'cases'>('overview')
+const companyDialogVisible = ref(false)
+const companySubmitting = ref(false)
+const companyFormRef = ref<FormInstance>()
+const companyForm = ref<CreateCompanyPayload>({ name: '' })
 const caseForm = ref<CasePayload>({
   case_type_master: null,
   application_category: null,
@@ -60,6 +68,16 @@ const sortedStaffMembers = computed(() => (
     return left.name.localeCompare(right.name, 'ja')
   })
 ))
+
+const activeStaffMembers = computed(() => staffMembers.value.filter((staff) => !staff.employment_end_date))
+const activeCases = computed(() => relatedCases.value.filter((caseItem) => (
+  caseItem.registration_status === 'active'
+  && !['rejected', 'withdrawn', 'completed'].includes(caseItem.status)
+)))
+const historicalCases = computed(() => relatedCases.value.filter((caseItem) => (
+  !activeCases.value.some((activeCase) => activeCase.id === caseItem.id)
+)))
+const primaryCase = computed(() => activeCases.value[0] || relatedCases.value[0] || null)
 
 interface StaffEditForm {
   company: number
@@ -142,11 +160,64 @@ const caseRules: FormRules<CasePayload> = {
   customer: [{ required: true, message: '顧客を選択してください。', trigger: 'change' }],
 }
 
+const companyRules: FormRules<CreateCompanyPayload> = {
+  name: [{ required: true, message: '会社名を入力してください。', trigger: 'blur' }],
+}
+
 const displayValue = (value?: string | null) => value || '-'
 const formatFiscalMonth = (value?: string | null) => (value ? `${value}月` : '-')
+const formatGender = (value?: string | null) => ({ male: '男性', female: '女性', other: 'その他' }[value || ''] || displayValue(value))
 const getRepresentativeName = (companyData: Company) => (
   companyData.representative_customer_name || companyData.representative_name
 )
+
+const getCorporateRegistrationNumber = (corporateNumber?: string) => (
+  corporateNumber && /^\d{13}$/.test(corporateNumber) ? corporateNumber.slice(1) : '自動生成'
+)
+
+const openCompanyEditDialog = () => {
+  if (!company.value) return
+  companyForm.value = {
+    name: company.value.name,
+    name_kana: company.value.name_kana,
+    representative_customer: company.value.representative_customer,
+    representative_name: company.value.representative_name,
+    representative_name_kana: company.value.representative_name_kana,
+    representative_postal_code: company.value.representative_postal_code,
+    representative_address: company.value.representative_address,
+    corporate_number: company.value.corporate_number,
+    email: company.value.email,
+    phone: company.value.phone,
+    postal_code: company.value.postal_code,
+    address: company.value.address,
+    fiscal_month: company.value.fiscal_month,
+    establishment_symbol: company.value.establishment_symbol,
+    establishment_number: company.value.establishment_number,
+    bank_name: company.value.bank_name,
+    bank_branch: company.value.bank_branch,
+    bank_account_type: company.value.bank_account_type,
+    bank_account_number: company.value.bank_account_number,
+  }
+  companyFormRef.value?.clearValidate()
+  companyDialogVisible.value = true
+}
+
+const submitCompany = async () => {
+  if (!companyFormRef.value) return
+  const valid = await companyFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  companySubmitting.value = true
+  try {
+    await updateCompany(companyId.value, companyForm.value)
+    ElMessage.success('会社情報を更新しました。')
+    companyDialogVisible.value = false
+    await fetchCompanyDetail()
+  } catch {
+    ElMessage.error('会社情報の更新に失敗しました。')
+  } finally {
+    companySubmitting.value = false
+  }
+}
 
 const fetchCompanyDetail = async () => {
   loading.value = true
@@ -155,7 +226,7 @@ const fetchCompanyDetail = async () => {
     const [companyData, staffData, caseData] = await Promise.all([
       getCompany(companyId.value),
       listCompanyStaff({ company: companyId.value }),
-      listCases({ company: companyId.value }),
+      listCases({ company: companyId.value, page_size: 200, ordering: '-updated_at' }),
     ])
     company.value = companyData
     staffMembers.value = staffData.results
@@ -374,148 +445,95 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <div class="page-header page-header-row">
-      <h1>会社詳細</h1>
-      <el-button @click="router.push('/companies')">一覧へ戻る</el-button>
-    </div>
+    <div class="page-header page-header-row"><h1>会社詳細</h1><el-button @click="router.push('/companies')">一覧へ戻る</el-button></div>
 
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
 
-    <div v-loading="loading" class="detail-grid">
-      <el-card shadow="never">
-        <template #header>会社基本情報</template>
-        <el-descriptions v-if="company" :column="2" border>
-          <el-descriptions-item label="会社名フリガナ" :span="2">{{ displayValue(company.name_kana) }}</el-descriptions-item>
-          <el-descriptions-item label="会社名" :span="2">{{ displayValue(company.name) }}</el-descriptions-item>
-          <el-descriptions-item label="代表者フリガナ" :span="2">{{ displayValue(company.representative_name_kana) }}</el-descriptions-item>
-          <el-descriptions-item label="代表者氏名" :span="2">
-            <router-link
-              v-if="company.representative_customer"
-              class="text-link"
-              :to="`/customers/${company.representative_customer}`"
-            >
-              {{ displayValue(getRepresentativeName(company)) }}
-            </router-link>
-            <span v-else>{{ displayValue(getRepresentativeName(company)) }}</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="代表者郵便番号">{{ displayValue(company.representative_postal_code) }}</el-descriptions-item>
-          <el-descriptions-item label="代表者住所">{{ displayValue(company.representative_address) }}</el-descriptions-item>
-          <el-descriptions-item label="法人番号">{{ displayValue(company.corporate_number) }}</el-descriptions-item>
-          <el-descriptions-item label="会社法人等番号">{{ displayValue(company.corporate_registration_number) }}</el-descriptions-item>
-          <el-descriptions-item label="メール">{{ displayValue(company.email) }}</el-descriptions-item>
-          <el-descriptions-item label="電話番号">{{ displayValue(company.phone) }}</el-descriptions-item>
-          <el-descriptions-item label="郵便番号" :span="2">{{ displayValue(company.postal_code) }}</el-descriptions-item>
-          <el-descriptions-item label="住所" :span="2">{{ displayValue(company.address) }}</el-descriptions-item>
-          <el-descriptions-item label="決算月">{{ formatFiscalMonth(company.fiscal_month) }}</el-descriptions-item>
-          <el-descriptions-item label="事業所整理記号（年金の記号）">{{ displayValue(company.establishment_symbol) }}</el-descriptions-item>
-          <el-descriptions-item label="事業所番号">{{ displayValue(company.establishment_number) }}</el-descriptions-item>
-        </el-descriptions>
-      </el-card>
-
-      <el-card shadow="never">
-        <template #header>銀行情報</template>
-        <el-descriptions v-if="company" :column="2" border>
-          <el-descriptions-item label="銀行名">{{ displayValue(company.bank_name) }}</el-descriptions-item>
-          <el-descriptions-item label="支店名">{{ displayValue(company.bank_branch) }}</el-descriptions-item>
-          <el-descriptions-item label="預金種別">{{ displayValue(company.bank_account_type) }}</el-descriptions-item>
-          <el-descriptions-item label="口座番号">{{ displayValue(company.bank_account_number) }}</el-descriptions-item>
-        </el-descriptions>
-      </el-card>
-
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header-row">
-            <span>従業員情報</span>
-            <el-button type="primary" @click="openCreateStaffDialog">従業員追加</el-button>
-          </div>
-        </template>
-        <div v-if="staffMembers.length" class="staff-member-list">
-          <div
-            v-for="staff in sortedStaffMembers"
-            :key="staff.id"
-            class="staff-member-block"
-            :class="{ 'is-retired': staff.employment_end_date }"
-          >
-            <div class="staff-member-header">
-              <div class="staff-member-title">
-                <strong>{{ displayValue(staff.name) }}</strong>
-                <el-tag v-if="staff.employment_end_date" size="small" type="info">退社済み</el-tag>
-                <el-tag v-else-if="staff.customer" size="small" type="success">在職中</el-tag>
-              </div>
-              <el-dropdown trigger="click">
-                <el-button text type="primary" class="table-action-trigger">
-                  操作
-                  <el-icon><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item @click="openEditStaffDialog(staff)">編集</el-dropdown-item>
-                    <el-dropdown-item divided class="danger-item" @click="confirmDeleteStaff(staff)">削除</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-            <el-descriptions :column="2" border>
-              <el-descriptions-item label="紐付く顧客" :span="2">
-                <router-link v-if="staff.customer" class="text-link" :to="`/customers/${staff.customer}`">
-                  {{ staff.customer_name }}
-                </router-link>
-                <span v-else>-</span>
-              </el-descriptions-item>
-              <el-descriptions-item label="フリガナ" :span="2">{{ displayValue(staff.name_kana) }}</el-descriptions-item>
-              <el-descriptions-item label="氏名" :span="2">{{ displayValue(staff.name) }}</el-descriptions-item>
-              <el-descriptions-item label="役職">{{ displayValue(staff.position) }}</el-descriptions-item>
-              <el-descriptions-item label="生年月日">{{ formatDate(staff.birth_date) }}</el-descriptions-item>
-              <el-descriptions-item label="性別">{{ displayValue(staff.gender) }}</el-descriptions-item>
-              <el-descriptions-item label="国籍">{{ displayValue(staff.nationality) }}</el-descriptions-item>
-              <el-descriptions-item label="電話番号">{{ displayValue(staff.phone) }}</el-descriptions-item>
-              <el-descriptions-item label="メール">{{ displayValue(staff.email) }}</el-descriptions-item>
-              <el-descriptions-item label="郵便番号" :span="2">{{ displayValue(staff.postal_code) }}</el-descriptions-item>
-              <el-descriptions-item label="住所" :span="2">{{ displayValue(staff.address) }}</el-descriptions-item>
-              <el-descriptions-item label="在留資格" :span="2">{{ displayValue(staff.residence_status) }}</el-descriptions-item>
-              <el-descriptions-item label="在留カード番号">{{ displayValue(staff.residence_card_no) }}</el-descriptions-item>
-              <el-descriptions-item label="在留期限">{{ formatDate(staff.residence_expiry) }}</el-descriptions-item>
-              <el-descriptions-item label="パスポート番号">{{ displayValue(staff.passport_no) }}</el-descriptions-item>
-              <el-descriptions-item label="パスポート期限">{{ formatDate(staff.passport_expiry) }}</el-descriptions-item>
-              <el-descriptions-item label="入社日">{{ formatDate(staff.employment_start_date) }}</el-descriptions-item>
-              <el-descriptions-item label="退社日">{{ formatDate(staff.employment_end_date) }}</el-descriptions-item>
-              <el-descriptions-item label="マイナンバー">{{ displayValue(staff.my_number) }}</el-descriptions-item>
-              <el-descriptions-item label="備考" :span="2">{{ displayValue(staff.note) }}</el-descriptions-item>
-            </el-descriptions>
-          </div>
+    <div v-loading="loading" class="company-record-page">
+      <el-card v-if="company" shadow="never" class="record-profile-header">
+        <div class="record-header-main">
+          <div class="record-avatar">{{ company.name.slice(0, 1) }}</div>
+          <div class="record-identity"><p>{{ displayValue(company.name_kana) }}</p><h2>{{ company.name }}</h2><div class="record-tags"><el-tag effect="plain">会社 ID {{ company.id }}</el-tag><el-tag v-if="company.fiscal_month" type="info" effect="plain">決算 {{ formatFiscalMonth(company.fiscal_month) }}</el-tag></div></div>
+          <div class="record-actions"><el-button @click="openCompanyEditDialog">会社情報を編集</el-button><el-button @click="openCreateStaffDialog">従業員追加</el-button><el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button></div>
         </div>
-        <p v-if="!staffMembers.length" class="empty-text">従業員情報はありません</p>
+        <div class="record-contact-row"><span>代表者 {{ displayValue(getRepresentativeName(company)) }}</span><span>電話 {{ displayValue(company.phone) }}</span><span>メール {{ displayValue(company.email) }}</span><span>最終更新 {{ formatDateTime(company.updated_at) }}</span></div>
       </el-card>
 
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header-row">
-            <span>関連案件</span>
-            <el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button>
-          </div>
-        </template>
-        <el-table :data="relatedCases" stripe>
-          <el-table-column label="案件番号" min-width="150">
-            <template #default="{ row }">
-              <router-link class="text-link" :to="`/cases/${row.id}`">{{ row.case_number }}</router-link>
-            </template>
-          </el-table-column>
-          <el-table-column prop="case_type" label="案件種別" min-width="150" />
-          <el-table-column prop="status" label="ステータス" width="130" />
-          <el-table-column prop="customer_name" label="顧客名" min-width="150" />
-          <el-table-column prop="responsible_employee_name" label="担当者" min-width="140">
-            <template #default="{ row }">{{ displayValue(row.responsible_employee_name) }}</template>
-          </el-table-column>
-          <el-table-column label="受任日" width="130">
-            <template #default="{ row }">{{ formatDate(row.accepted_at) }}</template>
-          </el-table-column>
-          <el-table-column label="更新日時" min-width="160">
-            <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
-          </el-table-column>
-        </el-table>
-        <p v-if="!relatedCases.length" class="empty-text">該当データなし</p>
-      </el-card>
+      <div v-if="company" class="record-summary-grid">
+        <button type="button" class="record-summary-tile" @click="activeSection = 'cases'"><strong>{{ activeCases.length }}</strong><span>進行中案件</span></button>
+        <button type="button" class="record-summary-tile" @click="activeSection = 'cases'"><strong>{{ historicalCases.length }}</strong><span>履歴案件</span></button>
+        <button type="button" class="record-summary-tile" @click="activeSection = 'staff'"><strong>{{ activeStaffMembers.length }}</strong><span>在職者</span></button>
+        <button type="button" class="record-summary-tile" @click="activeSection = 'staff'"><strong>{{ staffMembers.length }}</strong><span>従業員履歴</span></button>
+      </div>
+
+      <div v-if="company" class="record-workspace">
+        <el-card shadow="never" class="record-main-card">
+          <el-tabs v-model="activeSection">
+            <el-tab-pane label="概要" name="overview">
+              <div class="company-overview-grid">
+                <section class="record-info-panel"><h3>会社基本情報</h3><dl class="record-field-list"><div><dt>会社名</dt><dd>{{ company.name }}</dd></div><div><dt>フリガナ</dt><dd>{{ displayValue(company.name_kana) }}</dd></div><div><dt>法人番号</dt><dd>{{ displayValue(company.corporate_number) }}</dd></div><div><dt>会社法人等番号</dt><dd>{{ displayValue(company.corporate_registration_number) }}</dd></div><div><dt>決算月</dt><dd>{{ formatFiscalMonth(company.fiscal_month) }}</dd></div></dl></section>
+                <section class="record-info-panel"><h3>連絡先・所在地</h3><dl class="record-field-list"><div><dt>電話番号</dt><dd>{{ displayValue(company.phone) }}</dd></div><div><dt>メール</dt><dd>{{ displayValue(company.email) }}</dd></div><div><dt>郵便番号</dt><dd>{{ displayValue(company.postal_code) }}</dd></div><div><dt>住所</dt><dd>{{ displayValue(company.address) }}</dd></div></dl></section>
+                <section class="record-info-panel"><h3>代表者</h3><dl class="record-field-list"><div><dt>氏名</dt><dd><router-link v-if="company.representative_customer" class="text-link" :to="`/customers/${company.representative_customer}`">{{ displayValue(getRepresentativeName(company)) }}</router-link><span v-else>{{ displayValue(getRepresentativeName(company)) }}</span></dd></div><div><dt>フリガナ</dt><dd>{{ displayValue(company.representative_name_kana) }}</dd></div><div><dt>郵便番号</dt><dd>{{ displayValue(company.representative_postal_code) }}</dd></div><div><dt>住所</dt><dd>{{ displayValue(company.representative_address) }}</dd></div></dl></section>
+                <section class="record-info-panel"><h3>社会保険・銀行</h3><dl class="record-field-list"><div><dt>事業所整理記号</dt><dd>{{ displayValue(company.establishment_symbol) }}</dd></div><div><dt>事業所番号</dt><dd>{{ displayValue(company.establishment_number) }}</dd></div><div><dt>銀行・支店</dt><dd>{{ [company.bank_name, company.bank_branch].filter(Boolean).join(' / ') || '-' }}</dd></div><div><dt>預金種別</dt><dd>{{ displayValue(company.bank_account_type) }}</dd></div><div><dt>口座番号</dt><dd>{{ displayValue(company.bank_account_number) }}</dd></div></dl></section>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane :label="`従業員 ${staffMembers.length}`" name="staff">
+              <div class="record-section-heading"><div><h3>従業員情報</h3><p>人物情報を確認し、顧客主档へ移動できます。</p></div><el-button type="primary" @click="openCreateStaffDialog">従業員追加</el-button></div>
+              <div v-if="staffMembers.length" class="staff-member-list">
+                <article v-for="staff in sortedStaffMembers" :key="staff.id" class="staff-member-block" :class="{ 'is-retired': staff.employment_end_date }">
+                  <div class="staff-member-header"><div class="staff-member-title"><strong>{{ displayValue(staff.name) }}</strong><el-tag v-if="staff.employment_end_date" size="small" type="info">退社済み</el-tag><el-tag v-else size="small" type="success">在職中</el-tag><span>{{ displayValue(staff.position) }}</span></div><el-dropdown trigger="click"><el-button text type="primary">操作 <el-icon><ArrowDown /></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item v-if="staff.customer" @click="router.push(`/customers/${staff.customer}`)">顧客ページへ</el-dropdown-item><el-dropdown-item @click="openEditStaffDialog(staff)">編集</el-dropdown-item><el-dropdown-item divided class="danger-item" @click="confirmDeleteStaff(staff)">削除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
+                  <div class="staff-info-grid"><dl class="record-field-list"><div><dt>フリガナ</dt><dd>{{ displayValue(staff.name_kana) }}</dd></div><div><dt>生年月日</dt><dd>{{ formatDate(staff.birth_date) }}</dd></div><div><dt>性別・国籍</dt><dd>{{ formatGender(staff.gender) }} / {{ displayValue(staff.nationality) }}</dd></div><div><dt>連絡先</dt><dd>{{ [staff.phone, staff.email].filter(Boolean).join(' / ') || '-' }}</dd></div><div><dt>住所</dt><dd>〒{{ displayValue(staff.postal_code) }} {{ displayValue(staff.address) }}</dd></div></dl><dl class="record-field-list"><div><dt>在留資格</dt><dd>{{ displayValue(staff.residence_status) }}</dd></div><div><dt>在留カード番号</dt><dd>{{ displayValue(staff.residence_card_no) }}</dd></div><div><dt>在留期限</dt><dd>{{ formatDate(staff.residence_expiry) }}</dd></div><div><dt>パスポート番号</dt><dd>{{ displayValue(staff.passport_no) }}</dd></div><div><dt>パスポート期限</dt><dd>{{ formatDate(staff.passport_expiry) }}</dd></div><div><dt>在籍期間</dt><dd>{{ formatDate(staff.employment_start_date) }} ～ {{ formatDate(staff.employment_end_date) }}</dd></div></dl></div>
+                </article>
+              </div><p v-else class="empty-text">従業員情報はありません。</p>
+            </el-tab-pane>
+
+            <el-tab-pane :label="`案件 ${relatedCases.length}`" name="cases">
+              <div class="record-section-heading"><div><h3>進行中案件</h3><p>現在対応が必要な案件を優先して表示します。</p></div><el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button></div>
+              <el-table :data="activeCases" stripe><el-table-column label="案件番号" min-width="190"><template #default="{ row }"><router-link class="text-link" :to="`/cases/${row.id}`">{{ row.case_number }}</router-link></template></el-table-column><el-table-column label="案件種別" min-width="150"><template #default="{ row }">{{ row.case_type_master_name || row.case_type }}</template></el-table-column><el-table-column label="進捗" width="150"><template #default="{ row }"><el-tag :type="getCaseDisplayStatusTagType(row.status)">{{ getCaseDisplayStatus(row.status) }}</el-tag></template></el-table-column><el-table-column prop="customer_name" label="顧客名" min-width="140" /><el-table-column prop="responsible_employee_name" label="担当者" min-width="120" /></el-table>
+              <p v-if="!activeCases.length" class="empty-text">進行中の案件はありません。</p>
+              <el-collapse v-if="historicalCases.length" class="company-history"><el-collapse-item :title="`履歴案件 ${historicalCases.length}件`" name="history"><el-table :data="historicalCases" stripe><el-table-column label="案件番号" min-width="190"><template #default="{ row }"><router-link class="text-link" :to="`/cases/${row.id}`">{{ row.case_number }}</router-link></template></el-table-column><el-table-column label="案件種別" min-width="150"><template #default="{ row }">{{ row.case_type_master_name || row.case_type }}</template></el-table-column><el-table-column label="進捗" width="150"><template #default="{ row }"><el-tag :type="getCaseDisplayStatusTagType(row.status)" effect="plain">{{ getCaseDisplayStatus(row.status) }}</el-tag></template></el-table-column><el-table-column label="更新日時" min-width="160"><template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template></el-table-column></el-table></el-collapse-item></el-collapse>
+            </el-tab-pane>
+          </el-tabs>
+        </el-card>
+
+        <aside class="record-sidebar">
+          <el-card shadow="never"><template #header>現在の対応</template><template v-if="primaryCase"><router-link class="text-link primary-case-link" :to="`/cases/${primaryCase.id}`">{{ primaryCase.case_number }}</router-link><el-tag :type="getCaseDisplayStatusTagType(primaryCase.status)">{{ getCaseDisplayStatus(primaryCase.status) }}</el-tag><dl class="record-field-list sidebar-list"><div><dt>顧客</dt><dd>{{ primaryCase.customer_name }}</dd></div><div><dt>担当者</dt><dd>{{ displayValue(primaryCase.responsible_employee_name) }}</dd></div><div><dt>次の対応</dt><dd>{{ displayValue(primaryCase.next_action) }}</dd></div><div><dt>期限</dt><dd>{{ formatDate(primaryCase.next_action_due_at) }}</dd></div></dl></template><p v-else class="empty-text">関連案件はありません。</p></el-card>
+          <el-card shadow="never"><template #header>データ状態</template><ul class="company-data-status"><li><span>代表者</span><strong>{{ getRepresentativeName(company) ? '登録済み' : '未登録' }}</strong></li><li><span>連絡先</span><strong>{{ company.phone || company.email ? '登録済み' : '未登録' }}</strong></li><li><span>法人番号</span><strong>{{ company.corporate_number ? '登録済み' : '未登録' }}</strong></li><li><span>銀行情報</span><strong>{{ company.bank_account_number ? '登録済み' : '未登録' }}</strong></li></ul></el-card>
+        </aside>
+      </div>
     </div>
+
+    <el-dialog v-model="companyDialogVisible" title="会社情報を編集" width="720px">
+      <el-form ref="companyFormRef" :model="companyForm" :rules="companyRules" label-position="top">
+        <div class="form-grid">
+          <el-form-item label="会社名フリガナ" prop="name_kana"><el-input v-model="companyForm.name_kana" /></el-form-item>
+          <el-form-item label="会社名" prop="name"><el-input v-model="companyForm.name" /></el-form-item>
+          <el-form-item label="代表者顧客" prop="representative_customer" class="form-grid-full"><RemoteCustomerSelect v-model="companyForm.representative_customer" placeholder="氏名・カナ・電話・案件番号で検索" /></el-form-item>
+          <el-form-item label="代表者フリガナ" prop="representative_name_kana"><el-input v-model="companyForm.representative_name_kana" /></el-form-item>
+          <el-form-item label="代表者氏名" prop="representative_name"><el-input v-model="companyForm.representative_name" /></el-form-item>
+          <el-form-item label="代表者郵便番号" prop="representative_postal_code"><el-input v-model="companyForm.representative_postal_code" /></el-form-item>
+          <el-form-item label="代表者住所" prop="representative_address" class="form-grid-full"><el-input v-model="companyForm.representative_address" /></el-form-item>
+          <el-form-item label="法人番号" prop="corporate_number"><el-input v-model="companyForm.corporate_number" /></el-form-item>
+          <el-form-item label="会社法人等番号"><el-input :model-value="getCorporateRegistrationNumber(companyForm.corporate_number)" disabled /></el-form-item>
+          <el-form-item label="電話番号" prop="phone"><el-input v-model="companyForm.phone" /></el-form-item>
+          <el-form-item label="メール" prop="email"><el-input v-model="companyForm.email" /></el-form-item>
+          <el-form-item label="郵便番号" prop="postal_code"><el-input v-model="companyForm.postal_code" /></el-form-item>
+          <el-form-item label="住所" prop="address" class="form-grid-full"><el-input v-model="companyForm.address" /></el-form-item>
+          <el-form-item label="決算月" prop="fiscal_month"><el-select v-model="companyForm.fiscal_month" clearable class="form-control"><el-option v-for="month in fiscalMonthOptions" :key="month" :label="`${month}月`" :value="month" /></el-select></el-form-item>
+          <el-form-item label="事業所整理記号" prop="establishment_symbol"><el-input v-model="companyForm.establishment_symbol" /></el-form-item>
+          <el-form-item label="事業所番号" prop="establishment_number"><el-input v-model="companyForm.establishment_number" /></el-form-item>
+        </div>
+        <h3 class="dialog-section-title">銀行情報</h3>
+        <div class="form-grid">
+          <el-form-item label="銀行名" prop="bank_name"><el-input v-model="companyForm.bank_name" /></el-form-item>
+          <el-form-item label="支店名" prop="bank_branch"><el-input v-model="companyForm.bank_branch" /></el-form-item>
+          <el-form-item label="預金種別" prop="bank_account_type"><el-select v-model="companyForm.bank_account_type" clearable class="form-control"><el-option v-for="type in bankAccountTypeOptions" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+          <el-form-item label="口座番号" prop="bank_account_number"><el-input v-model="companyForm.bank_account_number" /></el-form-item>
+        </div>
+      </el-form>
+      <template #footer><el-button @click="companyDialogVisible = false">キャンセル</el-button><el-button type="primary" :loading="companySubmitting" @click="submitCompany">保存</el-button></template>
+    </el-dialog>
 
     <el-dialog
       v-model="staffDialogVisible"
@@ -660,3 +678,265 @@ onMounted(() => {
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.company-record-page {
+  display: grid;
+  gap: 16px;
+}
+
+.record-profile-header,
+.record-main-card {
+  min-width: 0;
+}
+
+.record-header-main,
+.record-contact-row,
+.record-tags,
+.record-actions,
+.staff-member-header,
+.staff-member-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.record-avatar {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, #409eff, #67c23a);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.record-identity {
+  min-width: 0;
+}
+
+.record-identity p,
+.record-identity h2 {
+  margin: 0;
+}
+
+.record-identity p {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.record-identity h2 {
+  margin: 3px 0 7px;
+  font-size: 23px;
+}
+
+.record-actions {
+  margin-left: auto;
+}
+
+.record-contact-row {
+  margin-top: 15px;
+  padding-top: 13px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.record-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.record-summary-tile {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  color: var(--el-text-color-primary);
+  background: #fff;
+  cursor: pointer;
+}
+
+.record-summary-tile:hover,
+.record-summary-tile:focus-visible {
+  border-color: var(--el-color-primary);
+  outline: none;
+}
+
+.record-summary-tile strong {
+  font-size: 25px;
+}
+
+.record-summary-tile span {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.record-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.company-overview-grid,
+.staff-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.record-info-panel,
+.staff-member-block {
+  padding: 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.record-info-panel h3,
+.record-section-heading h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.record-field-list {
+  margin: 10px 0 0;
+}
+
+.record-field-list > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--el-border-color-extra-light);
+}
+
+.record-field-list dt {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.record-field-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.record-section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.record-section-heading p {
+  margin: 5px 0 0;
+  color: var(--el-text-color-secondary);
+}
+
+.dialog-section-title {
+  margin: 8px 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  font-size: 15px;
+}
+
+.staff-member-list {
+  display: grid;
+  gap: 14px;
+}
+
+.staff-member-block.is-retired {
+  opacity: 0.72;
+}
+
+.staff-member-header {
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+}
+
+.company-history {
+  margin-top: 18px;
+}
+
+.record-sidebar {
+  display: grid;
+  gap: 16px;
+  position: sticky;
+  top: 82px;
+}
+
+.primary-case-link {
+  display: block;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-list > div {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.company-data-status {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.company-data-status li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.company-data-status strong {
+  color: var(--el-text-color-primary);
+}
+
+@media (max-width: 1050px) {
+  .record-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .record-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .record-header-main,
+  .record-section-heading,
+  .staff-member-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .record-actions {
+    margin-left: 0;
+  }
+
+  .record-summary-grid,
+  .company-overview-grid,
+  .staff-info-grid,
+  .record-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .record-field-list > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+</style>

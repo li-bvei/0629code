@@ -270,6 +270,14 @@ class ExpenseViewSet(ModelViewSet):
             'total_income': decimal_to_number(period_income_total),
             'total_expense': decimal_to_number(total_expense),
             'balance': decimal_to_number(balance),
+            # 「期間実際残高」の内訳。balance は日付期間のみで決まり、
+            # カテゴリ・キーワードなど明細専用の絞り込みでは変化しない。
+            'opening_balance': decimal_to_number(opening_balance),
+            'period_income_total': decimal_to_number(period_income_total),
+            'period_expense_total': decimal_to_number(period_expense_total),
+            # 「絞り込み結果 収支」。現在の一覧フィルタに一致する支出のみの合計。
+            'filtered_expense_total': decimal_to_number(total_expense),
+            'filtered_net': decimal_to_number(period_income_total - total_expense),
         })
 
 

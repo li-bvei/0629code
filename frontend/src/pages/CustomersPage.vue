@@ -154,7 +154,7 @@ const openEditDialog = (customer: Customer) => {
     phone: customer.phone,
     postal_code: customer.postal_code,
     address: customer.address,
-    my_number: customer.my_number,
+    my_number: '',
     note: customer.note,
   }
   formRef.value?.clearValidate()
@@ -169,7 +169,8 @@ const submitCustomer = async () => {
 
   submitting.value = true
   try {
-    await updateCustomer(editingCustomerId.value, customerForm.value)
+    const { my_number, ...rest } = customerForm.value
+    await updateCustomer(editingCustomerId.value, my_number ? { ...rest, my_number } : rest)
     ElMessage.success('顧客を更新しました。')
     dialogVisible.value = false
     await fetchCustomers(currentPage.value)
@@ -404,7 +405,11 @@ const confirmDeleteCustomer = async (customer: Customer) => {
           <el-input v-model="customerForm.address" type="textarea" :rows="3" />
         </el-form-item>
         <el-form-item label="マイナンバー" prop="my_number">
-          <el-input v-model="customerForm.my_number" />
+          <el-input
+            v-model="customerForm.my_number"
+            show-password
+            placeholder="変更する場合のみ入力"
+          />
         </el-form-item>
         <el-form-item label="備考" prop="note">
           <el-input v-model="customerForm.note" type="textarea" :rows="3" />

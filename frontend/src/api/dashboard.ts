@@ -1,5 +1,10 @@
 import http from '../services/http'
-import type { DashboardDeadline, DismissedDeadlinePayload } from '../types/api'
+import type { DashboardDeadline, DashboardSummary, DismissedDeadlinePayload } from '../types/api'
+
+export const getDashboardSummary = async () => {
+  const response = await http.get<DashboardSummary>('/dashboard/summary/')
+  return response.data
+}
 
 export const listDashboardDeadlines = async () => {
   const response = await http.get<DashboardDeadline[]>('/dashboard/deadlines/')

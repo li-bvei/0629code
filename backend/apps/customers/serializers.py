@@ -15,6 +15,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     is_dependent = serializers.SerializerMethodField()
     primary_applicant = serializers.SerializerMethodField()
     dependents_count = serializers.SerializerMethodField()
+    has_my_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Customer
@@ -35,6 +36,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             'postal_code',
             'address',
             'my_number',
+            'has_my_number',
             'note',
             'cases_count',
             'is_dependent',
@@ -45,11 +47,23 @@ class CustomerSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id', 'cases_count', 'is_dependent', 'primary_applicant', 'dependents_count',
+            'has_my_number',
             'created_at', 'updated_at',
         ]
+        extra_kwargs = {
+            # マイナンバーは保存時だけ受け取り、通常の一覧・詳細レスポンスには載せない。
+            # 登録済みかどうかは has_my_number で確認する。
+            'my_number': {'write_only': True, 'required': False},
+        }
 
     def get_cases_count(self, obj):
+        annotated = getattr(obj, 'cases_count_annotated', None)
+        if annotated is not None:
+            return annotated
         return obj.cases.count()
+
+    def get_has_my_number(self, obj):
+        return bool(obj.my_number)
 
     def _primary_family_link(self, obj):
         # 顧客一覧では「誰かの家族（配偶者・子など）として登録されているか」を判定したいだけなので、
@@ -83,51 +97,191 @@ class CustomerSerializer(serializers.ModelSerializer):
         return obj.family_members.filter(family_customer__isnull=False).count()
 
 
+class CustomerCaseSummarySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    case_number = serializers.CharField()
+    case_type = serializers.CharField()
+    case_type_master = serializers.IntegerField(source='case_type_master_id', allow_null=True)
+    case_type_master_name = serializers.CharField(source='case_type_master.name', allow_null=True)
+    application_category = serializers.IntegerField(source='application_category_id', allow_null=True)
+    application_category_name = serializers.CharField(source='application_category.name', allow_null=True)
+    registration_status = serializers.CharField()
+    registration_status_display = serializers.CharField(source='get_registration_status_display')
+    status = serializers.CharField()
+    status_display = serializers.CharField(source='get_status_display')
+    company = serializers.IntegerField(source='company_id', allow_null=True)
+    company_name = serializers.CharField(source='company.name', allow_null=True)
+    responsible_employee = serializers.IntegerField(source='responsible_employee_id', allow_null=True)
+    responsible_employee_name = serializers.CharField(source='responsible_employee.name', allow_null=True)
+    accepted_at = serializers.DateField(allow_null=True)
+    next_action = serializers.CharField()
+    next_action_due_at = serializers.DateField(allow_null=True)
+    updated_at = serializers.DateTimeField()
+
+
 class CustomerDetailSerializer(CustomerSerializer):
     related_cases = serializers.SerializerMethodField()
     related_companies = serializers.SerializerMethodField()
+    summary = serializers.SerializerMethodField()
+    recent_activities = serializers.SerializerMethodField()
 
     class Meta(CustomerSerializer.Meta):
         fields = [
             *CustomerSerializer.Meta.fields,
             'related_cases',
             'related_companies',
+            'summary',
+            'recent_activities',
         ]
         read_only_fields = [
             *CustomerSerializer.Meta.read_only_fields,
             'related_cases',
             'related_companies',
+            'summary',
+            'recent_activities',
         ]
 
-    def get_related_cases(self, obj):
-        from apps.cases.serializers import CaseSerializer
+    @staticmethod
+    def _is_active_case(case):
+        from apps.cases.models import Case
 
-        queryset = (
-            obj.cases
-            .select_related('customer', 'company', 'responsible_employee')
-            .prefetch_related('tasks__responsible_employee')
-            .order_by('-updated_at', '-created_at', '-id')
+        return (
+            case.registration_status == Case.REGISTRATION_STATUS_ACTIVE
+            and case.status not in {
+                Case.STATUS_REJECTED,
+                Case.STATUS_WITHDRAWN,
+                Case.STATUS_COMPLETED,
+            }
         )
-        return CaseSerializer(queryset, many=True, context=self.context).data
+
+    def _related_case_queryset(self, obj):
+        cache = getattr(self, '_related_cases_cache', {})
+        if obj.pk not in cache:
+            cache[obj.pk] = list(
+                obj.cases
+                .select_related(
+                    'case_type_master',
+                    'application_category',
+                    'company',
+                    'responsible_employee',
+                )
+                .order_by('-updated_at', '-created_at', '-id')
+            )
+            self._related_cases_cache = cache
+        return cache[obj.pk]
+
+    def get_related_cases(self, obj):
+        return CustomerCaseSummarySerializer(
+            self._related_case_queryset(obj),
+            many=True,
+            context=self.context,
+        ).data
 
     def get_related_companies(self, obj):
         from apps.companies.models import Company
-        from apps.companies.serializers import CompanySerializer
 
-        representative_company_ids = obj.representative_companies.values_list('id', flat=True)
-        case_company_ids = (
-            obj.cases
-            .filter(company__isnull=False)
-            .values_list('company_id', flat=True)
+        cache = getattr(self, '_related_companies_cache', {})
+        if obj.pk in cache:
+            return cache[obj.pk]
+
+        relation_map = {}
+
+        def ensure_relation(company_id):
+            return relation_map.setdefault(company_id, {
+                'types': set(),
+                'positions': set(),
+                'active_cases_count': 0,
+                'total_cases_count': 0,
+            })
+
+        for company_id in obj.representative_companies.values_list('id', flat=True):
+            ensure_relation(company_id)['types'].add('representative')
+
+        for role in obj.company_staff_roles.select_related('company').all():
+            relation = ensure_relation(role.company_id)
+            relation['types'].add('staff')
+            if role.position:
+                relation['positions'].add(role.position)
+
+        for case in obj.cases.exclude(company_id__isnull=True).only(
+            'company_id', 'registration_status', 'status',
+        ):
+            relation = ensure_relation(case.company_id)
+            relation['types'].add('case')
+            relation['total_cases_count'] += 1
+            if self._is_active_case(case):
+                relation['active_cases_count'] += 1
+
+        companies = Company.objects.filter(id__in=relation_map).order_by('name', 'id')
+        labels = {
+            'representative': '代表者',
+            'staff': '従業員',
+            'case': '案件関連',
+        }
+        result = []
+        for company in companies:
+            relation = relation_map[company.id]
+            relation_types = [
+                key for key in ('representative', 'staff', 'case')
+                if key in relation['types']
+            ]
+            result.append({
+                'id': company.id,
+                'name': company.name,
+                'name_kana': company.name_kana,
+                'phone': company.phone,
+                'email': company.email,
+                'relation_types': relation_types,
+                'relation_labels': [labels[key] for key in relation_types],
+                'positions': sorted(relation['positions']),
+                'active_cases_count': relation['active_cases_count'],
+                'total_cases_count': relation['total_cases_count'],
+            })
+        cache[obj.pk] = result
+        self._related_companies_cache = cache
+        return result
+
+    def get_summary(self, obj):
+        cases = list(self._related_case_queryset(obj))
+        active_cases = [case for case in cases if self._is_active_case(case)]
+        primary_case = active_cases[0] if active_cases else (cases[0] if cases else None)
+        return {
+            'active_cases_count': len(active_cases),
+            'historical_cases_count': len(cases) - len(active_cases),
+            'family_count': obj.family_members.count(),
+            'company_count': len(self.get_related_companies(obj)),
+            'primary_case': (
+                CustomerCaseSummarySerializer(primary_case, context=self.context).data
+                if primary_case else None
+            ),
+        }
+
+    def get_recent_activities(self, obj):
+        from apps.timelines.models import Timeline
+
+        rows = (
+            Timeline.objects
+            .filter(case__customer=obj)
+            .select_related('case', 'actor')
+            .order_by('-occurred_at', '-created_at', '-id')[:10]
         )
-        company_ids = set(representative_company_ids) | set(case_company_ids)
-        queryset = (
-            Company.objects
-            .filter(id__in=company_ids)
-            .select_related('representative_customer')
-            .order_by('name', 'id')
-        )
-        return CompanySerializer(queryset, many=True, context=self.context).data
+        return [
+            {
+                'id': row.id,
+                'case_id': row.case_id,
+                'case_number': row.case.case_number,
+                'occurred_at': row.occurred_at,
+                'title': row.title,
+                'content': row.content,
+                'event_type': row.event_type,
+                'actor_name': (
+                    row.actor.get_full_name() or row.actor.get_username()
+                    if row.actor_id else ''
+                ),
+                'created_at': row.created_at,
+            }
+            for row in rows
+        ]
 
 
 FAMILY_MEMBER_PERSON_FIELDS = [
@@ -152,6 +306,8 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
     gender_display = serializers.SerializerMethodField()
     passport_no = serializers.SerializerMethodField()
     passport_expiry = serializers.SerializerMethodField()
+    email = serializers.SerializerMethodField()
+    has_my_number = serializers.SerializerMethodField()
     new_customer = serializers.DictField(write_only=True, required=False)
 
     class Meta:
@@ -167,6 +323,8 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
             'gender_display',
             'passport_no',
             'passport_expiry',
+            'email',
+            'has_my_number',
             'is_dependent',
             'note',
             'new_customer',
@@ -178,6 +336,8 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
             'customer_name',
             'relationship_display',
             'gender_display',
+            'email',
+            'has_my_number',
             *FAMILY_MEMBER_PERSON_FIELDS,
             'created_at',
             'updated_at',
@@ -192,6 +352,14 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
 
     def get_passport_expiry(self, obj):
         return obj.family_customer.passport_expiry if obj.family_customer_id else None
+
+    def get_email(self, obj):
+        return obj.family_customer.email if obj.family_customer_id else ''
+
+    def get_has_my_number(self, obj):
+        if obj.family_customer_id:
+            return bool(obj.family_customer.my_number)
+        return bool(obj.my_number)
 
     def validate(self, attrs):
         family_customer = attrs.get('family_customer', getattr(self.instance, 'family_customer', None))
@@ -231,5 +399,8 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
         if instance.family_customer_id:
             person = instance.family_customer
             for field in FAMILY_MEMBER_PERSON_FIELDS:
+                if field == 'my_number':
+                    continue
                 data[field] = getattr(person, field)
+        data.pop('my_number', None)
         return data

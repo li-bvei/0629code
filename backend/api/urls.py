@@ -23,7 +23,7 @@ from apps.employees.views import EmployeeViewSet
 from apps.reminders.views import DismissedDeadlineViewSet, ReminderViewSet
 from apps.tasks.views import TaskViewSet
 from apps.timelines.views import TimelineViewSet
-from .views import DashboardDeadlinesView, ReceptionCreateView
+from .views import DashboardDeadlinesView, DashboardSummaryView, ReceptionCreateView
 
 router = DefaultRouter()
 router.register('users', SystemUserViewSet, basename='system-user')
@@ -55,6 +55,7 @@ urlpatterns = [
     path('accounting/', include('apps.accounting.urls')),
     path('case-checklist-deletion-history/', case_checklist_deletion_history, name='case-checklist-deletion-history'),
     path('case-checklist-demo/seed/', seed_case_checklist_demo_view, name='case-checklist-demo-seed'),
+    path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard-summary'),
     path('dashboard/deadlines/', DashboardDeadlinesView.as_view(), name='dashboard-deadlines'),
     path('receptions/', ReceptionCreateView.as_view(), name='reception-create'),
 ]

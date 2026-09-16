@@ -134,11 +134,12 @@ def _create_timeline(
     forced,
     source,
     detail_lines=None,
+    event_type=Timeline.EVENT_STATUS_CHANGED,
 ):
-    actor = getattr(changed_by, 'get_username', lambda: '')() if changed_by else ''
+    actor_name = getattr(changed_by, 'get_username', lambda: '')() if changed_by else ''
     lines = [
         f'{previous_label} → {new_label}',
-        f'担当：{actor or "不明"}',
+        f'担当：{actor_name or "不明"}',
         f'変更日：{change_date}',
         f'強制変更：{"true" if forced else "false"}',
         f'変更元：{source}',
@@ -147,11 +148,20 @@ def _create_timeline(
         lines.append(f'備考：{note}')
     if detail_lines:
         lines.extend(detail_lines)
+    actor = changed_by if getattr(changed_by, 'is_authenticated', False) else None
     return Timeline.objects.create(
         case=case,
         occurred_at=change_date,
         title=title,
         content='\n'.join(lines),
+        event_type=event_type or '',
+        actor=actor,
+        metadata={
+            'previous': previous_label,
+            'next': new_label,
+            'forced': forced,
+            'source': source,
+        },
         is_visible_to_client=False,
     )
 
@@ -359,6 +369,9 @@ def update_case_progress_info(case, payload, changed_by, note=''):
             occurred_at=timezone.localdate(),
             title='案件進捗情報変更',
             content='\n'.join(lines),
+            event_type=Timeline.EVENT_STATUS_CHANGED,
+            actor=changed_by if getattr(changed_by, 'is_authenticated', False) else None,
+            metadata={'changed_fields': sorted(changed_fields)},
             is_visible_to_client=False,
         )
         return {'changed': True, 'changed_fields': sorted(changed_fields)}
@@ -398,6 +411,7 @@ def change_case_registration_status(case, new_status, changed_by, change_date=No
             force,
             source,
             detail_lines,
+            event_type=Timeline.EVENT_REGISTRATION_STATUS_CHANGED,
         )
         event = {
             'event_type': 'case_registration_status_changed',

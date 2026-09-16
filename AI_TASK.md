@@ -1,5 +1,7 @@
 # AI Task
 
+> 当前 AI 接手请先阅读 docs/AI_HANDOFF.md。本文件主要保留历史任务记录；其中 Legacy 规格不代表当前实现或当前需求。
+
 ## Current Task
 
 2026-08-08 案件业务・顾客数据・税务证明 PDF 一批修复与新功能 + 文档同步（多轮，详见 `AI_CONTEXT.md` 相应小节）：

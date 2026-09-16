@@ -73,6 +73,11 @@ export interface ExpenseSummary {
   total_income: number | string
   total_expense: number | string
   balance: number | string
+  opening_balance?: number | string
+  period_income_total?: number | string
+  period_expense_total?: number | string
+  filtered_expense_total?: number | string
+  filtered_net?: number | string
 }
 
 export interface ExpenseTargetChartItem {

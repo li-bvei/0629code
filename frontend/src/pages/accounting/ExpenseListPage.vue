@@ -74,6 +74,8 @@ const summary = ref({
   count: 0,
   totalExpense: 0,
   balance: 0,
+  periodExpenseTotal: 0,
+  filteredNet: 0,
 })
 
 const paymentMethodOptions = ['现金', '信用卡', '银行转账', 'PayPay', 'ICOCA', '公司账户', '个人垫付', '其他']
@@ -146,6 +148,8 @@ const refreshExpenseSummary = async () => {
       count: data.target_count,
       totalExpense: Number(data.total_expense || 0),
       balance: Number(data.balance || 0),
+      periodExpenseTotal: Number(data.period_expense_total ?? data.total_expense ?? 0),
+      filteredNet: Number(data.filtered_net ?? 0),
     }
     summaryLoaded.value = true
   } catch {
@@ -415,16 +419,23 @@ onMounted(() => {
           <strong>{{ summaryLoaded || !summaryLoading ? `${summary.count.toLocaleString()}件` : '読込中' }}</strong>
         </div>
         <div class="accounting-summary-pill">
-          <span>支出合計</span>
+          <span>絞り込み結果 支出</span>
           <strong class="accounting-number">
             {{ summaryLoaded || !summaryLoading ? formatAccountingNumber(summary.totalExpense) : '読込中' }}
           </strong>
         </div>
         <div class="accounting-summary-pill">
-          <span>帳面残高</span>
+          <span>絞り込み結果 収支</span>
+          <strong class="accounting-number">
+            {{ summaryLoaded || !summaryLoading ? formatAccountingNumber(summary.filteredNet) : '読込中' }}
+          </strong>
+        </div>
+        <div class="accounting-summary-pill">
+          <span>期間実際残高</span>
           <strong class="accounting-number">
             {{ summaryLoaded || !summaryLoading ? formatAccountingNumber(summary.balance) : '読込中' }}
           </strong>
+          <small>日付期間のみで計算（カテゴリ等の絞り込みでは変化しません）</small>
         </div>
       </div>
 

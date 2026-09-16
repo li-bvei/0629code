@@ -3,6 +3,8 @@ import type {
   CreateCustomerPayload,
   Customer,
   CustomerDetail,
+  CustomerMatchCandidate,
+  CustomerMatchPayload,
   ListParams,
   PaginatedResponse,
   ResidenceStatusMaster,
@@ -18,6 +20,11 @@ export const listCustomers = async (params?: ListParams) => {
 export const getCustomer = async (id: number) => {
   const response = await http.get<CustomerDetail>(`/customers/${id}/`)
   return response.data
+}
+
+export const matchCustomers = async (payload: CustomerMatchPayload) => {
+  const response = await http.post<{ candidates: CustomerMatchCandidate[] }>('/customers/match/', payload)
+  return response.data.candidates
 }
 
 export const createCustomer = async (payload: CreateCustomerPayload) => {

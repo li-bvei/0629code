@@ -54,7 +54,8 @@ export interface Customer {
   phone: string
   postal_code: string
   address: string
-  my_number: string
+  my_number?: string
+  has_my_number: boolean
   note: string
   cases_count: number
   is_dependent: boolean
@@ -65,8 +66,65 @@ export interface Customer {
 }
 
 export interface CustomerDetail extends Customer {
-  related_cases: Case[]
-  related_companies: Company[]
+  related_cases: CustomerCaseSummary[]
+  related_companies: CustomerRelatedCompany[]
+  summary: CustomerDetailSummary
+  recent_activities: CustomerActivity[]
+}
+
+export interface CustomerCaseSummary {
+  id: number
+  case_number: string
+  case_type: string
+  case_type_master: number | null
+  case_type_master_name: string | null
+  application_category: number | null
+  application_category_name: string | null
+  registration_status: CaseRegistrationStatus
+  registration_status_display: string
+  status: CaseStatus
+  status_display: string
+  company: number | null
+  company_name: string | null
+  responsible_employee: number | null
+  responsible_employee_name: string | null
+  accepted_at: string | null
+  next_action: string
+  next_action_due_at: string | null
+  updated_at: string
+}
+
+export interface CustomerRelatedCompany {
+  id: number
+  name: string
+  name_kana: string
+  phone: string
+  email: string
+  relation_types: Array<'representative' | 'staff' | 'case'>
+  relation_labels: string[]
+  positions: string[]
+  active_cases_count: number
+  total_cases_count: number
+}
+
+export interface CustomerActivity {
+  id: number
+  case_id: number
+  case_number: string
+  occurred_at: string | null
+  title: string
+  content: string
+  event_type: string
+  actor_name: string
+  created_at: string
+}
+
+export interface CustomerDetailSummary {
+  active_cases_count: number
+  historical_cases_count: number
+  family_count: number
+  company_count: number
+  primary_case: CustomerCaseSummary | null
 }
 
 export interface CreateCustomerPayload {
@@ -665,6 +723,38 @@ export interface DashboardDeadline {
   case_type: string
 }
 
+export interface DashboardSummaryRecentCase {
+  id: number
+  case_number: string
+  case_type: string
+  customer_name: string
+  company_name: string
+  status: string
+  status_display: string
+  responsible_employee_name: string
+  next_action: string
+  next_action_due_at: string | null
+  updated_at: string
+}
+
+export interface DashboardSummary {
+  cases: {
+    total: number
+    active: number
+    waiting: number
+    completed: number
+    unassigned: number
+    without_next_action: number
+  }
+  actions: {
+    overdue: number
+    today: number
+    next_7_days: number
+  }
+  stages: Array<{ key: string, label: string, count: number }>
+  recent_cases: DashboardSummaryRecentCase[]
+}
+
 export interface DismissedDeadlinePayload {
   source_type: string
   source_id: number
@@ -746,6 +836,10 @@ export interface Timeline {
   occurred_at: string | null
   title: string
   content: string
+  event_type?: string
+  actor?: number | null
+  actor_name?: string
+  metadata?: Record<string, unknown>
   is_visible_to_client: boolean
   created_at: string
   updated_at: string
@@ -803,9 +897,11 @@ export interface FamilyMember {
   passport_no: string
   passport_expiry: string | null
   phone: string
+  email: string
   postal_code: string
   address: string
-  my_number: string
+  my_number?: string
+  has_my_number: boolean
   is_dependent: boolean
   note: string
   created_at: string
@@ -897,12 +993,53 @@ export interface ReceptionPayload {
   case: ReceptionCasePayload
 }
 
+/**
+ * サーバーへ送る形。既存顧客を使う場合は customer を省略し existing_customer_id を指定する。
+ * 既存会社を使う場合も同様に company を省略し existing_company_id を指定する。
+ */
+export interface ReceptionCreatePayload {
+  /** 二重送信防止用の冪等キー。1回の確定操作につき固定の値を送る。 */
+  request_id?: string
+  existing_customer_id?: number | null
+  existing_company_id?: number | null
+  customer?: ReceptionCustomerPayload
+  family_members: ReceptionFamilyMemberPayload[]
+  company: ReceptionCompanyPayload
+  case: ReceptionCasePayload
+}
+
 export interface ReceptionResponse {
   customer: number
+  customer_reused: boolean
   company: number | null
+  company_reused: boolean
   case: number | null
   case_number: string | null
+  checklist_item_count: number
   family_members: number[]
+}
+
+export interface CustomerMatchCandidate {
+  customer_id: number
+  name: string
+  name_kana: string
+  birth_date: string | null
+  phone: string
+  email: string
+  case_count: number
+  match_strength: 'strong' | 'medium' | 'weak'
+  match_score: number
+  match_reason: string
+}
+
+export interface CustomerMatchPayload {
+  name?: string
+  name_kana?: string
+  birth_date?: string | null
+  phone?: string
+  email?: string
+  residence_card_number?: string
+  passport_number?: string
 }
 
 export interface SystemUser {

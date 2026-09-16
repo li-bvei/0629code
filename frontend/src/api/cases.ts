@@ -297,10 +297,15 @@ export const deleteCaseChecklistItem = async (id: number) => {
   await http.delete(`/case-checklist-items/${id}/`)
 }
 
-export const applyCaseChecklistTemplate = async (caseId: number, templateId: number) => {
-  const response = await http.post<CaseChecklistItem[]>(`/cases/${caseId}/apply-checklist-template/`, {
-    template_id: templateId,
-  })
+export const applyCaseChecklistTemplate = async (
+  caseId: number,
+  templateId: number,
+  mode: 'merge' | 'replace' = 'merge',
+) => {
+  const response = await http.post<{ created: CaseChecklistItem[], created_count: number, mode: string }>(
+    `/cases/${caseId}/apply-checklist-template/`,
+    { template_id: templateId, mode },
+  )
   return response.data
 }
 

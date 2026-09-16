@@ -196,6 +196,10 @@ class CaseSerializer(serializers.ModelSerializer):
             'id',
             'case_number',
             'case_type',
+            # registration_status / status は通常の PUT/PATCH では変更させない。
+            # 状態遷移チェック・warning・Timeline 記録・操作者記録が必要なため、
+            # 専用アクション（change-registration-status / change-status）経由でのみ変更する。
+            'registration_status',
             'registration_status_display',
             'status',
             'status_display',

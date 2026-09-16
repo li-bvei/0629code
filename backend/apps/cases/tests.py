@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.companies.models import Company
@@ -119,6 +120,40 @@ class CaseNumberTestCase(TestCase):
 
         self.assertEqual(first.case_number, '経管-更新-202605-李明-0001')
         self.assertEqual(next_month.case_number, '経管-更新-202606-李明-0001')
+
+    def test_case_number_month_uses_tokyo_date_at_utc_day_boundary(self):
+        # 2026-05-31 23:30 JST（= 14:30 UTC）はまだ5月
+        with patch(
+            'apps.cases.utils.timezone.now',
+            return_value=datetime(2026, 5, 31, 14, 30, tzinfo=ZoneInfo('UTC')),
+        ):
+            still_may = self.create_case('経営・管理更新')
+        # 2026-06-01 00:30 JST（= 前日 15:30 UTC）はもう6月
+        with patch(
+            'apps.cases.utils.timezone.now',
+            return_value=datetime(2026, 5, 31, 15, 30, tzinfo=ZoneInfo('UTC')),
+        ):
+            already_june = self.create_case('経営・管理更新')
+
+        self.assertEqual(still_may.case_number, '経管-更新-202605-李明-0001')
+        self.assertEqual(already_june.case_number, '経管-更新-202606-李明-0001')
+
+    def test_case_number_month_at_year_end_boundary(self):
+        # 2026-12-31 23:59 JST（= 14:59 UTC）は 202612
+        with patch(
+            'apps.cases.utils.timezone.now',
+            return_value=datetime(2026, 12, 31, 14, 59, tzinfo=ZoneInfo('UTC')),
+        ):
+            this_year = self.create_case('経営・管理更新')
+        # 2027-01-01 00:00 JST（= 2026-12-31 15:00 UTC）は 202701
+        with patch(
+            'apps.cases.utils.timezone.now',
+            return_value=datetime(2026, 12, 31, 15, 0, tzinfo=ZoneInfo('UTC')),
+        ):
+            next_year = self.create_case('経営・管理更新')
+
+        self.assertEqual(this_year.case_number, '経管-更新-202612-李明-0001')
+        self.assertEqual(next_year.case_number, '経管-更新-202701-李明-0001')
 
     def test_name_sanitizing(self):
         self.assertEqual(sanitize_case_number_name(' 李  明 '), '李 明')
@@ -319,6 +354,32 @@ class CaseNumberApiTestCase(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('status', response.data)
+
+    def test_registration_status_cannot_be_changed_via_patch(self):
+        with patch(
+            'apps.cases.utils.timezone.now',
+            return_value=datetime(2026, 7, 10, 9, 0, tzinfo=TOKYO),
+        ):
+            response = self.client.post('/api/cases/', {
+                'case_type_master': self.business_type.id,
+                'application_category': self.renewal_category.id,
+                'customer': self.customer.id,
+            }, format='json')
+        case_id = response.data['id']
+
+        patch_response = self.client.patch(
+            f'/api/cases/{case_id}/',
+            {'registration_status': Case.REGISTRATION_STATUS_ARCHIVED},
+            format='json',
+        )
+
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertEqual(patch_response.data['registration_status'], Case.REGISTRATION_STATUS_ACTIVE)
+        Case.objects.get(id=case_id).refresh_from_db()
+        self.assertEqual(
+            Case.objects.get(id=case_id).registration_status,
+            Case.REGISTRATION_STATUS_ACTIVE,
+        )
 
     def test_case_number_does_not_recalculate_after_customer_name_change(self):
         with patch(
@@ -598,7 +659,8 @@ class CaseChecklistFieldTestCase(TestCase):
         }, format='json')
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data['created_count'], 1)
+        self.assertEqual(len(response.data['created']), 1)
         created = CaseChecklistItem.objects.get(source_template_item=first)
         self.assertEqual(created.acquisition_place, '大阪南税務署')
         self.assertEqual(created.required_details, '納税証明書その3の3')
@@ -608,6 +670,50 @@ class CaseChecklistFieldTestCase(TestCase):
         self.assertEqual(created.importance_level, 'important')
         self.assertEqual(list(CaseChecklistItem.objects.values_list('name', flat=True)), ['納税証明書取得'])
         self.assertFalse(CaseChecklistItem.objects.filter(source_template_item=deleted).exists())
+
+    def test_apply_template_merge_is_idempotent(self):
+        CaseChecklistTemplateItem.objects.create(
+            template=self.template, category='資料', name='住民票', sort_order=1,
+        )
+        CaseChecklistTemplateItem.objects.create(
+            template=self.template, category='資料', name='課税証明書', sort_order=2,
+        )
+
+        first = self.client.post(f'/api/cases/{self.case.id}/apply-checklist-template/', {
+            'template_id': self.template.id,
+        }, format='json')
+        second = self.client.post(f'/api/cases/{self.case.id}/apply-checklist-template/', {
+            'template_id': self.template.id,
+        }, format='json')
+
+        self.assertEqual(first.data['created_count'], 2)
+        self.assertEqual(second.data['created_count'], 0)
+        self.assertEqual(CaseChecklistItem.objects.filter(case=self.case).count(), 2)
+
+    def test_apply_template_replace_keeps_completed_items(self):
+        keep = CaseChecklistTemplateItem.objects.create(
+            template=self.template, category='資料', name='住民票', sort_order=1,
+        )
+        CaseChecklistTemplateItem.objects.create(
+            template=self.template, category='資料', name='課税証明書', sort_order=2,
+        )
+        self.client.post(f'/api/cases/{self.case.id}/apply-checklist-template/', {
+            'template_id': self.template.id,
+        }, format='json')
+
+        done = CaseChecklistItem.objects.get(case=self.case, source_template_item=keep)
+        done.is_completed = True
+        done.save(update_fields=['is_completed'])
+
+        replace = self.client.post(f'/api/cases/{self.case.id}/apply-checklist-template/', {
+            'template_id': self.template.id,
+            'mode': 'replace',
+        }, format='json')
+
+        self.assertEqual(replace.status_code, 201)
+        # 完了済み「住民票」は残り、未完了「課税証明書」だけ作り直し
+        self.assertTrue(CaseChecklistItem.objects.filter(case=self.case, id=done.id).exists())
+        self.assertEqual(CaseChecklistItem.objects.filter(case=self.case).count(), 2)
 
     def test_case_item_hidden_from_customer_can_be_saved(self):
         item = CaseChecklistItem.objects.create(
@@ -954,3 +1060,59 @@ class CaseStatusWorkflowTestCase(TestCase):
         self.assertEqual(archived_response.status_code, 200)
         archived_ids = {row['id'] for row in archived_response.data['results']}
         self.assertIn(archived.id, archived_ids)
+
+
+class DashboardSummaryApiTestCase(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username='dashboard-summary-test',
+            password='password',
+        )
+        self.client.force_authenticate(self.user)
+        self.customer = Customer.objects.create(name='ダッシュボード顧客', birth_date='1990-01-01')
+
+    def _make_case(self, index, **kwargs):
+        defaults = dict(
+            case_number=f'DASH-{index:04d}',
+            case_type='更新',
+            registration_status=Case.REGISTRATION_STATUS_ACTIVE,
+            status=Case.STATUS_COLLECTING_DOCUMENTS,
+            customer=self.customer,
+        )
+        defaults.update(kwargs)
+        return Case.objects.create(**defaults)
+
+    def test_summary_counts_are_not_limited_by_pagination(self):
+        # 25件 > デフォルトページサイズ 20
+        for i in range(25):
+            self._make_case(i)
+        self._make_case(100, status=Case.STATUS_COMPLETED)
+        self._make_case(101, status=Case.STATUS_WITHDRAWN)
+
+        response = self.client.get('/api/dashboard/summary/')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['cases']['total'], 27)
+        self.assertEqual(body['cases']['active'], 25)
+        self.assertEqual(body['cases']['completed'], 1)
+        # 取下げはステッパー分類に含まれないため 26（準備25 + 完了1）
+        stage_total = sum(stage['count'] for stage in body['stages'])
+        self.assertEqual(stage_total, 26)
+        self.assertEqual(len(body['recent_cases']), 10)
+
+    def test_summary_action_buckets_use_tokyo_today(self):
+        today = timezone.localdate()
+        self._make_case(1, next_action='資料請求', next_action_due_at=today - timedelta(days=1))
+        self._make_case(2, next_action='申請', next_action_due_at=today)
+        self._make_case(3, next_action='確認', next_action_due_at=today + timedelta(days=3))
+        self._make_case(4, next_action='', next_action_due_at=None)
+
+        body = self.client.get('/api/dashboard/summary/').json()
+
+        self.assertEqual(body['actions']['overdue'], 1)
+        self.assertEqual(body['actions']['today'], 1)
+        self.assertEqual(body['actions']['next_7_days'], 1)
+        self.assertEqual(body['cases']['without_next_action'], 1)
+        self.assertEqual(body['cases']['unassigned'], 4)

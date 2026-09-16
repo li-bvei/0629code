@@ -96,6 +96,7 @@ const checklistItemFormRef = ref<FormInstance>()
 const applyTemplateDialogVisible = ref(false)
 const selectedChecklistTemplateId = ref<number | null>(null)
 const applyingChecklistTemplate = ref(false)
+const checklistTemplateApplyMode = ref<'merge' | 'replace'>('merge')
 const customers = ref<Customer[]>([])
 const companies = ref<Company[]>([])
 const employees = ref<Employee[]>([])
@@ -399,6 +400,10 @@ const checklistProgressText = computed(() => {
 })
 
 const checklistProgressPercentage = computed(() => caseDetail.value?.required_items_progress_percent || 0)
+
+const scrollToCaseSection = (sectionId: string) => {
+  document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const isAgencyHandledParty = (party: string) => (
   ['our_company', 'gyousei', 'tax_accountant'].includes(party)
@@ -1105,8 +1110,16 @@ const submitApplyTemplate = async () => {
 
   applyingChecklistTemplate.value = true
   try {
-    await applyCaseChecklistTemplate(caseId.value, selectedChecklistTemplateId.value)
-    ElMessage.success('テンプレート項目を追加しました。')
+    const result = await applyCaseChecklistTemplate(
+      caseId.value,
+      selectedChecklistTemplateId.value,
+      checklistTemplateApplyMode.value,
+    )
+    ElMessage.success(
+      result.created_count > 0
+        ? `テンプレートから ${result.created_count} 項目を追加しました。`
+        : '追加が必要な項目はありませんでした（既に反映済み）。',
+    )
     applyTemplateDialogVisible.value = false
     await fetchChecklistItems()
   } catch {
@@ -1274,18 +1287,50 @@ onMounted(() => {
 
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
 
-    <div v-loading="loading" class="detail-grid">
-      <el-card shadow="never">
+    <el-card v-if="caseDetail" shadow="never" class="case-record-header">
+      <div class="case-record-header-main">
+        <div class="case-record-avatar">案</div>
+        <div class="case-record-identity">
+          <p>{{ displayValue(caseDetail.case_type_master_name) }} / {{ displayValue(caseDetail.application_category_name) }}</p>
+          <h2>{{ caseDetail.case_number }}</h2>
+          <div class="case-record-tags">
+            <el-tag :type="getCaseDisplayStatusTagType(caseDetail.status)">{{ displayStatus }}</el-tag>
+            <el-tag :type="getCaseRegistrationStatusTagType(caseDetail.registration_status)" effect="plain">{{ getCaseRegistrationStatusLabel(caseDetail.registration_status) }}</el-tag>
+            <el-tag v-if="caseDetail.is_overdue" type="danger">期限超過</el-tag>
+          </div>
+        </div>
+        <div class="case-record-actions">
+          <el-button @click="openBasicInfoDialog">基本情報を編集</el-button>
+          <el-button type="primary" @click="openProgressUpdateDialog()">進捗を更新</el-button>
+          <el-button v-if="canCancelCase" type="danger" plain @click="openCancelDialog">案件を中止</el-button>
+        </div>
+      </div>
+      <div class="case-record-meta">
+        <router-link class="text-link" :to="`/customers/${caseDetail.customer}`">顧客 {{ caseDetail.customer_name }}</router-link>
+        <router-link v-if="caseDetail.company" class="text-link" :to="`/companies/${caseDetail.company}`">会社 {{ caseDetail.company_name }}</router-link>
+        <span>担当 {{ displayValue(caseDetail.responsible_employee_name) }}</span>
+        <span>最終更新 {{ formatDateTime(caseDetail.updated_at) }}</span>
+      </div>
+    </el-card>
+
+    <el-alert v-if="caseDetail?.is_overdue" title="この案件には期限を超過した対応があります。次の対応と期限を確認してください。" type="error" show-icon :closable="false" class="case-record-alert" />
+
+    <div v-if="caseDetail" class="case-record-summary">
+      <button type="button" class="case-summary-tile" @click="scrollToCaseSection('case-progress')"><strong class="status-value">{{ displayStatus }}</strong><span>現在の進捗</span></button>
+      <button type="button" class="case-summary-tile" @click="scrollToCaseSection('case-checklist')"><strong>{{ caseDetail.required_items_remaining }}</strong><span>必須事項 残り</span></button>
+      <button type="button" class="case-summary-tile" @click="scrollToCaseSection('case-checklist')"><strong>{{ checklistProgressPercentage }}%</strong><span>必須事項 完了率</span></button>
+      <button type="button" class="case-summary-tile" @click="scrollToCaseSection('case-activity')"><strong>{{ timelines.length }}</strong><span>進捗記録</span></button>
+    </div>
+
+    <div v-loading="loading" class="detail-grid case-record-content">
+      <div class="case-overview-workspace">
+      <el-card id="case-overview" shadow="never" class="case-basic-card">
         <template #header>
           <div class="card-header-row">
-            <span>案件基本情報</span>
+            <span>案件関係者・基本情報</span>
             <div class="card-header-actions">
-              <el-button @click="openBasicInfoDialog">編集</el-button>
               <el-button :loading="regeneratingCaseNumber" @click="confirmRegenerateCaseNumber">
                 案件番号を再生成
-              </el-button>
-              <el-button v-if="canCancelCase" type="danger" @click="openCancelDialog">
-                案件を中止する
               </el-button>
             </div>
           </div>
@@ -1308,7 +1353,25 @@ onMounted(() => {
         </el-descriptions>
       </el-card>
 
-      <el-card shadow="never">
+      <aside v-if="caseDetail" class="case-action-sidebar">
+        <el-card shadow="never">
+          <template #header>現在の対応</template>
+          <dl v-if="caseDetail" class="case-sidebar-fields">
+            <div><dt>次の対応</dt><dd>{{ displayValue(caseDetail.next_action || caseDetail.next_task_title) }}</dd></div>
+            <div><dt>期限</dt><dd :class="{ 'is-overdue': caseDetail.is_overdue }">{{ formatDate(caseDetail.next_action_due_at) }}</dd></div>
+            <div><dt>担当者</dt><dd>{{ displayValue(caseDetail.next_task_responsible_employee_name || caseDetail.responsible_employee_name) }}</dd></div>
+            <div><dt>必須事項</dt><dd>{{ caseDetail.required_items_completed }} / {{ caseDetail.required_items_total }} 完了</dd></div>
+          </dl>
+          <el-button type="primary" class="case-sidebar-action" @click="openProgressUpdateDialog()">進捗を更新</el-button>
+        </el-card>
+        <el-card shadow="never">
+          <template #header>関連レコード</template>
+          <div class="case-related-links"><router-link class="text-link" :to="`/customers/${caseDetail?.customer}`">顧客詳細を開く</router-link><router-link v-if="caseDetail?.company" class="text-link" :to="`/companies/${caseDetail.company}`">会社詳細を開く</router-link><el-button text type="primary" @click="openRegistrationStatusDialog">登録状態を変更</el-button></div>
+        </el-card>
+      </aside>
+      </div>
+
+      <el-card id="case-progress" shadow="never" class="case-record-section">
         <template #header>
           <div class="card-header-row">
             <span>現在の進捗</span>
@@ -1420,7 +1483,7 @@ onMounted(() => {
         </el-collapse>
       </el-card>
 
-      <el-card shadow="never">
+      <el-card id="case-checklist" shadow="never" class="case-record-section">
         <template #header>
           <div class="card-header-row">
             <span>案件進捗・必要資料</span>
@@ -1527,7 +1590,7 @@ onMounted(() => {
         </div>
       </el-card>
 
-      <el-card shadow="never">
+      <el-card id="case-activity" shadow="never" class="case-record-section">
         <template #header>
           <div class="card-header-row">
             <span>進捗記録</span>
@@ -1538,9 +1601,17 @@ onMounted(() => {
           <el-table-column label="発生日" width="130">
             <template #default="{ row }">{{ formatDate(row.occurred_at) }}</template>
           </el-table-column>
-          <el-table-column prop="title" label="タイトル" min-width="180" />
+          <el-table-column label="タイトル" min-width="180">
+            <template #default="{ row }">
+              <span>{{ row.title }}</span>
+              <el-tag v-if="row.event_type" size="small" type="info" effect="plain" style="margin-left: 6px;">自動</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="content" label="内容" min-width="260" show-overflow-tooltip>
             <template #default="{ row }">{{ displayValue(row.content) }}</template>
+          </el-table-column>
+          <el-table-column label="記録者" width="110">
+            <template #default="{ row }">{{ row.actor_name || '-' }}</template>
           </el-table-column>
           <el-table-column label="作成日時" min-width="160">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
@@ -1962,9 +2033,6 @@ onMounted(() => {
     </el-dialog>
 
     <el-dialog v-model="applyTemplateDialogVisible" title="テンプレートから追加" width="520px">
-      <p class="dialog-note">
-        このテンプレートの有効項目を案件に追加します。既存項目は削除されません。
-      </p>
       <el-select
         v-model="selectedChecklistTemplateId"
         filterable
@@ -1978,6 +2046,15 @@ onMounted(() => {
           :value="template.id"
         />
       </el-select>
+      <el-radio-group v-model="checklistTemplateApplyMode" style="margin-top: 12px;">
+        <el-radio value="merge">不足分のみ追加（重複しない）</el-radio>
+        <el-radio value="replace">未完了のテンプレート項目を作り直す</el-radio>
+      </el-radio-group>
+      <p class="dialog-note" style="margin-top: 8px;">
+        {{ checklistTemplateApplyMode === 'replace'
+          ? '完了済み・手動追加の項目は残したまま、このテンプレート由来の未完了項目のみ再生成します。'
+          : '既に存在する項目は追加しません。同じテンプレートを再適用しても重複しません。' }}
+      </p>
       <template #footer>
         <el-button @click="applyTemplateDialogVisible = false">キャンセル</el-button>
         <el-button type="primary" :loading="applyingChecklistTemplate" @click="submitApplyTemplate">
@@ -2054,6 +2131,175 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.case-record-header {
+  margin-bottom: 16px;
+}
+
+.case-record-header-main,
+.case-record-meta,
+.case-record-tags,
+.case-record-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.case-record-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, #409eff, #79bbff);
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.case-record-identity {
+  min-width: 0;
+}
+
+.case-record-identity p,
+.case-record-identity h2 {
+  margin: 0;
+}
+
+.case-record-identity p {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.case-record-identity h2 {
+  margin: 3px 0 7px;
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+
+.case-record-actions {
+  margin-left: auto;
+}
+
+.case-record-meta {
+  margin-top: 15px;
+  padding-top: 13px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.case-record-alert {
+  margin-bottom: 16px;
+}
+
+.case-record-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.case-summary-tile {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: 16px;
+  color: var(--el-text-color-primary);
+  background: #fff;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.case-summary-tile:hover,
+.case-summary-tile:focus-visible {
+  border-color: var(--el-color-primary);
+  outline: none;
+}
+
+.case-summary-tile strong {
+  font-size: 24px;
+}
+
+.case-summary-tile .status-value {
+  font-size: 16px;
+}
+
+.case-summary-tile span {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  text-align: right;
+}
+
+.case-overview-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.case-basic-card {
+  min-width: 0;
+}
+
+.case-action-sidebar {
+  display: grid;
+  gap: 16px;
+  position: sticky;
+  top: 82px;
+}
+
+.case-sidebar-fields {
+  margin: 0;
+}
+
+.case-sidebar-fields > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--el-border-color-extra-light);
+}
+
+.case-sidebar-fields > div:first-child {
+  border-top: 0;
+}
+
+.case-sidebar-fields dt {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.case-sidebar-fields dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.case-sidebar-fields dd.is-overdue {
+  color: var(--el-color-danger);
+  font-weight: 700;
+}
+
+.case-sidebar-action {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.case-related-links {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.case-record-section,
+.case-basic-card {
+  scroll-margin-top: 80px;
+}
+
 .header-actions {
   display: flex;
   gap: 8px;
@@ -2362,6 +2608,26 @@ onMounted(() => {
 }
 
 @media (max-width: 760px) {
+  .case-record-header-main,
+  .case-record-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .case-record-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .case-record-summary,
+  .case-overview-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .case-action-sidebar {
+    position: static;
+  }
+
   :deep(.material-notice-dialog) {
     width: 95% !important;
   }

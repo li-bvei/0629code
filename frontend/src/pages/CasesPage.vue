@@ -5,10 +5,10 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { createCase, deleteCase, listCaseApplicationCategories, listCases, listCaseTypeMasters, updateCase } from '../api/cases'
-import { listCompanies } from '../api/companies'
-import { listCustomers } from '../api/customers'
-import { listEmployees } from '../api/employees'
-import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, Customer, Employee } from '../types/api'
+import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
+import RemoteCompanySelect from '../components/RemoteCompanySelect.vue'
+import RemoteStaffSelect from '../components/RemoteStaffSelect.vue'
+import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster } from '../types/api'
 import {
   getCaseDisplayStatus,
   getCaseDisplayStatusTagType,
@@ -21,9 +21,6 @@ const loading = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
 const cases = ref<Case[]>([])
-const customers = ref<Customer[]>([])
-const companies = ref<Company[]>([])
-const employees = ref<Employee[]>([])
 const caseTypes = ref<CaseTypeMaster[]>([])
 const applicationCategories = ref<CaseApplicationCategory[]>([])
 const total = ref(0)
@@ -31,9 +28,24 @@ const currentPage = ref(1)
 const pageSize = 20
 const dialogVisible = ref(false)
 const editingCaseId = ref<number | null>(null)
+const editingCase = ref<Case | null>(null)
 const formRef = ref<FormInstance>()
-const customerSearchLoading = ref(false)
-let customerSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+const editingCustomerOption = computed(() => (
+  editingCase.value?.customer
+    ? { value: editingCase.value.customer, label: editingCase.value.customer_name || `#${editingCase.value.customer}` }
+    : null
+))
+const editingCompanyOption = computed(() => (
+  editingCase.value?.company
+    ? { value: editingCase.value.company, label: editingCase.value.company_name || `#${editingCase.value.company}` }
+    : null
+))
+const editingStaffOption = computed(() => (
+  editingCase.value?.responsible_employee
+    ? { value: editingCase.value.responsible_employee, label: editingCase.value.responsible_employee_name || `#${editingCase.value.responsible_employee}` }
+    : null
+))
 const filters = ref({
   view: 'incomplete',
 })
@@ -114,16 +126,10 @@ const handleWorkViewChange = () => {
 
 const fetchSelectOptions = async () => {
   try {
-    const [customerData, companyData, employeeData, caseTypeData, applicationCategoryData] = await Promise.all([
-      listCustomers(),
-      listCompanies(),
-      listEmployees({ is_active: true }),
+    const [caseTypeData, applicationCategoryData] = await Promise.all([
       listCaseTypeMasters({ is_active: true, ordering: 'sort_order' }),
       listCaseApplicationCategories({ is_active: true, ordering: 'sort_order' }),
     ])
-    customers.value = customerData.results
-    companies.value = companyData.results
-    employees.value = employeeData.results
     caseTypes.value = caseTypeData.results
     applicationCategories.value = applicationCategoryData.results
   } catch {
@@ -136,30 +142,9 @@ onMounted(() => {
   fetchSelectOptions()
 })
 
-const searchCustomers = async (query: string) => {
-  customerSearchLoading.value = true
-  try {
-    const data = await listCustomers(query ? { search: query } : undefined)
-    customers.value = data.results
-  } catch {
-    ElMessage.error('顧客の検索に失敗しました。')
-  } finally {
-    customerSearchLoading.value = false
-  }
-}
-
-const handleCustomerSearch = (query: string) => {
-  if (customerSearchTimer) clearTimeout(customerSearchTimer)
-  customerSearchTimer = setTimeout(() => searchCustomers(query), 300)
-}
-
-const ensureCustomerOption = (id: number | null, name?: string | null) => {
-  if (!id || customers.value.some((item) => item.id === id)) return
-  customers.value = [{ id, name: name || '' } as Customer, ...customers.value]
-}
-
 const resetForm = () => {
   editingCaseId.value = null
+  editingCase.value = null
   caseForm.value = {
     case_number: '',
     case_type_master: null,
@@ -182,6 +167,7 @@ const openCreateDialog = () => {
 
 const openEditDialog = (caseItem: Case) => {
   editingCaseId.value = caseItem.id
+  editingCase.value = caseItem
   caseForm.value = {
     case_number: caseItem.case_number,
     case_type_master: caseItem.case_type_master,
@@ -194,7 +180,6 @@ const openEditDialog = (caseItem: Case) => {
     result_notified_at: caseItem.result_notified_at,
     completed_at: caseItem.completed_at,
   }
-  ensureCustomerOption(caseItem.customer, caseItem.customer_name)
   formRef.value?.clearValidate()
   dialogVisible.value = true
 }
@@ -409,50 +394,13 @@ const confirmDeleteCase = async (caseItem: Case) => {
             </el-select>
           </el-form-item>
           <el-form-item label="顧客" prop="customer">
-            <el-select
-              v-model="caseForm.customer"
-              filterable
-              remote
-              reserve-keyword
-              :remote-method="handleCustomerSearch"
-              :loading="customerSearchLoading"
-              placeholder="氏名で検索してください"
-              class="form-control"
-            >
-              <el-option
-                v-for="customer in customers"
-                :key="customer.id"
-                :label="customer.name"
-                :value="customer.id"
-              />
-            </el-select>
+            <RemoteCustomerSelect v-model="caseForm.customer" class="form-control" :initial-option="editingCustomerOption" />
           </el-form-item>
           <el-form-item label="会社" prop="company">
-            <el-select v-model="caseForm.company" clearable filterable placeholder="選択してください" class="form-control">
-              <el-option
-                v-for="company in companies"
-                :key="company.id"
-                :label="company.name"
-                :value="company.id"
-              />
-            </el-select>
+            <RemoteCompanySelect v-model="caseForm.company" class="form-control" :initial-option="editingCompanyOption" />
           </el-form-item>
           <el-form-item label="担当者" prop="responsible_employee">
-            <el-select
-              v-model="caseForm.responsible_employee"
-              clearable
-              filterable
-              placeholder="選択してください"
-              class="form-control"
-            >
-              <el-option label="未設定" :value="null" />
-              <el-option
-                v-for="employee in employees"
-                :key="employee.id"
-                :label="employee.name"
-                :value="employee.id"
-              />
-            </el-select>
+            <RemoteStaffSelect v-model="caseForm.responsible_employee" class="form-control" :initial-option="editingStaffOption" />
           </el-form-item>
           <el-form-item label="受任日" prop="accepted_at">
             <el-date-picker

@@ -1,7 +1,8 @@
 import calendar
-from datetime import date
+from datetime import date, timedelta
 
-from django.db.models import Max
+from django.db import IntegrityError
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -12,7 +13,41 @@ from apps.companies.models import Company, CompanyStaff
 from apps.customers.models import Customer, FamilyMember
 from apps.reminders.models import DismissedDeadline
 
+from .models import ReceptionIdempotencyRecord
 from .serializers import ReceptionSerializer
+
+# 正常フローの途中離脱・終了状態。「進行中」の件数や次アクション集計からは除外する。
+CLOSED_CASE_STATUSES = {
+    Case.STATUS_COMPLETED,
+    Case.STATUS_WITHDRAWN,
+    Case.STATUS_REJECTED,
+}
+
+# ダッシュボードの進捗サマリー（詳細ページのステッパーと同じ6分類）。
+DASHBOARD_STAGE_GROUPS = [
+    ('preparation', '資料準備', [
+        Case.STATUS_CONSULTATION,
+        Case.STATUS_ACCEPTED,
+        Case.STATUS_COLLECTING_DOCUMENTS,
+        Case.STATUS_PREPARING_DOCUMENTS,
+        Case.STATUS_READY_TO_APPLY,
+    ]),
+    ('applied', '申請済み', [Case.STATUS_APPLIED]),
+    ('under_review', '審査中', [
+        Case.STATUS_UNDER_REVIEW,
+        Case.STATUS_ADDITIONAL_DOCUMENTS,
+        Case.STATUS_ADDITIONAL_DOCUMENTS_SUBMITTED,
+    ]),
+    ('result', '許可 / 不許可', [Case.STATUS_APPROVED, Case.STATUS_REJECTED]),
+    ('completed', '完了', [Case.STATUS_COMPLETED]),
+]
+
+# 「待機中」とみなす進捗（外部からの返答待ちで、こちらから動けない状態）。
+# work_status フィールド導入前の暫定定義。
+WAITING_CASE_STATUSES = {
+    Case.STATUS_ADDITIONAL_DOCUMENTS,
+    Case.STATUS_UNDER_REVIEW,
+}
 
 # 案件がこの状態になっていれば「もう動きが無い案件」とみなし、期限提醒には出さない
 # （完了・取下げ・不許可）。審査中や書類対応中など、まだ進行中の案件は
@@ -25,10 +60,47 @@ TERMINAL_CASE_STATUSES = {
 
 
 class ReceptionCreateView(APIView):
+    """新規受付の確定 API。
+
+    フロントは1回の確定操作につき固定の request_id を送る（ボタン二重クリックや
+    ネットワーク再試行での重複だけを想定しており、汎用の冪等機構ではない）。
+    - 既に成功済みの request_id → 保存済みのレスポンスをそのまま返す（顧客・案件は増えない）。
+    - 処理中（ほぼ同時に届いた重複リクエスト）→ 409 を返す。
+    - 未指定 → 従来どおり毎回作成する（後方互換）。
+    """
+
     def post(self, request):
-        serializer = ReceptionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        result = serializer.save()
+        request_id = (request.data.get('request_id') or '').strip()
+
+        if request_id:
+            existing = ReceptionIdempotencyRecord.objects.filter(request_id=request_id).first()
+            if existing:
+                if existing.response is None:
+                    return Response(
+                        {'detail': '同じ内容の受付処理が実行中です。しばらくしてから確認してください。'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                return Response(existing.response, status=status.HTTP_201_CREATED)
+            try:
+                ReceptionIdempotencyRecord.objects.create(request_id=request_id, response=None)
+            except IntegrityError:
+                return Response(
+                    {'detail': '同じ内容の受付処理が実行中です。しばらくしてから確認してください。'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+        try:
+            serializer = ReceptionSerializer(data=request.data, context={'request': request})
+            serializer.is_valid(raise_exception=True)
+            result = serializer.save()
+        except Exception:
+            if request_id:
+                # 失敗時はプレースホルダを消し、同じ request_id での再試行を許可する。
+                ReceptionIdempotencyRecord.objects.filter(request_id=request_id, response__isnull=True).delete()
+            raise
+
+        if request_id:
+            ReceptionIdempotencyRecord.objects.filter(request_id=request_id).update(response=result)
         return Response(result, status=status.HTTP_201_CREATED)
 
 
@@ -187,6 +259,81 @@ def build_dashboard_deadlines(today, include_dismissed=False):
 
     items.sort(key=lambda item: (item['days_left'], item['deadline_date'], item['target_name']))
     return items
+
+
+class DashboardSummaryView(APIView):
+    """ダッシュボードの案件統計をサーバー側の集計で返す。
+
+    フロントで案件一覧の1ページ目だけを数えていた実装を置き換えるためのもの。
+    件数はすべて DB 集計で計算し、ページングの影響を受けない。
+    """
+
+    def get(self, request):
+        today = timezone.localdate()
+
+        base = Case.objects.filter(registration_status=Case.REGISTRATION_STATUS_ACTIVE)
+        open_cases = base.exclude(status__in=CLOSED_CASE_STATUSES)
+
+        stage_counts = {
+            row['status']: row['count']
+            for row in base.values('status').annotate(count=Count('id'))
+        }
+        stages = []
+        for key, label, statuses in DASHBOARD_STAGE_GROUPS:
+            stages.append({
+                'key': key,
+                'label': label,
+                'count': sum(stage_counts.get(s, 0) for s in statuses),
+            })
+
+        action_aggregate = open_cases.aggregate(
+            overdue=Count('id', filter=Q(next_action_due_at__lt=today)),
+            today=Count('id', filter=Q(next_action_due_at=today)),
+            next_7_days=Count('id', filter=Q(
+                next_action_due_at__gt=today,
+                next_action_due_at__lte=today + timedelta(days=7),
+            )),
+        )
+
+        recent_cases = [
+            {
+                'id': case.id,
+                'case_number': case.case_number,
+                'case_type': case.case_type,
+                'customer_name': getattr(case.customer, 'name', '') or '',
+                'company_name': getattr(case.company, 'name', '') if case.company_id else '',
+                'status': case.status,
+                'status_display': case.get_status_display(),
+                'responsible_employee_name': (
+                    getattr(case.responsible_employee, 'name', '') if case.responsible_employee_id else ''
+                ),
+                'next_action': case.next_action,
+                'next_action_due_at': case.next_action_due_at.isoformat() if case.next_action_due_at else None,
+                'updated_at': case.updated_at.isoformat(),
+            }
+            for case in base.select_related('customer', 'company', 'responsible_employee')
+            .order_by('-updated_at', '-id')[:10]
+        ]
+
+        return Response({
+            'cases': {
+                'total': base.count(),
+                'active': open_cases.count(),
+                'waiting': open_cases.filter(status__in=WAITING_CASE_STATUSES).count(),
+                'completed': base.filter(status=Case.STATUS_COMPLETED).count(),
+                'unassigned': open_cases.filter(responsible_employee__isnull=True).count(),
+                'without_next_action': open_cases.filter(
+                    Q(next_action='') | Q(next_action__isnull=True),
+                ).count(),
+            },
+            'actions': {
+                'overdue': action_aggregate['overdue'] or 0,
+                'today': action_aggregate['today'] or 0,
+                'next_7_days': action_aggregate['next_7_days'] or 0,
+            },
+            'stages': stages,
+            'recent_cases': recent_cases,
+        })
 
 
 class DashboardDeadlinesView(APIView):

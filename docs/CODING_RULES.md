@@ -80,7 +80,7 @@ API 规则：
 - 不返回不必要的敏感字段
 - 列表接口保持分页能力
 - 错误信息保持简洁清晰
-- 所有时间统一使用 UTC 存储，前端负责展示
+- 数据库时间按 Django USE_TZ=True 存储；业务日期、期限、案件编号月份、文件名日期统一通过 Asia/Tokyo 的 timezone.localdate() / timezone.localtime() 计算。不要直接使用 datetime.now() 或 date.today()。
 
 API 命名应围绕资源，不围绕页面。
 

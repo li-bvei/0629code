@@ -5,6 +5,7 @@ from pathlib import Path
 
 import fitz
 from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -118,7 +119,7 @@ def load_form_field_mapping():
 
 def save_form_field_mapping(mapping):
     if FORM_FIELD_MAPPING_PATH.exists():
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        timestamp = timezone.localtime(timezone.now()).strftime('%Y%m%d%H%M%S')
         backup_path = TEMPLATE_DIR / f'form_field_mapping.backup.{timestamp}.json'
         shutil.copy2(FORM_FIELD_MAPPING_PATH, backup_path)
 

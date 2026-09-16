@@ -32,6 +32,11 @@ class ExpenseSummaryApiTests(TestCase):
             'total_income': 0,
             'total_expense': 0,
             'balance': 0,
+            'opening_balance': 0,
+            'period_income_total': 0,
+            'period_expense_total': 0,
+            'filtered_expense_total': 0,
+            'filtered_net': 0,
         })
 
     def test_expense_summary_uses_database_totals_and_balance(self):
@@ -111,10 +116,16 @@ class ExpenseSummaryApiTests(TestCase):
         })
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['target_count'], 1)
-        self.assertEqual(response.json()['total_expense'], 1200)
-        self.assertEqual(response.json()['total_income'], 5000)
-        self.assertEqual(response.json()['balance'], 3800)
+        body = response.json()
+        # 絞り込み結果：カテゴリ・精算済みフィルタは支出のみを絞り込む
+        self.assertEqual(body['target_count'], 1)
+        self.assertEqual(body['total_expense'], 1200)
+        self.assertEqual(body['filtered_expense_total'], 1200)
+        self.assertEqual(body['filtered_net'], 3800)
+        # 期間実際残高：日付以外の絞り込みでは変化しない（全支出 1700 を差し引く）
+        self.assertEqual(body['total_income'], 5000)
+        self.assertEqual(body['period_expense_total'], 1700)
+        self.assertEqual(body['balance'], 3300)
 
 
 class AccountingVoucherTaxCalculationTests(TestCase):
@@ -220,13 +231,12 @@ class AccountingVoucherTaxCalculationTests(TestCase):
         rows = build_invoice_summary_rows(voucher, leading_blank_span=4)
         labels_and_values = [(row[1]['text'], row[2]['text']) for row in rows]
 
-        self.assertIn(('小計', '￥2,500'), labels_and_values)
-        self.assertIn(('10％対象額', '￥1,000'), labels_and_values)
-        self.assertIn(('消費税10％', '￥100'), labels_and_values)
-        self.assertIn(('8％対象額', '￥1,000'), labels_and_values)
-        self.assertIn(('消費税8％', '￥80'), labels_and_values)
-        self.assertIn(('非課税対象額', '￥500'), labels_and_values)
-        self.assertIn(('合計', '￥2,680'), labels_and_values)
+        # 現行の製品仕様では、内訳は税率別ではなく「小計 / 消費税 / 合計」の3行に統一する。
+        self.assertEqual(labels_and_values, [
+            ('小計', '￥2,500'),
+            ('消費税', '￥180'),
+            ('合計', '￥2,680'),
+        ])
 
 
 class ProjectExcelExportTests(SimpleTestCase):
@@ -275,60 +285,58 @@ class ProjectExcelExportTests(SimpleTestCase):
 
 
 class ExpenseExcelExportTests(SimpleTestCase):
-    def test_expenses_excel_contains_summary_filter_table_and_chart(self):
+    def _expense(self, **overrides):
+        base = dict(
+            expense_date=date(2026, 7, 1),
+            place='役所',
+            category='証明書',
+            amount=Decimal('1200'),
+            payment_method='现金',
+            expense_target='王小明',
+            note='住民票',
+            is_reimbursed=False,
+        )
+        base.update(overrides)
+        return SimpleNamespace(**base)
+
+    def test_expenses_excel_contains_period_summary_income_and_expense_tables(self):
         expenses = [
-            SimpleNamespace(
-                expense_date=date(2026, 7, 1),
-                place='役所',
-                category='証明書',
-                amount=Decimal('1200'),
-                payment_method='现金',
-                expense_target='王小明',
-                note='住民票',
-                is_reimbursed=False,
-            ),
-            SimpleNamespace(
-                expense_date=date(2026, 7, 2),
-                place='交通',
-                category='交通費',
-                amount=Decimal('500'),
-                payment_method='ICOCA',
-                expense_target='王小明',
-                note='',
-                is_reimbursed=True,
-            ),
-            SimpleNamespace(
-                expense_date=date(2026, 7, 3),
-                place='返金',
-                category='交通費',
-                amount=Decimal('-200'),
-                payment_method='现金',
-                expense_target='王小明',
-                note='調整',
-                is_reimbursed=False,
-            ),
+            self._expense(),
+            self._expense(expense_date=date(2026, 7, 2), place='交通', category='交通費',
+                          amount=Decimal('500'), payment_method='ICOCA', note='', is_reimbursed=True),
+            self._expense(expense_date=date(2026, 7, 3), place='返金', category='交通費',
+                          amount=Decimal('-200'), note='調整'),
+        ]
+        incomes = [
+            SimpleNamespace(source_date=date(2026, 7, 5), source_target='王小明',
+                            amount=Decimal('5000'), note='着手金'),
         ]
 
         workbook_bytes = build_expenses_excel(
             expenses,
+            incomes,
             filters=[('対象期間', '2026-07-01 ～ 2026-07-31'), ('支出カテゴリ', 'すべて')],
+            opening_balance=Decimal('1000'),
+            period_expense_total=Decimal('1500'),
         )
         workbook = load_workbook(BytesIO(workbook_bytes))
         sheet = workbook['支出記録']
 
         self.assertEqual(sheet['A1'].value, '支出記録')
-        self.assertEqual(sheet['A5'].value, 1500)
-        self.assertEqual(sheet['C5'].value, 3)
-        self.assertEqual(sheet['E5'].value, 500)
+        # 期間収入 / 期首残高 / 残高（＝期首残高 + 期間収入 - 期間支出）
+        self.assertEqual(sheet['A5'].value, 5000)
+        self.assertEqual(sheet['C5'].value, 1000)
+        self.assertEqual(sheet['E5'].value, 4500)
         self.assertEqual(sheet['A5'].number_format, ACCOUNTING_NUMBER_FORMAT)
         self.assertEqual(sheet['E5'].number_format, ACCOUNTING_NUMBER_FORMAT)
-        self.assertEqual(sheet['D29'].value, 1200)
-        self.assertEqual(sheet['D29'].number_format, ACCOUNTING_NUMBER_FORMAT)
-        self.assertEqual(sheet.freeze_panes, 'A29')
-        self.assertEqual(sheet.auto_filter.ref, 'A28:H31')
-        self.assertEqual(sheet.print_title_rows, '$28:$28')
-        self.assertEqual(len(sheet._charts), 1)
-        self.assertEqual(workbook['ChartData'].sheet_state, 'hidden')
+        # 収入明細の1行目
+        self.assertEqual(sheet['C12'].value, 5000)
+        # 支出明細の1行目（金額列 = D、ヘッダー行 15、データ 16 以降）
+        self.assertEqual(sheet['D16'].value, 1200)
+        self.assertEqual(sheet['D16'].number_format, ACCOUNTING_NUMBER_FORMAT)
+        self.assertEqual(sheet.freeze_panes, 'A16')
+        self.assertEqual(sheet.auto_filter.ref, 'A15:G18')
+        self.assertEqual(sheet.print_title_rows, '$15:$15')
 
         text_values = [
             cell.value
@@ -338,7 +346,7 @@ class ExpenseExcelExportTests(SimpleTestCase):
         ]
         self.assertFalse(any('¥' in value or '￥' in value or '円' in value or 'JPY' in value for value in text_values))
 
-    def test_expenses_excel_without_rows_is_valid_without_empty_chart(self):
+    def test_expenses_excel_without_rows_is_valid(self):
         workbook_bytes = build_expenses_excel([])
         workbook = load_workbook(BytesIO(workbook_bytes))
         sheet = workbook['支出記録']

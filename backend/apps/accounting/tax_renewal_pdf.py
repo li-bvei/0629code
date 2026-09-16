@@ -9,6 +9,7 @@ from urllib.parse import quote
 import fitz
 from django.conf import settings
 from django.http import HttpResponse
+from django.utils import timezone
 
 from .tax_renewal_templates import get_tax_renewal_templates
 
@@ -132,7 +133,7 @@ def tax_renewal_pdf_response(record, template_key):
     result = generate_tax_renewal_template_pdf_result(record, template_key)
     template = get_template(template_key)
     document_label = Path(template['filename']).stem if template.get('filename') else template_key
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    timestamp = timezone.localtime(timezone.now()).strftime('%Y%m%d%H%M%S')
     filename = f'{document_label}_{safe_filename(record.title)}_{timestamp}.pdf'
     response = HttpResponse(result.pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = (

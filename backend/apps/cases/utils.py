@@ -61,24 +61,65 @@ def generate_case_number(case_type_master, application_category, customer=None, 
     return f'{number_prefix}{max_sequence + 1:04d}'
 
 
-def apply_checklist_template_to_case(case, template):
+APPLY_MODE_MERGE = 'merge'
+APPLY_MODE_REPLACE = 'replace'
+
+
+def _checklist_item_key(category, name):
+    return ((category or '').strip(), (name or '').strip())
+
+
+def apply_checklist_template_to_case(case, template, mode=APPLY_MODE_MERGE):
+    """案件にテンプレートを適用する。
+
+    mode='merge'（既定）: 既存に無い項目だけを追加する（重複追加しない＝冪等）。
+    mode='replace'      : 未完了かつテンプレート由来の項目を削除してから作り直す。
+                          完了済みの項目は残す（無警告で消さない）。
+
+    戻り値は今回新規作成された CaseChecklistItem のリスト。
+    """
     from .models import CaseChecklistItem
 
     template_items = list(
         template.items.filter(is_active=True, deleted_at__isnull=True).order_by('sort_order', 'id')
     )
-    current_max_order = (
-        CaseChecklistItem.objects
-        .filter(case=case)
-        .order_by('-sort_order')
-        .values_list('sort_order', flat=True)
-        .first()
-        or 0
-    )
 
     created_items = []
     with transaction.atomic():
+        existing_items = list(CaseChecklistItem.objects.filter(case=case))
+
+        if mode == APPLY_MODE_REPLACE:
+            template_item_ids = {item.id for item in template_items}
+            removable = [
+                item for item in existing_items
+                if not item.is_completed and (
+                    item.source_template_item_id is not None
+                    and item.source_template_item.template_id == template.id
+                )
+            ]
+            removable_ids = {item.id for item in removable}
+            if removable_ids:
+                CaseChecklistItem.objects.filter(id__in=removable_ids).delete()
+            existing_items = [item for item in existing_items if item.id not in removable_ids]
+            # replace でも、既に手動で追加済み・完了済みの同名項目は二重に作らない。
+            del template_item_ids
+
+        existing_keys = {
+            _checklist_item_key(item.category, item.name) for item in existing_items
+        }
+        existing_source_ids = {
+            item.source_template_item_id for item in existing_items if item.source_template_item_id
+        }
+
+        current_max_order = max(
+            [item.sort_order for item in existing_items] + [0]
+        )
+
         for index, template_item in enumerate(template_items, start=1):
+            key = _checklist_item_key(template_item.category, template_item.name)
+            if key in existing_keys or template_item.id in existing_source_ids:
+                continue
+            current_max_order += 1
             created_items.append(CaseChecklistItem.objects.create(
                 case=case,
                 source_template_item=template_item,
@@ -96,8 +137,9 @@ def apply_checklist_template_to_case(case, template):
                 customer_note=template_item.customer_note,
                 is_visible_to_customer=template_item.is_visible_to_customer,
                 importance_level=template_item.importance_level,
-                sort_order=current_max_order + index,
+                sort_order=current_max_order,
             ))
+            existing_keys.add(key)
     return created_items
 
 

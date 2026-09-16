@@ -9,6 +9,7 @@ from urllib.parse import quote
 import fitz
 from django.conf import settings
 from django.http import HttpResponse
+from django.utils import timezone
 
 
 TEMPLATE_DIR = Path(settings.BASE_DIR) / 'assets' / 'pdf_templates' / 'visa_return'
@@ -640,7 +641,7 @@ def generate_visa_return_pdf(application):
 
 def build_visa_return_pdf_filename(application):
     name = (application.applicant_name or get_form_data(application).get('pinyin_name1') or '申請人').strip()
-    today = datetime.now().strftime('%Y%m%d')
+    today = timezone.localdate().strftime('%Y%m%d')
     return f'返签visa表_{name}_{today}.pdf'
 
 

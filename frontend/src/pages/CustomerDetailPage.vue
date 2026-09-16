@@ -4,7 +4,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { createCase, listCaseApplicationCategories, listCaseTypeMasters } from '../api/cases'
-import { getCustomer, listCustomers, listResidenceStatusMasters, updateCustomer } from '../api/customers'
+import { getCustomer, listResidenceStatusMasters, updateCustomer } from '../api/customers'
 import { listEmployees } from '../api/employees'
 import {
   createFamilyMember,
@@ -12,17 +12,20 @@ import {
   listFamilyMembers,
   updateFamilyMember,
 } from '../api/familyMembers'
-import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CreateCustomerPayload, Customer, Employee, FamilyMember, FamilyMemberPayload, ResidenceStatusMaster, UpdateCustomerPayload } from '../types/api'
+import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
+import type { CaseApplicationCategory, CasePayload, CaseTypeMaster, CreateCustomerPayload, Customer, CustomerCaseSummary, CustomerDetail, CustomerRelatedCompany, Employee, FamilyMember, FamilyMemberPayload, ResidenceStatusMaster, UpdateCustomerPayload } from '../types/api'
+import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
-const customer = ref<Customer | null>(null)
-const cases = ref<Case[]>([])
-const relatedCompanies = ref<Company[]>([])
+const customer = ref<CustomerDetail | null>(null)
+const cases = ref<CustomerCaseSummary[]>([])
+const relatedCompanies = ref<CustomerRelatedCompany[]>([])
 const familyMembers = ref<FamilyMember[]>([])
+const activeSection = ref<'overview' | 'cases' | 'relationships' | 'activity'>('overview')
 const customerSubmitting = ref(false)
 const customerDialogVisible = ref(false)
 const customerFormRef = ref<FormInstance>()
@@ -55,15 +58,16 @@ interface FamilyEditForm {
   gender: string
   nationality: string
   phone: string
+  email: string
   postal_code: string
   address: string
   my_number: string
   residence_status: string
   residence_card_no: string
   residence_expiry: string | null
+  passport_no: string
+  passport_expiry: string | null
 }
-
-const allCustomers = ref<Customer[]>([])
 
 const familyForm = ref<FamilyEditForm>({
   relationship: '',
@@ -76,17 +80,16 @@ const familyForm = ref<FamilyEditForm>({
   gender: '',
   nationality: '',
   phone: '',
+  email: '',
   postal_code: '',
   address: '',
   my_number: '',
   residence_status: '',
   residence_card_no: '',
   residence_expiry: null,
+  passport_no: '',
+  passport_expiry: null,
 })
-
-const familyCustomerOptions = computed(() => (
-  allCustomers.value.filter((item) => item.id !== customerId.value)
-))
 
 const caseTargetOptions = computed(() => {
   const seen = new Set<number>()
@@ -125,6 +128,37 @@ const customerForm = ref<UpdateCustomerPayload>({
 const customerId = computed(() => Number(route.params.id))
 
 const relatedCases = computed(() => cases.value)
+const activeCases = computed(() => relatedCases.value.filter((caseItem) => (
+  caseItem.registration_status === 'active'
+  && !['rejected', 'withdrawn', 'completed'].includes(caseItem.status)
+)))
+const historicalCases = computed(() => relatedCases.value.filter((caseItem) => (
+  !activeCases.value.some((activeCase) => activeCase.id === caseItem.id)
+)))
+const primaryCase = computed(() => customer.value?.summary.primary_case || null)
+const summaryItems = computed(() => [
+  { key: 'cases' as const, label: '進行中案件', value: customer.value?.summary.active_cases_count || 0 },
+  { key: 'cases' as const, label: '履歴案件', value: customer.value?.summary.historical_cases_count || 0 },
+  { key: 'relationships' as const, label: '家族', value: customer.value?.summary.family_count || 0 },
+  { key: 'relationships' as const, label: '関連会社', value: customer.value?.summary.company_count || 0 },
+  { key: 'activity' as const, label: '最近の活動', value: customer.value?.recent_activities.length || 0 },
+])
+
+const buildExpiryRisk = (label: string, value?: string | null) => {
+  if (!value) return null
+  const today = new Date()
+  const target = new Date(`${value}T00:00:00+09:00`)
+  const days = Math.ceil((target.getTime() - today.getTime()) / 86400000)
+  if (days < 0) return { label, date: value, message: `${Math.abs(days)}日超過`, type: 'error' as const }
+  if (days <= 30) return { label, date: value, message: `あと${days}日`, type: 'error' as const }
+  if (days <= 90) return { label, date: value, message: `あと${days}日`, type: 'warning' as const }
+  return null
+}
+
+const expiryRisks = computed(() => [
+  buildExpiryRisk('在留期限', customer.value?.residence_expiry),
+  buildExpiryRisk('パスポート期限', customer.value?.passport_expiry),
+].filter((item): item is NonNullable<typeof item> => Boolean(item)))
 const relationshipOptions = [
   { label: '配偶者', value: 'spouse' },
   { label: '子', value: 'child' },
@@ -178,15 +212,6 @@ const sortedFamilyMembers = computed(() => (
 ))
 
 const displayValue = (value?: string | null) => value || '-'
-const formatFiscalMonth = (value?: string | null) => (value ? `${value}月` : '-')
-const getRepresentativeName = (company: Company) => (
-  company.representative_customer_name || company.representative_name
-)
-const getFamilyCardTitle = (familyMember: FamilyMember) => {
-  const relationship = getFamilyRelationshipLabel(familyMember) || '家族'
-  const name = familyMember.name || '未入力'
-  return `${relationship}　${name}`
-}
 
 const genderOptions = [
   { label: '男性', value: 'male' },
@@ -241,6 +266,16 @@ const formatGender = (gender?: string | null) => {
   return gender ? labels[gender] || gender : '-'
 }
 
+const copyText = async (value?: string | null) => {
+  if (!value) return
+  try {
+    await navigator.clipboard.writeText(value)
+    ElMessage.success('コピーしました。')
+  } catch {
+    ElMessage.error('コピーできませんでした。')
+  }
+}
+
 const resetCustomerForm = () => {
   if (!customer.value) return
   customerForm.value = {
@@ -253,7 +288,7 @@ const resetCustomerForm = () => {
     phone: customer.value.phone,
     postal_code: customer.value.postal_code,
     address: customer.value.address,
-    my_number: customer.value.my_number,
+    my_number: '',
     residence_status: customer.value.residence_status,
     residence_card_no: customer.value.residence_card_no,
     residence_expiry: customer.value.residence_expiry,
@@ -277,7 +312,9 @@ const submitCustomer = async () => {
 
   customerSubmitting.value = true
   try {
-    customer.value = await updateCustomer(customerId.value, customerForm.value)
+    const { my_number, ...rest } = customerForm.value
+    await updateCustomer(customerId.value, my_number ? { ...rest, my_number } : rest)
+    await fetchCustomerDetail()
     ElMessage.success('顧客情報を更新しました。')
     customerDialogVisible.value = false
   } catch {
@@ -357,17 +394,6 @@ const submitCase = async () => {
   }
 }
 
-const fetchFamilyMembers = async () => {
-  const data = await listFamilyMembers({ customer: customerId.value })
-  familyMembers.value = data.results
-}
-
-const fetchAllCustomers = async () => {
-  if (allCustomers.value.length) return
-  const data = await listCustomers()
-  allCustomers.value = data.results
-}
-
 const resetFamilyForm = () => {
   editingFamilyMemberId.value = null
   familyForm.value = {
@@ -381,24 +407,32 @@ const resetFamilyForm = () => {
     gender: '',
     nationality: '',
     phone: '',
+    email: '',
     postal_code: customer.value?.postal_code || '',
     address: customer.value?.address || '',
     my_number: '',
     residence_status: '',
     residence_card_no: '',
     residence_expiry: null,
+    passport_no: '',
+    passport_expiry: null,
   }
   familyFormRef.value?.clearValidate()
 }
 
-const startAddFamilyMember = async () => {
-  await fetchAllCustomers()
+const startAddFamilyMember = () => {
   resetFamilyForm()
   familyEditTarget.value = 'new'
 }
 
-const startEditFamilyMember = async (familyMember: FamilyMember) => {
-  await fetchAllCustomers()
+const handleFamilyCustomerChange = (selected: Customer | null) => {
+  if (selected?.id === customerId.value) {
+    familyForm.value.family_customer = null
+    ElMessage.warning('本人を家族として選択することはできません。')
+  }
+}
+
+const startEditFamilyMember = (familyMember: FamilyMember) => {
   editingFamilyMemberId.value = familyMember.id
   familyForm.value = {
     relationship: familyMember.relationship,
@@ -411,12 +445,15 @@ const startEditFamilyMember = async (familyMember: FamilyMember) => {
     gender: familyMember.gender || '',
     nationality: familyMember.nationality || '',
     phone: familyMember.phone || '',
+    email: familyMember.email || '',
     postal_code: familyMember.postal_code || '',
     address: familyMember.address || '',
     my_number: '',
     residence_status: familyMember.residence_status || '',
     residence_card_no: familyMember.residence_card_no || '',
     residence_expiry: familyMember.residence_expiry || null,
+    passport_no: familyMember.passport_no || '',
+    passport_expiry: familyMember.passport_expiry || null,
   }
   familyFormRef.value?.clearValidate()
   familyEditTarget.value = familyMember.id
@@ -451,12 +488,15 @@ const submitFamilyMember = async () => {
         gender: familyForm.value.gender,
         nationality: familyForm.value.nationality,
         phone: familyForm.value.phone,
+        email: familyForm.value.email,
         postal_code: familyForm.value.postal_code || customer.value?.postal_code || '',
         address: familyForm.value.address || customer.value?.address || '',
         my_number: familyForm.value.my_number,
         residence_status: familyForm.value.residence_status,
         residence_card_no: familyForm.value.residence_card_no,
         residence_expiry: familyForm.value.residence_expiry,
+        passport_no: familyForm.value.passport_no,
+        passport_expiry: familyForm.value.passport_expiry,
       }
       payload.new_customer = newCustomer
     }
@@ -468,7 +508,7 @@ const submitFamilyMember = async () => {
       ElMessage.success('家族情報を追加しました。')
     }
     familyEditTarget.value = null
-    await fetchFamilyMembers()
+    await fetchCustomerDetail()
   } catch {
     errorMessage.value = editingFamilyMemberId.value
       ? '家族情報の更新に失敗しました。'
@@ -494,7 +534,7 @@ const confirmDeleteFamilyMember = async (familyMember: FamilyMember) => {
     if (familyEditTarget.value === familyMember.id) {
       familyEditTarget.value = null
     }
-    await fetchFamilyMembers()
+    await fetchCustomerDetail()
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       errorMessage.value = '家族情報の削除に失敗しました。'
@@ -515,320 +555,287 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <div class="page-header page-header-row">
-      <h1>顧客詳細</h1>
-      <el-button @click="router.push('/customers')">一覧へ戻る</el-button>
-    </div>
-
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
-
-    <div v-loading="loading" class="detail-grid">
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header-row">
-            <span>基本情報</span>
-            <el-button type="primary" @click="openEditCustomerDialog">編集</el-button>
-          </div>
-        </template>
-        <el-descriptions v-if="customer" :column="2" border>
-          <el-descriptions-item label="フリガナ" :span="2">{{ displayValue(customer.name_kana) }}</el-descriptions-item>
-          <el-descriptions-item label="氏名" :span="2">{{ displayValue(customer.name) }}</el-descriptions-item>
-          <el-descriptions-item label="生年月日">{{ formatDate(customer.birth_date) }}</el-descriptions-item>
-          <el-descriptions-item label="性別">{{ formatGender(customer.gender) }}</el-descriptions-item>
-          <el-descriptions-item label="国籍">{{ displayValue(customer.nationality) }}</el-descriptions-item>
-          <el-descriptions-item label="電話番号">{{ displayValue(customer.phone) }}</el-descriptions-item>
-          <el-descriptions-item label="メール" :span="2">{{ displayValue(customer.email) }}</el-descriptions-item>
-          <el-descriptions-item label="郵便番号" :span="2">{{ displayValue(customer.postal_code) }}</el-descriptions-item>
-          <el-descriptions-item label="住所" :span="2">{{ displayValue(customer.address) }}</el-descriptions-item>
-          <el-descriptions-item label="在留資格" :span="2">{{ displayValue(customer.residence_status) }}</el-descriptions-item>
-          <el-descriptions-item label="在留カード番号">{{ displayValue(customer.residence_card_no) }}</el-descriptions-item>
-          <el-descriptions-item label="在留期限">{{ formatDate(customer.residence_expiry) }}</el-descriptions-item>
-          <el-descriptions-item label="パスポート番号">{{ displayValue(customer.passport_no) }}</el-descriptions-item>
-          <el-descriptions-item label="パスポート期限">{{ formatDate(customer.passport_expiry) }}</el-descriptions-item>
-          <el-descriptions-item label="マイナンバー">{{ displayValue(customer.my_number) }}</el-descriptions-item>
-          <el-descriptions-item label="備考" :span="2">{{ displayValue(customer.note) }}</el-descriptions-item>
-        </el-descriptions>
-      </el-card>
-
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header-row">
-            <span>家族情報</span>
-            <el-button type="primary" :disabled="familyEditTarget !== null" @click="startAddFamilyMember">家族を追加</el-button>
-          </div>
-        </template>
-
-        <div v-if="familyEditTarget !== null" class="family-member-block family-member-edit-block">
-          <h3 class="family-edit-title">{{ familyEditTarget === 'new' ? '家族を追加' : '家族情報を編集' }}</h3>
-          <el-form ref="familyFormRef" :model="familyForm" :rules="familyRules" label-position="top">
-            <div class="form-grid">
-              <el-form-item label="関係" prop="relationship">
-                <el-select v-model="familyForm.relationship" placeholder="選択してください" class="form-control">
-                  <el-option v-for="option in relationshipOptions" :key="option.value" :label="option.label" :value="option.value" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="扶養対象" prop="is_dependent">
-                <el-switch v-model="familyForm.is_dependent" active-text="はい" inactive-text="いいえ" />
-              </el-form-item>
-              <el-form-item label="既存の顧客から選択" class="form-grid-full">
-                <el-select
-                  v-model="familyForm.family_customer"
-                  clearable
-                  filterable
-                  placeholder="既に顧客として登録済みの場合はここで選択（未選択なら下で新規登録）"
-                  class="form-control"
-                >
-                  <el-option v-for="option in familyCustomerOptions" :key="option.id" :label="option.name" :value="option.id" />
-                </el-select>
-              </el-form-item>
-            </div>
-
-            <template v-if="!familyForm.family_customer">
-              <p class="section-optional-note">既存の顧客に該当しない場合は、新しい人物として以下を入力してください。</p>
-              <div class="form-grid">
-                <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start">
-                  <el-input v-model="familyForm.name_kana" />
-                </el-form-item>
-                <el-form-item label="氏名" prop="name" class="form-grid-start">
-                  <el-input v-model="familyForm.name" />
-                </el-form-item>
-                <el-form-item label="生年月日" prop="birth_date">
-                  <el-date-picker v-model="familyForm.birth_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
-                </el-form-item>
-                <el-form-item label="性別" prop="gender">
-                  <el-select v-model="familyForm.gender" clearable placeholder="選択してください" class="form-control">
-                    <el-option v-for="option in genderOptions" :key="option.value" :label="option.label" :value="option.value" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="国籍" prop="nationality">
-                  <el-input v-model="familyForm.nationality" />
-                </el-form-item>
-                <el-form-item label="電話番号" prop="phone">
-                  <el-input v-model="familyForm.phone" />
-                </el-form-item>
-                <el-form-item label="郵便番号" prop="postal_code" class="form-grid-start">
-                  <el-input v-model="familyForm.postal_code" />
-                </el-form-item>
-                <el-form-item label="住所" prop="address" class="form-grid-full">
-                  <el-input v-model="familyForm.address" />
-                </el-form-item>
-                <el-form-item label="マイナンバー" prop="my_number">
-                  <el-input v-model="familyForm.my_number" />
-                </el-form-item>
-                <el-form-item label="在留資格" prop="residence_status">
-                  <el-select v-model="familyForm.residence_status" clearable filterable allow-create default-first-option placeholder="選択してください" class="form-control">
-                    <el-option v-for="status in residenceStatusOptions" :key="status.id" :label="status.name" :value="status.name" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="在留カード番号" prop="residence_card_no">
-                  <el-input v-model="familyForm.residence_card_no" />
-                </el-form-item>
-                <el-form-item label="在留期限" prop="residence_expiry">
-                  <el-date-picker v-model="familyForm.residence_expiry" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" />
-                </el-form-item>
-              </div>
-            </template>
-            <p v-else class="section-optional-note">
-              氏名・生年月日などの個人情報は選択した顧客の情報を使用します。変更する場合は
-              <router-link class="text-link" :to="`/customers/${familyForm.family_customer}`">その顧客の詳細ページ</router-link>
-              から編集してください。
-            </p>
-
-            <el-form-item label="備考" prop="note">
-              <el-input v-model="familyForm.note" type="textarea" :rows="2" />
-            </el-form-item>
-          </el-form>
-          <div class="family-member-actions">
-            <el-button @click="cancelFamilyEdit">キャンセル</el-button>
-            <el-button type="primary" :loading="familySubmitting" @click="submitFamilyMember">
-              {{ familyEditTarget === 'new' ? '追加' : '保存' }}
-            </el-button>
-          </div>
-        </div>
-
-        <div v-if="sortedFamilyMembers.length" class="family-member-list">
-          <div
-            v-for="familyMember in sortedFamilyMembers"
-            v-show="familyEditTarget !== familyMember.id"
-            :key="familyMember.id"
-            class="family-member-block"
-          >
-            <div class="family-member-header">
-              <strong>{{ getFamilyCardTitle(familyMember) }}</strong>
-              <div class="family-member-actions">
-                <el-button text type="primary" :disabled="familyEditTarget !== null" @click="startEditFamilyMember(familyMember)">編集</el-button>
-                <el-button text type="danger" :disabled="familyEditTarget !== null" @click="confirmDeleteFamilyMember(familyMember)">削除</el-button>
-              </div>
-            </div>
-            <el-descriptions :column="2" border>
-              <el-descriptions-item label="紐付く顧客" :span="2">
-                <router-link v-if="familyMember.family_customer" class="text-link" :to="`/customers/${familyMember.family_customer}`">
-                  {{ familyMember.name }}
-                </router-link>
-                <div v-else class="family-unlinked-hint">
-                  <span>独立した顧客情報がありません（この人の案件を作成するには顧客登録が必要です）</span>
-                  <el-button text type="primary" :disabled="familyEditTarget !== null" @click="startEditFamilyMember(familyMember)">
-                    顧客として登録する
-                  </el-button>
-                </div>
-              </el-descriptions-item>
-              <el-descriptions-item label="フリガナ" :span="2">{{ displayValue(familyMember.name_kana) }}</el-descriptions-item>
-              <el-descriptions-item label="氏名" :span="2">{{ displayValue(familyMember.name) }}</el-descriptions-item>
-              <el-descriptions-item label="関係">{{ displayValue(familyMember.relationship_display) }}</el-descriptions-item>
-              <el-descriptions-item label="生年月日">{{ formatDate(familyMember.birth_date) }}</el-descriptions-item>
-              <el-descriptions-item label="性別">{{ displayValue(familyMember.gender_display) }}</el-descriptions-item>
-              <el-descriptions-item label="国籍">{{ displayValue(familyMember.nationality) }}</el-descriptions-item>
-              <el-descriptions-item label="電話番号">{{ displayValue(familyMember.phone) }}</el-descriptions-item>
-              <el-descriptions-item label="郵便番号" :span="2">{{ displayValue(familyMember.postal_code) }}</el-descriptions-item>
-              <el-descriptions-item label="住所" :span="2">{{ displayValue(familyMember.address) }}</el-descriptions-item>
-              <el-descriptions-item label="在留資格" :span="2">{{ displayValue(familyMember.residence_status) }}</el-descriptions-item>
-              <el-descriptions-item label="在留カード番号">{{ displayValue(familyMember.residence_card_no) }}</el-descriptions-item>
-              <el-descriptions-item label="在留期限">{{ formatDate(familyMember.residence_expiry) }}</el-descriptions-item>
-              <el-descriptions-item label="パスポート番号">{{ displayValue(familyMember.passport_no) }}</el-descriptions-item>
-              <el-descriptions-item label="パスポート期限">{{ formatDate(familyMember.passport_expiry) }}</el-descriptions-item>
-              <el-descriptions-item label="マイナンバー">{{ displayValue(familyMember.my_number) }}</el-descriptions-item>
-              <el-descriptions-item label="扶養対象">{{ familyMember.is_dependent ? 'はい' : 'いいえ' }}</el-descriptions-item>
-              <el-descriptions-item label="備考" :span="2">{{ displayValue(familyMember.note) }}</el-descriptions-item>
-            </el-descriptions>
-          </div>
-        </div>
-        <p v-if="!familyMembers.length && familyEditTarget === null" class="empty-text">該当データなし</p>
-      </el-card>
-
-      <el-card shadow="never">
-        <template #header>関連会社</template>
-        <div v-if="relatedCompanies.length" class="related-company-list">
-          <div v-for="company in relatedCompanies" :key="company.id" class="related-company-block">
-            <div class="related-company-header">
-              <strong>
-                <router-link class="text-link" :to="`/companies/${company.id}`">
-                  {{ displayValue(company.name) }}
-                </router-link>
-              </strong>
-            </div>
-
-            <div class="company-info-section">
-              <h3>基本情報</h3>
-              <el-descriptions :column="2" border>
-                <el-descriptions-item label="会社名フリガナ" :span="2">
-                  {{ displayValue(company.name_kana) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="会社名" :span="2">
-                  {{ displayValue(company.name) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="代表者フリガナ" :span="2">
-                  {{ displayValue(company.representative_name_kana) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="代表者氏名" :span="2">
-                  {{ displayValue(getRepresentativeName(company)) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="法人番号">
-                  {{ displayValue(company.corporate_number) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="会社法人等番号">
-                  {{ displayValue(company.corporate_registration_number) }}
-                </el-descriptions-item>
-              </el-descriptions>
-            </div>
-
-            <div class="company-info-section">
-              <h3>連絡先</h3>
-              <el-descriptions :column="2" border>
-                <el-descriptions-item label="メール">
-                  {{ displayValue(company.email) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="電話番号">
-                  {{ displayValue(company.phone) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="郵便番号" :span="2">
-                  {{ displayValue(company.postal_code) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="住所" :span="2">
-                  {{ displayValue(company.address) }}
-                </el-descriptions-item>
-              </el-descriptions>
-            </div>
-
-            <div class="company-info-section">
-              <h3>決算情報</h3>
-              <el-descriptions :column="2" border>
-                <el-descriptions-item label="決算月">
-                  {{ formatFiscalMonth(company.fiscal_month) }}
-                </el-descriptions-item>
-              </el-descriptions>
-            </div>
-
-            <div class="company-info-section">
-              <h3>銀行情報</h3>
-              <el-descriptions :column="2" border>
-                <el-descriptions-item label="銀行名">
-                  {{ displayValue(company.bank_name) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="支店名">
-                  {{ displayValue(company.bank_branch) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="預金種別">
-                  {{ displayValue(company.bank_account_type) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="口座番号">
-                  {{ displayValue(company.bank_account_number) }}
-                </el-descriptions-item>
-              </el-descriptions>
-            </div>
-
-            <div class="company-info-section">
-              <h3>システム情報</h3>
-              <el-descriptions :column="2" border>
-                <el-descriptions-item label="作成日時">
-                  {{ formatDateTime(company.created_at) }}
-                </el-descriptions-item>
-                <el-descriptions-item label="更新日時">
-                  {{ formatDateTime(company.updated_at) }}
-                </el-descriptions-item>
-              </el-descriptions>
+    <div v-loading="loading" class="customer-record">
+      <el-card v-if="customer" shadow="never" class="profile-header-card">
+        <div class="profile-header-main">
+          <div class="profile-avatar">{{ customer.name.slice(0, 1) }}</div>
+          <div class="profile-identity">
+            <div class="profile-kana">{{ displayValue(customer.name_kana) }}</div>
+            <h1>{{ customer.name }}</h1>
+            <div class="profile-tags">
+              <el-tag v-if="customer.residence_status" effect="plain">{{ customer.residence_status }}</el-tag>
+              <el-tag v-if="customer.primary_applicant" type="info" effect="plain">
+                {{ customer.primary_applicant.name }}の{{ customer.primary_applicant.relationship_display }}
+              </el-tag>
+              <el-tag v-else-if="customer.dependents_count" type="success" effect="plain">
+                家族 {{ customer.dependents_count }}名
+              </el-tag>
+              <span class="customer-id">顧客ID #{{ customer.id }}</span>
             </div>
           </div>
-        </div>
-        <p v-if="!relatedCompanies.length" class="empty-text">関連会社はありません</p>
-      </el-card>
-
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header-row">
-            <span>関連案件</span>
+          <div class="profile-actions">
+            <el-button @click="router.push('/customers')">一覧へ戻る</el-button>
+            <el-button @click="openEditCustomerDialog">顧客情報を編集</el-button>
             <el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button>
           </div>
-        </template>
-        <el-table :data="relatedCases" stripe>
-          <el-table-column label="案件番号" min-width="150">
-            <template #default="{ row }">
-              <router-link class="text-link" :to="`/cases/${row.id}`">
-                {{ row.case_number }}
-              </router-link>
-            </template>
-          </el-table-column>
-          <el-table-column prop="case_type" label="案件種別" min-width="150" />
-          <el-table-column prop="status" label="ステータス" width="130" />
-          <el-table-column prop="company_name" label="会社名" min-width="180">
-            <template #default="{ row }">{{ displayValue(row.company_name) }}</template>
-          </el-table-column>
-          <el-table-column prop="responsible_employee_name" label="担当者" min-width="140">
-            <template #default="{ row }">{{ displayValue(row.responsible_employee_name) }}</template>
-          </el-table-column>
-          <el-table-column label="受任日" width="130">
-            <template #default="{ row }">{{ formatDate(row.accepted_at) }}</template>
-          </el-table-column>
-          <el-table-column label="更新日時" min-width="160">
-            <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
-          </el-table-column>
-        </el-table>
-        <p v-if="!relatedCases.length" class="empty-text">該当データなし</p>
+        </div>
+        <div class="profile-contact-row">
+          <button type="button" class="contact-chip" :disabled="!customer.phone" @click="copyText(customer.phone)">
+            電話 {{ displayValue(customer.phone) }}
+          </button>
+          <button type="button" class="contact-chip" :disabled="!customer.email" @click="copyText(customer.email)">
+            メール {{ displayValue(customer.email) }}
+          </button>
+          <span>最終更新 {{ formatDateTime(customer.updated_at) }}</span>
+        </div>
       </el-card>
 
-      <el-card shadow="never" class="placeholder-card">
-        <template #header>申請書作成</template>
-        <p>準備中</p>
-      </el-card>
+      <div v-if="expiryRisks.length" class="risk-list">
+        <el-alert
+          v-for="risk in expiryRisks"
+          :key="risk.label"
+          :title="`${risk.label}：${formatDate(risk.date)}（${risk.message}）`"
+          :type="risk.type"
+          show-icon
+          :closable="false"
+        />
+      </div>
+
+      <div v-if="customer" class="customer-summary-grid">
+        <button
+          v-for="item in summaryItems"
+          :key="`${item.label}-${item.key}`"
+          type="button"
+          class="summary-tile"
+          @click="activeSection = item.key"
+        >
+          <strong>{{ item.value }}</strong>
+          <span>{{ item.label }}</span>
+        </button>
+      </div>
+
+      <div v-if="customer" class="customer-workspace">
+        <el-card shadow="never" class="customer-main-card">
+          <el-tabs v-model="activeSection" class="customer-tabs">
+            <el-tab-pane label="概要" name="overview">
+              <div class="overview-grid">
+                <section class="info-panel">
+                  <h2>基本情報</h2>
+                  <dl class="field-list">
+                    <div><dt>生年月日</dt><dd>{{ formatDate(customer.birth_date) }}</dd></div>
+                    <div><dt>性別</dt><dd>{{ formatGender(customer.gender) }}</dd></div>
+                    <div><dt>国籍</dt><dd>{{ displayValue(customer.nationality) }}</dd></div>
+                  </dl>
+                </section>
+                <section class="info-panel">
+                  <h2>連絡先</h2>
+                  <dl class="field-list">
+                    <div><dt>電話番号</dt><dd>{{ displayValue(customer.phone) }}</dd></div>
+                    <div><dt>メール</dt><dd>{{ displayValue(customer.email) }}</dd></div>
+                    <div><dt>住所</dt><dd>〒{{ displayValue(customer.postal_code) }} {{ displayValue(customer.address) }}</dd></div>
+                  </dl>
+                </section>
+                <section class="info-panel">
+                  <h2>在留・旅券</h2>
+                  <dl class="field-list">
+                    <div><dt>在留資格</dt><dd>{{ displayValue(customer.residence_status) }}</dd></div>
+                    <div><dt>在留カード番号</dt><dd class="confirmable-value">{{ displayValue(customer.residence_card_no) }}<el-button v-if="customer.residence_card_no" text type="primary" size="small" @click="copyText(customer.residence_card_no)">コピー</el-button></dd></div>
+                    <div><dt>在留期限</dt><dd>{{ formatDate(customer.residence_expiry) }}</dd></div>
+                    <div><dt>パスポート番号</dt><dd class="confirmable-value">{{ displayValue(customer.passport_no) }}<el-button v-if="customer.passport_no" text type="primary" size="small" @click="copyText(customer.passport_no)">コピー</el-button></dd></div>
+                    <div><dt>パスポート期限</dt><dd>{{ formatDate(customer.passport_expiry) }}</dd></div>
+                    <div><dt>マイナンバー</dt><dd>{{ customer.has_my_number ? '登録済み（既定では非表示）' : '未登録' }}</dd></div>
+                  </dl>
+                </section>
+                <section class="info-panel">
+                  <h2>内部メモ</h2>
+                  <p class="note-content">{{ customer.note || '未登録' }}</p>
+                </section>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane :label="`案件 ${relatedCases.length}`" name="cases">
+              <div class="section-heading">
+                <div>
+                  <h2>進行中案件</h2>
+                  <p>現在対応が必要な案件を優先して表示します。</p>
+                </div>
+                <el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button>
+              </div>
+              <el-table :data="activeCases" stripe>
+                <el-table-column label="案件番号" min-width="190">
+                  <template #default="{ row }"><router-link class="text-link" :to="`/cases/${row.id}`">{{ row.case_number }}</router-link></template>
+                </el-table-column>
+                <el-table-column label="案件種別" min-width="160">
+                  <template #default="{ row }">{{ row.case_type_master_name || row.case_type }}</template>
+                </el-table-column>
+                <el-table-column label="現在の進捗" width="150">
+                  <template #default="{ row }"><el-tag :type="getCaseDisplayStatusTagType(row.status)">{{ getCaseDisplayStatus(row.status) }}</el-tag></template>
+                </el-table-column>
+                <el-table-column label="担当者" min-width="120"><template #default="{ row }">{{ displayValue(row.responsible_employee_name) }}</template></el-table-column>
+                <el-table-column label="次の対応" min-width="190"><template #default="{ row }">{{ displayValue(row.next_action) }}<span v-if="row.next_action_due_at" class="due-date">{{ formatDate(row.next_action_due_at) }}</span></template></el-table-column>
+              </el-table>
+              <p v-if="!activeCases.length" class="empty-text">進行中の案件はありません。</p>
+
+              <el-collapse v-if="historicalCases.length" class="history-collapse">
+                <el-collapse-item :title="`履歴案件 ${historicalCases.length}件`" name="history">
+                  <el-table :data="historicalCases" stripe>
+                    <el-table-column label="案件番号" min-width="190"><template #default="{ row }"><router-link class="text-link" :to="`/cases/${row.id}`">{{ row.case_number }}</router-link></template></el-table-column>
+                    <el-table-column label="案件種別" min-width="160"><template #default="{ row }">{{ row.case_type_master_name || row.case_type }}</template></el-table-column>
+                    <el-table-column label="進捗" width="140"><template #default="{ row }"><el-tag :type="getCaseDisplayStatusTagType(row.status)" effect="plain">{{ getCaseDisplayStatus(row.status) }}</el-tag></template></el-table-column>
+                    <el-table-column label="更新日時" min-width="160"><template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template></el-table-column>
+                  </el-table>
+                </el-collapse-item>
+              </el-collapse>
+            </el-tab-pane>
+
+            <el-tab-pane :label="`家族・関係 ${familyMembers.length + relatedCompanies.length}`" name="relationships">
+              <div class="section-heading">
+                <div><h2>家族</h2><p>人物情報は紐付く顧客主档から参照し、ここでは関係だけを管理します。</p></div>
+                <el-button type="primary" :disabled="familyEditTarget !== null" @click="startAddFamilyMember">家族を追加</el-button>
+              </div>
+
+              <div v-if="familyEditTarget !== null" class="family-member-block family-member-edit-block">
+                <h3 class="family-edit-title">{{ familyEditTarget === 'new' ? '家族を追加' : '家族情報を編集' }}</h3>
+                <el-form ref="familyFormRef" :model="familyForm" :rules="familyRules" label-position="top">
+                  <div class="form-grid">
+                    <el-form-item label="関係" prop="relationship">
+                      <el-select v-model="familyForm.relationship" placeholder="選択してください" class="form-control">
+                        <el-option v-for="option in relationshipOptions" :key="option.value" :label="option.label" :value="option.value" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="扶養対象" prop="is_dependent"><el-switch v-model="familyForm.is_dependent" active-text="はい" inactive-text="いいえ" /></el-form-item>
+                    <el-form-item label="既存の顧客から選択" class="form-grid-full">
+                      <RemoteCustomerSelect v-model="familyForm.family_customer" placeholder="氏名・カナ・電話・案件番号で検索" @change="handleFamilyCustomerChange" />
+                    </el-form-item>
+                  </div>
+                  <template v-if="!familyForm.family_customer">
+                    <p class="section-optional-note">既存顧客に該当しない場合のみ、新しい人物として入力してください。</p>
+                    <div class="form-grid">
+                      <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start"><el-input v-model="familyForm.name_kana" /></el-form-item>
+                      <el-form-item label="氏名" prop="name" class="form-grid-start"><el-input v-model="familyForm.name" /></el-form-item>
+                      <el-form-item label="生年月日" prop="birth_date"><el-date-picker v-model="familyForm.birth_date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" /></el-form-item>
+                      <el-form-item label="性別" prop="gender"><el-select v-model="familyForm.gender" clearable placeholder="選択してください" class="form-control"><el-option v-for="option in genderOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select></el-form-item>
+                      <el-form-item label="国籍" prop="nationality"><el-input v-model="familyForm.nationality" /></el-form-item>
+                      <el-form-item label="電話番号" prop="phone"><el-input v-model="familyForm.phone" /></el-form-item>
+                      <el-form-item label="メール" prop="email" class="form-grid-full"><el-input v-model="familyForm.email" /></el-form-item>
+                      <el-form-item label="郵便番号" prop="postal_code" class="form-grid-start"><el-input v-model="familyForm.postal_code" /></el-form-item>
+                      <el-form-item label="住所" prop="address" class="form-grid-full"><el-input v-model="familyForm.address" /></el-form-item>
+                      <el-form-item label="マイナンバー" prop="my_number"><el-input v-model="familyForm.my_number" show-password /></el-form-item>
+                      <el-form-item label="在留資格" prop="residence_status"><el-select v-model="familyForm.residence_status" clearable filterable allow-create default-first-option placeholder="選択してください" class="form-control"><el-option v-for="status in residenceStatusOptions" :key="status.id" :label="status.name" :value="status.name" /></el-select></el-form-item>
+                      <el-form-item label="在留カード番号" prop="residence_card_no"><el-input v-model="familyForm.residence_card_no" /></el-form-item>
+                      <el-form-item label="在留期限" prop="residence_expiry"><el-date-picker v-model="familyForm.residence_expiry" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" /></el-form-item>
+                      <el-form-item label="パスポート番号" prop="passport_no"><el-input v-model="familyForm.passport_no" /></el-form-item>
+                      <el-form-item label="パスポート期限" prop="passport_expiry"><el-date-picker v-model="familyForm.passport_expiry" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="YYYY-MM-DD" class="form-control" /></el-form-item>
+                    </div>
+                  </template>
+                  <p v-else class="section-optional-note">個人情報は選択した顧客主档を使用します。</p>
+                  <el-form-item label="関係の備考" prop="note"><el-input v-model="familyForm.note" type="textarea" :rows="2" /></el-form-item>
+                </el-form>
+                <div class="family-member-actions"><el-button @click="cancelFamilyEdit">キャンセル</el-button><el-button type="primary" :loading="familySubmitting" @click="submitFamilyMember">{{ familyEditTarget === 'new' ? '追加' : '保存' }}</el-button></div>
+              </div>
+
+              <div v-if="sortedFamilyMembers.length" class="family-detail-list">
+                <article v-for="familyMember in sortedFamilyMembers" v-show="familyEditTarget !== familyMember.id" :key="familyMember.id" class="family-detail-card">
+                  <header class="family-detail-header">
+                    <div class="relationship-main">
+                      <el-tag effect="plain">{{ getFamilyRelationshipLabel(familyMember) }}</el-tag>
+                      <div>
+                        <strong>{{ familyMember.name || '未入力' }}</strong>
+                        <span>{{ displayValue(familyMember.name_kana) }}</span>
+                      </div>
+                      <el-tag v-if="familyMember.is_dependent" size="small" type="success" effect="plain">扶養対象</el-tag>
+                    </div>
+                    <div class="relationship-actions">
+                      <el-tag v-if="familyMember.family_customer" type="info" effect="plain">人物情報連携済み</el-tag>
+                      <el-tag v-else type="warning" effect="plain">旧形式データ</el-tag>
+                      <el-button text type="primary" :disabled="familyEditTarget !== null" @click="startEditFamilyMember(familyMember)">関係を編集</el-button>
+                      <el-button text type="danger" :disabled="familyEditTarget !== null" @click="confirmDeleteFamilyMember(familyMember)">削除</el-button>
+                    </div>
+                  </header>
+                  <div class="family-info-grid">
+                    <section>
+                      <h3>基本・連絡先</h3>
+                      <dl class="field-list compact-field-list">
+                        <div><dt>生年月日</dt><dd>{{ formatDate(familyMember.birth_date) }}</dd></div>
+                        <div><dt>性別</dt><dd>{{ displayValue(familyMember.gender_display || formatGender(familyMember.gender)) }}</dd></div>
+                        <div><dt>国籍</dt><dd>{{ displayValue(familyMember.nationality) }}</dd></div>
+                        <div><dt>電話番号</dt><dd>{{ displayValue(familyMember.phone) }}</dd></div>
+                        <div><dt>メール</dt><dd>{{ displayValue(familyMember.email) }}</dd></div>
+                        <div><dt>住所</dt><dd>〒{{ displayValue(familyMember.postal_code) }} {{ displayValue(familyMember.address) }}</dd></div>
+                      </dl>
+                    </section>
+                    <section>
+                      <h3>在留・旅券</h3>
+                      <dl class="field-list compact-field-list">
+                        <div><dt>在留資格</dt><dd>{{ displayValue(familyMember.residence_status) }}</dd></div>
+                        <div><dt>在留カード番号</dt><dd>{{ displayValue(familyMember.residence_card_no) }}</dd></div>
+                        <div><dt>在留期限</dt><dd>{{ formatDate(familyMember.residence_expiry) }}</dd></div>
+                        <div><dt>パスポート番号</dt><dd>{{ displayValue(familyMember.passport_no) }}</dd></div>
+                        <div><dt>パスポート期限</dt><dd>{{ formatDate(familyMember.passport_expiry) }}</dd></div>
+                        <div><dt>マイナンバー</dt><dd>{{ familyMember.has_my_number ? '登録済み' : '未登録' }}</dd></div>
+                      </dl>
+                    </section>
+                  </div>
+                  <p v-if="familyMember.note" class="family-note"><strong>関係の備考：</strong>{{ familyMember.note }}</p>
+                </article>
+              </div>
+              <p v-else-if="familyEditTarget === null" class="empty-text">家族情報はありません。</p>
+
+              <div class="section-heading company-heading"><div><h2>関連会社</h2><p>会社の詳細情報は会社ページで管理します。</p></div></div>
+              <div v-if="relatedCompanies.length" class="relationship-list">
+                <div v-for="company in relatedCompanies" :key="company.id" class="relationship-row">
+                  <div class="relationship-main">
+                    <div><router-link class="text-link relationship-name" :to="`/companies/${company.id}`">{{ company.name }}</router-link><span>{{ [company.phone, company.email].filter(Boolean).join(' / ') || '連絡先未登録' }}</span></div>
+                  </div>
+                  <div class="company-relation-meta">
+                    <el-tag v-for="label in company.relation_labels" :key="label" size="small" effect="plain">{{ label }}</el-tag>
+                    <span v-if="company.positions.length">{{ company.positions.join(' / ') }}</span>
+                    <span>進行中案件 {{ company.active_cases_count }}件</span>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="empty-text">関連会社はありません。</p>
+            </el-tab-pane>
+
+            <el-tab-pane :label="`活動 ${customer.recent_activities.length}`" name="activity">
+              <div class="section-heading"><div><h2>最近の活動</h2><p>関連案件の進捗記録を新しい順に表示します。</p></div></div>
+              <el-timeline v-if="customer.recent_activities.length" class="activity-timeline">
+                <el-timeline-item v-for="activity in customer.recent_activities" :key="activity.id" :timestamp="formatDate(activity.occurred_at || activity.created_at)" placement="top">
+                  <div class="activity-card"><div class="activity-title"><strong>{{ activity.title }}</strong><el-tag v-if="activity.event_type" size="small" type="info" effect="plain">自動</el-tag></div><p v-if="activity.content">{{ activity.content }}</p><div class="activity-meta"><router-link class="text-link" :to="`/cases/${activity.case_id}`">{{ activity.case_number }}</router-link><span>{{ activity.actor_name || 'システム' }}</span></div></div>
+                </el-timeline-item>
+              </el-timeline>
+              <p v-else class="empty-text">活動記録はありません。</p>
+            </el-tab-pane>
+          </el-tabs>
+        </el-card>
+
+        <aside class="customer-sidebar">
+          <el-card shadow="never">
+            <template #header>現在の対応</template>
+            <template v-if="primaryCase">
+              <router-link class="text-link sidebar-case-number" :to="`/cases/${primaryCase.id}`">{{ primaryCase.case_number }}</router-link>
+              <el-tag :type="getCaseDisplayStatusTagType(primaryCase.status)" class="sidebar-status">{{ getCaseDisplayStatus(primaryCase.status) }}</el-tag>
+              <dl class="sidebar-fields">
+                <div><dt>担当者</dt><dd>{{ displayValue(primaryCase.responsible_employee_name) }}</dd></div>
+                <div><dt>次の対応</dt><dd>{{ displayValue(primaryCase.next_action) }}</dd></div>
+                <div><dt>期限</dt><dd>{{ formatDate(primaryCase.next_action_due_at) }}</dd></div>
+              </dl>
+              <el-button type="primary" plain class="sidebar-action" @click="router.push(`/cases/${primaryCase.id}`)">案件を開く</el-button>
+            </template>
+            <p v-else class="empty-text sidebar-empty">関連案件はありません。</p>
+          </el-card>
+          <el-card shadow="never">
+            <template #header>データ状態</template>
+            <ul class="data-status-list">
+              <li><span>本人情報</span><strong>{{ customer.name && customer.birth_date ? '確認可能' : '要確認' }}</strong></li>
+              <li><span>連絡先</span><strong>{{ customer.phone || customer.email ? '登録済み' : '未登録' }}</strong></li>
+              <li><span>在留期限</span><strong>{{ customer.residence_expiry ? formatDate(customer.residence_expiry) : '未登録' }}</strong></li>
+              <li><span>マイナンバー</span><strong>{{ customer.has_my_number ? '登録済み' : '未登録' }}</strong></li>
+            </ul>
+          </el-card>
+        </aside>
+      </div>
     </div>
 
     <el-dialog
@@ -920,7 +927,11 @@ onMounted(() => {
             />
           </el-form-item>
           <el-form-item label="マイナンバー" prop="my_number">
-            <el-input v-model="customerForm.my_number" />
+            <el-input
+              v-model="customerForm.my_number"
+              show-password
+              placeholder="変更する場合のみ入力"
+            />
           </el-form-item>
         </div>
         <el-form-item label="備考" prop="note">
@@ -978,6 +989,412 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.customer-record {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-header-card :deep(.el-card__body) {
+  padding: 22px 24px 18px;
+}
+
+.profile-header-main {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.profile-avatar {
+  display: grid;
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 16px;
+  color: var(--sunrise-text);
+  background: linear-gradient(135deg, var(--sunrise-blue), var(--sunrise-pink));
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.profile-identity {
+  min-width: 0;
+}
+
+.profile-identity h1 {
+  margin: 2px 0 8px;
+  color: var(--sunrise-text);
+  font-size: 26px;
+  line-height: 1.25;
+}
+
+.profile-kana,
+.customer-id,
+.profile-contact-row,
+.section-heading p,
+.relationship-main span,
+.company-relation-meta,
+.activity-meta {
+  color: var(--sunrise-muted);
+  font-size: 13px;
+}
+
+.profile-tags,
+.profile-actions,
+.profile-contact-row,
+.relationship-actions,
+.company-relation-meta,
+.activity-title,
+.activity-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.profile-contact-row {
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sunrise-border);
+}
+
+.contact-chip {
+  padding: 0;
+  color: var(--sunrise-link);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.contact-chip:disabled {
+  color: var(--sunrise-muted);
+  cursor: default;
+}
+
+.risk-list {
+  display: grid;
+  gap: 8px;
+}
+
+.customer-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-tile {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: 74px;
+  padding: 16px;
+  color: var(--sunrise-text);
+  background: #fff;
+  border: 1px solid var(--sunrise-border);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(170, 212, 244, 0.1);
+}
+
+.summary-tile:hover,
+.summary-tile:focus-visible {
+  border-color: var(--sunrise-blue);
+  outline: none;
+}
+
+.summary-tile strong {
+  font-size: 26px;
+}
+
+.summary-tile span {
+  color: var(--sunrise-muted);
+  font-size: 13px;
+}
+
+.customer-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.customer-main-card {
+  min-width: 0;
+}
+
+.customer-tabs :deep(.el-tabs__header) {
+  margin-bottom: 20px;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.info-panel {
+  padding: 18px;
+  border: 1px solid var(--sunrise-border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.info-panel h2,
+.section-heading h2 {
+  margin: 0;
+  color: var(--sunrise-text);
+  font-size: 16px;
+}
+
+.field-list,
+.sidebar-fields {
+  margin: 14px 0 0;
+}
+
+.field-list > div,
+.sidebar-fields > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid #edf3f7;
+}
+
+.field-list dt,
+.sidebar-fields dt {
+  color: var(--sunrise-muted);
+  font-size: 13px;
+}
+
+.field-list dd,
+.sidebar-fields dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--sunrise-text);
+  overflow-wrap: anywhere;
+}
+
+.confirmable-value {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.note-content {
+  margin: 14px 0 0;
+  color: var(--sunrise-text);
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.section-heading p {
+  margin: 5px 0 0;
+}
+
+.due-date {
+  display: block;
+  margin-top: 3px;
+  color: var(--sunrise-muted);
+  font-size: 12px;
+}
+
+.history-collapse {
+  margin-top: 18px;
+}
+
+.relationship-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.family-detail-list {
+  display: grid;
+  gap: 14px;
+}
+
+.family-detail-card {
+  padding: 16px;
+  border: 1px solid var(--sunrise-border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.family-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #edf3f7;
+}
+
+.family-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  padding-top: 12px;
+}
+
+.family-info-grid h3 {
+  margin: 0;
+  color: var(--sunrise-text);
+  font-size: 14px;
+}
+
+.compact-field-list {
+  margin-top: 8px;
+}
+
+.compact-field-list > div {
+  grid-template-columns: 110px minmax(0, 1fr);
+  padding: 7px 0;
+}
+
+.family-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: var(--sunrise-text);
+  background: var(--sunrise-bg-soft, #f8fbfd);
+  white-space: pre-wrap;
+}
+
+.relationship-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--sunrise-border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.relationship-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.relationship-main > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.relationship-name {
+  font-size: 15px;
+}
+
+.company-heading {
+  margin-top: 28px;
+}
+
+.company-relation-meta {
+  justify-content: flex-end;
+}
+
+.activity-timeline {
+  padding-top: 6px;
+}
+
+.activity-card {
+  padding: 14px 16px;
+  border: 1px solid var(--sunrise-border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.activity-title {
+  justify-content: space-between;
+  color: var(--sunrise-text);
+}
+
+.activity-card p {
+  margin: 8px 0;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.activity-meta {
+  justify-content: space-between;
+}
+
+.customer-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 82px;
+}
+
+.sidebar-case-number {
+  display: block;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-status {
+  margin-bottom: 4px;
+}
+
+.sidebar-fields > div {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.sidebar-action {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.sidebar-empty {
+  margin-top: 0;
+}
+
+.data-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.data-status-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--sunrise-muted);
+  font-size: 13px;
+}
+
+.data-status-list strong {
+  color: var(--sunrise-text);
+  font-weight: 600;
+  text-align: right;
+}
+
 .family-member-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1000,5 +1417,53 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 8px;
   color: var(--el-text-color-secondary, #909399);
+}
+
+@media (max-width: 1100px) {
+  .customer-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .customer-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .profile-header-main,
+  .relationship-row,
+  .family-detail-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profile-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .customer-summary-grid,
+  .overview-grid,
+  .customer-sidebar,
+  .family-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .relationship-actions,
+  .company-relation-meta {
+    justify-content: flex-start;
+  }
+
+  .field-list > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
 }
 </style>

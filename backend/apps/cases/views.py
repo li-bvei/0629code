@@ -15,6 +15,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from apps.reminders.models import Reminder
 from apps.timelines.models import Timeline
+from apps.timelines.services import record_case_event
 
 from .demo_data import (
     normalize_template_item_orders,
@@ -591,9 +592,16 @@ class CaseViewSet(ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        created_items = apply_checklist_template_to_case(case, template)
+        mode = request.data.get('mode') or 'merge'
+        if mode not in ('merge', 'replace'):
+            return Response({'mode': 'merge または replace を指定してください。'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_items = apply_checklist_template_to_case(case, template, mode=mode)
         serializer = CaseChecklistItemSerializer(created_items, many=True)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            {'created': serializer.data, 'created_count': len(created_items), 'mode': mode},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CaseChecklistTemplateViewSet(ModelViewSet):
@@ -908,16 +916,30 @@ class CaseChecklistItemViewSet(ModelViewSet):
         return response
 
     def update(self, request, *args, **kwargs):
+        was_completed = self.get_object().is_completed
         response = super().update(request, *args, **kwargs)
-        item = CaseChecklistItem.objects.get(pk=response.data['id'])
+        item = CaseChecklistItem.objects.select_related('case').get(pk=response.data['id'])
+        self._record_completion_event(item, was_completed, request)
         response.data['progress_summary'] = self._progress_payload(item.case)
         return response
 
     def partial_update(self, request, *args, **kwargs):
+        was_completed = self.get_object().is_completed
         response = super().partial_update(request, *args, **kwargs)
-        item = CaseChecklistItem.objects.get(pk=response.data['id'])
+        item = CaseChecklistItem.objects.select_related('case').get(pk=response.data['id'])
+        self._record_completion_event(item, was_completed, request)
         response.data['progress_summary'] = self._progress_payload(item.case)
         return response
+
+    def _record_completion_event(self, item, was_completed, request):
+        if item.is_completed and not was_completed:
+            record_case_event(
+                item.case,
+                Timeline.EVENT_CHECKLIST_COMPLETED,
+                f'資料・タスク完了：{item.name}',
+                actor=getattr(request, 'user', None),
+                metadata={'checklist_item_id': item.id, 'category': item.category},
+            )
 
 
 @api_view(['POST'])

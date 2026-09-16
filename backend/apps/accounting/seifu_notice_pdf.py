@@ -7,6 +7,7 @@ from urllib.parse import quote
 import fitz
 from django.conf import settings
 from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -201,7 +202,7 @@ def build_seifu_notice_pdf(items):
 
 def seifu_notice_pdf_response(items, title='添加文字'):
     pdf_bytes = build_seifu_notice_pdf(items)
-    filename = f'清風合格通知書_{safe_filename_part(title)}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pdf'
+    filename = f'清風合格通知書_{safe_filename_part(title)}_{timezone.localtime(timezone.now()).strftime("%Y%m%d%H%M%S")}.pdf'
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = (
         f'attachment; filename="seifu_notice.pdf"; filename*=UTF-8\'\'{quote(filename)}'

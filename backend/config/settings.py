@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     'apps.timelines',
     'apps.documents',
     'apps.accounting',
+    'api',
 ]
 
 MIDDLEWARE = [
@@ -156,7 +157,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'ja'
 
-TIME_ZONE = 'UTC'
+# 事務所の業務は全て日本時間で運用する。案件番号の採番・受付日・期限・
+# ダッシュボードの「今日」・ファイル名の日付などは timezone.localdate() /
+# timezone.localtime() 経由でこの TIME_ZONE を基準に判定すること。
+TIME_ZONE = 'Asia/Tokyo'
 
 USE_I18N = True
 

@@ -1,13 +1,16 @@
 from django.db.models import Count, Prefetch, Q
+from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.filters import SearchFilter
+
+from apps.cases.models import Case
 
 from .demo_data import seed_standard_residence_statuses
 from .models import Customer, FamilyMember, ResidenceStatusMaster
+from .utils import find_customer_candidates
 from .serializers import (
     CustomerDetailSerializer,
     CustomerSerializer,
@@ -50,8 +53,10 @@ class ResidenceStatusMasterViewSet(ActiveOrderingMixin, ModelViewSet):
 class CustomerViewSet(ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
-    filter_backends = [SearchFilter]
-    search_fields = ['name', 'phone', 'email', 'address']
+
+    # リモート検索セレクタ用の検索対象カラム（氏名・カナ・連絡先・在留カード番号・
+    # パスポート番号。いずれも平文。マイナンバーは暗号化保存のため対象外）。
+    SEARCH_FIELDS = ['name', 'name_kana', 'phone', 'email', 'address', 'residence_card_no', 'passport_no']
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -63,6 +68,21 @@ class CustomerViewSet(ModelViewSet):
         residence_status = self.request.query_params.get('residence_status')
         if residence_status:
             queryset = queryset.filter(residence_status=residence_status)
+
+        # リモート検索：顧客カラム（氏名・カナ・連絡先・証明書番号）に加え、
+        # 案件番号でも引けるようにする。件数はページングで制限される。
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            column_q = Q()
+            for field in self.SEARCH_FIELDS:
+                column_q |= Q(**{f'{field}__icontains': search})
+            case_customer_ids = list(
+                Case.objects.filter(case_number__icontains=search)
+                .values_list('customer_id', flat=True)
+            )
+            if case_customer_ids:
+                column_q |= Q(pk__in=case_customer_ids)
+            queryset = queryset.filter(column_q).order_by('name', 'id')
 
         exclude_dependents = self.request.query_params.get('exclude_dependents')
         if exclude_dependents in ('true', '1'):
@@ -88,11 +108,36 @@ class CustomerViewSet(ModelViewSet):
             queryset = queryset.prefetch_related(
                 Prefetch('family_links', queryset=FamilyMember.objects.select_related('customer')),
             ).annotate(
+                cases_count_annotated=Count('cases', distinct=True),
                 dependents_count_annotated=Count(
                     'family_members', filter=Q(family_members__family_customer__isnull=False), distinct=True,
                 ),
             )
         return queryset
+
+    @action(detail=False, methods=['post'], url_path='match')
+    def match(self, request):
+        """新規受付：入力された最小情報から既存顧客の候補をルールベースで返す。
+
+        システムが勝手に統合はせず、候補の提示のみ行う（確認は必ず人が行う）。
+        """
+        data = request.data or {}
+        birth_date = data.get('birth_date') or None
+        if birth_date:
+            parsed = parse_date(str(birth_date))
+            if parsed is None:
+                return Response({'birth_date': '生年月日の形式が正しくありません。'}, status=status.HTTP_400_BAD_REQUEST)
+            birth_date = parsed
+        candidates = find_customer_candidates(
+            name=data.get('name') or '',
+            name_kana=data.get('name_kana') or '',
+            birth_date=birth_date,
+            phone=data.get('phone') or '',
+            email=data.get('email') or '',
+            residence_card_number=data.get('residence_card_number') or data.get('residence_card_no') or '',
+            passport_number=data.get('passport_number') or data.get('passport_no') or '',
+        )
+        return Response({'candidates': candidates})
 
 
 class FamilyMemberViewSet(ModelViewSet):

@@ -311,7 +311,7 @@ def build_project_excel(project, incomes, expenses):
 
 def build_expenses_excel(
     expenses,
-    incomes,
+    incomes=(),
     filters=None,
     generated_at=None,
     opening_balance=None,
