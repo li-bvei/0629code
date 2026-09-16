@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
 from .excel import ACCOUNTING_NUMBER_FORMAT, build_expenses_excel, build_project_excel
-from .models import AccountingVoucher, Expense, IncomeSource
+from .models import AccountingVoucher, Expense, IncomeSource, VisaReturnApplication
 from .pdf import build_invoice_summary_rows
 from .voucher_calculations import calculate_voucher_amounts
 
@@ -126,6 +126,57 @@ class ExpenseSummaryApiTests(TestCase):
         self.assertEqual(body['total_income'], 5000)
         self.assertEqual(body['period_expense_total'], 1700)
         self.assertEqual(body['balance'], 3300)
+
+
+class VisaReturnBulkCreateApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username='visa-bulk-test',
+            password='password',
+        )
+        self.client.force_authenticate(self.user)
+
+    def test_bulk_create_creates_multiple_applications_with_shared_guarantor(self):
+        shared_guarantor = {
+            'guarantor_name': '公文 慎吾',
+            'guarantor_phone': '06-0000-0000',
+            'guarantor_snapshot': {'template_name': '公文'},
+        }
+        response = self.client.post('/api/accounting/visa-return-applications/bulk-create/', {
+            'applications': [
+                {
+                    'applicant_name': '王小明',
+                    'passport_number': 'E10000001',
+                    **shared_guarantor,
+                },
+                {
+                    'applicant_name': '李小雨',
+                    'passport_number': 'E10000002',
+                    **shared_guarantor,
+                },
+            ],
+        }, content_type='application/json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['created'], 2)
+        self.assertEqual(VisaReturnApplication.objects.count(), 2)
+        self.assertEqual(
+            set(VisaReturnApplication.objects.values_list('created_by_id', flat=True)),
+            {self.user.id},
+        )
+        self.assertEqual(
+            set(VisaReturnApplication.objects.values_list('guarantor_name', flat=True)),
+            {'公文 慎吾'},
+        )
+
+    def test_bulk_create_rejects_an_empty_list(self):
+        response = self.client.post('/api/accounting/visa-return-applications/bulk-create/', {
+            'applications': [],
+        }, content_type='application/json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(VisaReturnApplication.objects.count(), 0)
 
 
 class AccountingVoucherTaxCalculationTests(TestCase):

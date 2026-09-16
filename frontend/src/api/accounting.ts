@@ -360,6 +360,14 @@ export const createVisaReturnApplication = async (payload: VisaReturnApplication
   return response.data
 }
 
+export const bulkCreateVisaReturnApplications = async (applications: VisaReturnApplicationPayload[]) => {
+  const response = await http.post<{ created: number; applications: VisaReturnApplication[] }>(
+    '/accounting/visa-return-applications/bulk-create/',
+    { applications },
+  )
+  return response.data
+}
+
 export const updateVisaReturnApplication = async (
   id: number | string,
   payload: Partial<VisaReturnApplicationPayload>,
