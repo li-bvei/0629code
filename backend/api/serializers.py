@@ -3,7 +3,9 @@ from rest_framework import serializers
 
 from apps.cases.models import Case, CaseApplicationCategory, CaseTypeMaster
 from apps.companies.models import Company
+from apps.cases.utils import auto_apply_default_checklist_template
 from apps.customers.models import Customer, FamilyMember
+from apps.customers.utils import sync_reverse_family_link
 from apps.timelines.models import Timeline
 
 
@@ -88,12 +90,16 @@ class ReceptionCompanySerializer(serializers.Serializer):
     representative_customer_is_current_customer = serializers.BooleanField(required=False)
     representative_name = serializers.CharField(required=False, allow_blank=True)
     representative_name_kana = serializers.CharField(required=False, allow_blank=True)
+    representative_postal_code = serializers.CharField(required=False, allow_blank=True)
+    representative_address = serializers.CharField(required=False, allow_blank=True)
     corporate_number = serializers.CharField(required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
     phone = serializers.CharField(required=False, allow_blank=True)
     postal_code = serializers.CharField(required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
     fiscal_month = serializers.CharField(required=False, allow_blank=True)
+    establishment_symbol = serializers.CharField(required=False, allow_blank=True)
+    establishment_number = serializers.CharField(required=False, allow_blank=True)
     bank_name = serializers.CharField(required=False, allow_blank=True)
     bank_branch = serializers.CharField(required=False, allow_blank=True)
     bank_account_type = serializers.CharField(required=False, allow_blank=True)
@@ -187,15 +193,15 @@ class ReceptionSerializer(serializers.Serializer):
                         residence_expiry=family_member_data.get('residence_expiry'),
                     )
 
-                family_members.append(
-                    FamilyMember.objects.create(
-                        customer=customer,
-                        family_customer=family_customer,
-                        relationship=relationship,
-                        is_dependent=is_dependent,
-                        note=note,
-                    ),
+                family_member = FamilyMember.objects.create(
+                    customer=customer,
+                    family_customer=family_customer,
+                    relationship=relationship,
+                    is_dependent=is_dependent,
+                    note=note,
                 )
+                sync_reverse_family_link(family_member)
+                family_members.append(family_member)
 
             company = None
             representative_customer_is_current_customer = company_data.pop(
@@ -226,6 +232,7 @@ class ReceptionSerializer(serializers.Serializer):
                     content='新規受付ページから案件を作成しました。',
                     is_visible_to_client=False,
                 )
+                auto_apply_default_checklist_template(case)
 
         return {
             'customer': customer.id,

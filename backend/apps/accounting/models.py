@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+from apps.cases.models import Case
 from apps.companies.models import Company
 from apps.customers.models import Customer
 from apps.employees.models import Employee
@@ -440,6 +441,15 @@ class TaxRenewalVoucherRecord(models.Model):
 
     title = models.CharField('记录名称', max_length=255)
     category = models.CharField('分类', max_length=20, choices=CATEGORY_CHOICES, default=CATEGORY_RENEWAL)
+    case = models.ForeignKey(
+        Case,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='tax_renewal_voucher_records',
+        verbose_name='案件',
+        help_text='選択すると、その案件の顧客・会社・担当者を自動的に反映できる。',
+    )
     company = models.ForeignKey(
         Company,
         null=True,

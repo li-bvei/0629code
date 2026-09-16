@@ -92,7 +92,16 @@ TEMPLATE_DEFINITIONS = [
         'condition': 'none',
         'order': 8,
         'match_terms': ['年金新規適用届'],
-        'required_fields': [],
+        'required_fields': [
+            'company_name',
+            'company_address',
+            'company_phone',
+            'representative_name',
+            'representative_name1',
+            'representative_name2',
+            'representative_address',
+            'submit_date',
+        ],
     },
     {
         'key': 'pension_insured_qualification_acquisition',
@@ -101,7 +110,16 @@ TEMPLATE_DEFINITIONS = [
         'condition': 'none',
         'order': 9,
         'match_terms': ['年金被保険者資格取得届'],
-        'required_fields': [],
+        'required_fields': [
+            'company_name',
+            'company_address',
+            'representative_name',
+            'establishment_symbol',
+            'establishment_number',
+            'applicant_name',
+            'applicant_kana',
+            'submit_date',
+        ],
     },
     {
         'key': 'dependent_change_notification',
@@ -110,7 +128,15 @@ TEMPLATE_DEFINITIONS = [
         'condition': 'has_dependents',
         'order': 10,
         'match_terms': ['被扶養者', '異動'],
-        'required_fields': [],
+        'required_fields': [
+            'company_name',
+            'company_address',
+            'representative_name',
+            'establishment_symbol',
+            'applicant_name',
+            'applicant_kana',
+            'submit_date',
+        ],
     },
 ]
 

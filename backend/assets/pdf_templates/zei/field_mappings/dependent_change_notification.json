@@ -1,0 +1,153 @@
+{
+  "fields": {
+    "submit_date_reiwa": {
+      "label": "提出日（令和/年/月/日）",
+      "page": 1,
+      "type": "split",
+      "render_mode": "split",
+      "split_pattern": "-",
+      "font_size": 8.0,
+      "align": "center",
+      "valign": "top",
+      "x": 76.0,
+      "y": 51.5,
+      "width": 16.0,
+      "height": 14.0,
+      "parts": [
+        { "x": 76.0, "y": 51.5, "width": 16.0 },
+        { "x": 104.0, "y": 51.5, "width": 22.0 },
+        { "x": 138.0, "y": 51.5, "width": 15.0 }
+      ]
+    },
+    "establishment_symbol": {
+      "label": "事業所整理記号",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 113.0,
+      "y": 63.0,
+      "width": 150.0,
+      "height": 14.0
+    },
+    "company_postal_code": {
+      "label": "事業所所在地（郵便番号）",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 127.0,
+      "y": 99.5,
+      "width": 90.0,
+      "height": 14.0
+    },
+    "company_address": {
+      "label": "事業所所在地",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 120.0,
+      "y": 113.0,
+      "width": 200.0,
+      "height": 14.0
+    },
+    "company_name": {
+      "label": "事業所名称",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 120.0,
+      "y": 157.0,
+      "width": 200.0,
+      "height": 14.0
+    },
+    "representative_name": {
+      "label": "事業主氏名",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 120.0,
+      "y": 186.0,
+      "width": 200.0,
+      "height": 14.0
+    },
+    "company_phone": {
+      "label": "電話番号",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 216.0,
+      "y": 197.0,
+      "width": 200.0,
+      "height": 14.0
+    },
+    "applicant_kana": {
+      "label": "被保険者 氏名（フリガナ）",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 7.5,
+      "align": "left",
+      "valign": "top",
+      "x": 188.0,
+      "y": 232.0,
+      "width": 115.0,
+      "height": 13.0
+    },
+    "applicant_name": {
+      "label": "被保険者 氏名",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 8.0,
+      "align": "left",
+      "valign": "top",
+      "x": 188.0,
+      "y": 239.0,
+      "width": 115.0,
+      "height": 14.0
+    },
+    "applicant_postal_code": {
+      "label": "被保険者 住所（郵便番号）",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 7.0,
+      "align": "left",
+      "valign": "top",
+      "x": 362.0,
+      "y": 277.5,
+      "width": 60.0,
+      "height": 13.0
+    },
+    "applicant_address": {
+      "label": "被保険者 住所",
+      "page": 1,
+      "type": "text",
+      "render_mode": "text",
+      "font_size": 7.0,
+      "align": "left",
+      "valign": "top",
+      "x": 352.0,
+      "y": 287.0,
+      "width": 200.0,
+      "height": 13.0
+    }
+  }
+}

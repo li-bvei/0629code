@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { listDashboardDeadlines } from '../api/dashboard'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { bulkDismissOverdueDeadlines, dismissDeadline, listDashboardDeadlines } from '../api/dashboard'
 import { listCases } from '../api/cases'
 import type { Case, DashboardDeadline } from '../types/api'
+import { caseStageGroups, isCaseWithdrawn } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 import { diffDaysFromToday } from '../utils/reminder'
 
@@ -18,6 +20,33 @@ const deadlineItems = computed(() =>
 const recentCases = computed(() =>
   [...cases.value].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 10),
 )
+
+const activeCases = computed(() => cases.value.filter((caseItem) => !isCaseWithdrawn(caseItem.status)))
+
+const residenceCardPendingCount = computed(() => (
+  cases.value.filter((caseItem) => caseItem.status === 'approved' && !caseItem.residence_card_received_at).length
+))
+
+const withdrawnCount = computed(() => (
+  cases.value.filter((caseItem) => isCaseWithdrawn(caseItem.status)).length
+))
+
+const stageSummary = computed(() => {
+  const counts = caseStageGroups.map((group) => ({
+    key: group.key,
+    label: group.label,
+    count: activeCases.value.filter((caseItem) => group.statuses.includes(caseItem.status)).length,
+  }))
+  // 「完了」は末尾に来るので、その手前に「在留カード受取待ち」を独立した数値として挟み込む。
+  const completedIndex = counts.findIndex((item) => item.key === 'completed')
+  counts.splice(completedIndex, 0, {
+    key: 'residence_card_pending',
+    label: '在留カード受取待ち',
+    count: residenceCardPendingCount.value,
+  })
+  counts.push({ key: 'withdrawn', label: '取下げ', count: withdrawnCount.value })
+  return counts
+})
 
 const inProgressStatuses = ['applied', 'under_review', 'additional_documents', 'additional_documents_submitted']
 
@@ -55,6 +84,68 @@ const getDeadlineTagType = (daysLeft: number) => {
   return 'info'
 }
 
+const dismissingKey = ref('')
+
+const deadlineKey = (item: DashboardDeadline) => `${item.target_type}-${item.target_id}-${item.type}-${item.deadline_date}`
+
+const dismissDeadlineItem = async (item: DashboardDeadline) => {
+  try {
+    await ElMessageBox.confirm(
+      `「${item.target_name}」の${item.deadline_label}をこのダッシュボードから非表示にします。`
+      + '案件が動いていて表示すべき場合は、この操作は行わないでください。よろしいですか？',
+      '非表示確認',
+      { confirmButtonText: '非表示にする', cancelButtonText: 'キャンセル', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+
+  dismissingKey.value = deadlineKey(item)
+  try {
+    await dismissDeadline({
+      source_type: item.target_type,
+      source_id: item.target_id,
+      deadline_type: item.type,
+      deadline_date: item.deadline_date,
+    })
+    deadlines.value = deadlines.value.filter((d) => deadlineKey(d) !== deadlineKey(item))
+    ElMessage.success('非表示にしました。')
+  } catch {
+    ElMessage.error('非表示処理に失敗しました。')
+  } finally {
+    dismissingKey.value = ''
+  }
+}
+
+const bulkDismissing = ref(false)
+
+const overdueCount = computed(() => deadlineItems.value.filter((item) => item.status === 'overdue').length)
+
+const bulkDismissOverdue = async () => {
+  try {
+    await ElMessageBox.confirm(
+      `現在「期限切れ」表示になっている ${overdueCount.value} 件をまとめて非表示にします。`
+      + 'それぞれの人物・会社について新しい案件を作成すれば、その時点でまた表示されるようになります。'
+      + 'よろしいですか？',
+      '一括非表示確認',
+      { confirmButtonText: '一括非表示にする', cancelButtonText: 'キャンセル', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+
+  bulkDismissing.value = true
+  try {
+    const result = await bulkDismissOverdueDeadlines()
+    await fetchDashboard()
+    ElMessage.success(`${result.dismissed_count}件を非表示にしました。`)
+  } catch {
+    ElMessage.error('一括非表示処理に失敗しました。')
+  } finally {
+    bulkDismissing.value = false
+  }
+}
+
 const fetchDashboard = async () => {
   loading.value = true
   errorMessage.value = ''
@@ -86,8 +177,30 @@ onMounted(() => {
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
 
     <div v-loading="loading" class="detail-grid">
+      <el-card shadow="never" class="stage-summary-card">
+        <template #header>案件の進捗状況</template>
+        <div class="stage-summary-grid">
+          <div v-for="item in stageSummary" :key="item.key" class="stage-summary-item" :class="`is-${item.key}`">
+            <span class="stage-summary-count">{{ item.count }}</span>
+            <span class="stage-summary-label">{{ item.label }}</span>
+          </div>
+        </div>
+      </el-card>
+
       <el-card shadow="never">
-        <template #header>期限提醒</template>
+        <template #header>
+          <div class="deadline-header">
+            <span>期限提醒</span>
+            <el-button
+              v-if="overdueCount > 0"
+              text
+              type="danger"
+              size="small"
+              :loading="bulkDismissing"
+              @click="bulkDismissOverdue"
+            >期限切れ{{ overdueCount }}件を一括非表示</el-button>
+          </div>
+        </template>
         <el-table v-if="deadlineItems.length" :data="deadlineItems" stripe>
           <el-table-column prop="target_name" label="対象" min-width="160" />
           <el-table-column prop="deadline_label" label="期限種別" min-width="140" />
@@ -110,6 +223,16 @@ onMounted(() => {
             </template>
           </el-table-column>
           <el-table-column prop="case_type" label="案件種別" min-width="150" />
+          <el-table-column label="操作" width="90" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                text
+                type="primary"
+                :loading="dismissingKey === deadlineKey(row)"
+                @click="dismissDeadlineItem(row)"
+              >非表示</el-button>
+            </template>
+          </el-table-column>
         </el-table>
         <p v-else class="empty-text">該当データなし</p>
       </el-card>
@@ -167,3 +290,51 @@ onMounted(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+.deadline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stage-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stage-summary-item {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 8px;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-light);
+}
+
+.stage-summary-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  line-height: 1.3;
+}
+
+.stage-summary-item.is-residence_card_pending .stage-summary-count {
+  color: var(--el-color-primary);
+}
+
+.stage-summary-item.is-withdrawn .stage-summary-count {
+  color: var(--el-text-color-secondary);
+}
+
+.stage-summary-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 4px;
+  text-align: center;
+}
+</style>

@@ -189,6 +189,7 @@ class Case(models.Model):
     result_notified_at = models.DateField('結果通知日', blank=True, null=True)
     result_received_at = models.DateField('結果受領日', blank=True, null=True)
     result_note = models.TextField('結果備考', blank=True)
+    residence_card_received_at = models.DateField('在留カード受取日', blank=True, null=True)
     withdrawn_at = models.DateField('取下げ日', blank=True, null=True)
     completed_at = models.DateField('完了日', blank=True, null=True)
     archived_at = models.DateField('アーカイブ日', blank=True, null=True)
@@ -244,6 +245,21 @@ class Case(models.Model):
 class CaseChecklistTemplate(models.Model):
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True)
+    case_type_master = models.ForeignKey(
+        CaseTypeMaster,
+        on_delete=models.SET_NULL,
+        related_name='checklist_templates',
+        blank=True,
+        null=True,
+        help_text='この案件種別・申請区分の組み合わせで案件を作成した際、自動的にこのテンプレートを適用する。',
+    )
+    application_category = models.ForeignKey(
+        CaseApplicationCategory,
+        on_delete=models.SET_NULL,
+        related_name='checklist_templates',
+        blank=True,
+        null=True,
+    )
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
     deleted_at = models.DateTimeField(blank=True, null=True)

@@ -23,6 +23,20 @@ class SystemUserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class SystemUserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['username', 'first_name', 'last_name', 'is_active', 'is_superuser']
+        extra_kwargs = {field: {'required': False} for field in fields}
+
+    def validate_is_superuser(self, value):
+        if not value and self.instance and self.instance.is_superuser:
+            other_admins_exist = User.objects.filter(is_superuser=True).exclude(pk=self.instance.pk).exists()
+            if not other_admins_exist:
+                raise serializers.ValidationError('最後の管理者の権限は解除できません。')
+        return value
+
+
 class SystemUserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 

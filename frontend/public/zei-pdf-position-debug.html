@@ -158,6 +158,13 @@
     }
     .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
     .status { min-height: 20px; color: #577084; font-size: 13px; }
+    .record-banner {
+      padding: 8px 16px;
+      background: #eef7ff;
+      border-bottom: 1px solid #bcdcfa;
+      color: #1567b0;
+      font-size: 13px;
+    }
     .coord { margin-left: auto; color: #577084; font-size: 13px; }
     @media (max-width: 980px) {
       .layout { grid-template-columns: 1fr; }
@@ -175,9 +182,12 @@
     <button id="saveButton">保存 mapping</button>
     <button id="testPdfButton" class="secondary">生成测试 PDF</button>
     <button id="reloadButton" class="secondary">重新加载</button>
+    <label>実データ <select id="recordSelect"><option value="">（手動テスト値）</option></select></label>
+    <button id="refreshRecordsButton" class="secondary" title="実データ一覧を再取得">↻</button>
     <span id="mouseCoord" class="coord">x -, y -</span>
     <span id="topStatus" class="status"></span>
   </div>
+  <div id="recordBanner" class="record-banner" style="display:none"></div>
 
   <main class="layout">
     <section class="preview-card">
@@ -294,6 +304,23 @@
     const RENDER_MODES = ['text', 'split', 'boxes']
     const ALIGN_VALUES = ['left', 'center', 'right']
     const VALIGN_VALUES = ['top', 'middle', 'bottom']
+    // tax_renewal_pdf.py の FIELD_ALIASES と同じ内容。実データのフィールド値解決を
+    // バックエンドの本番ロジックと一致させるため、日本語 field_key のミラーを保持する。
+    const FIELD_ALIASES = {
+      '記号': 'establishment_symbol',
+      '事業所番号': 'establishment_number',
+      '申請事由': 'application_reason',
+      '開始年': 'fiscal_start_year_jp',
+      '開始月': 'fiscal_start_month',
+      '終了年': 'fiscal_end_year_jp',
+      '終了月': 'fiscal_end_month',
+      '事業所所在地': 'company_address',
+      '代表者名': 'representative_name',
+      '代表者肩書': 'representative_position',
+      '代理人氏名': 'agent_name',
+      '代理人住所': 'agent_address',
+      '代理人関係': 'agent_relationship',
+    }
 
     const apiBase = location.pathname.startsWith('/sun/') ? '/sun/api/accounting/' : '/api/accounting/'
     const state = {
@@ -305,6 +332,10 @@
       dragging: null,
       resizing: null,
       imageSize: { width: 0, height: 0 },
+      records: [],
+      recordId: '',
+      recordData: null,
+      recordLabel: '',
     }
     const els = {
       templateSelect: document.getElementById('templateSelect'),
@@ -317,6 +348,9 @@
       importCommonButton: document.getElementById('importCommonButton'),
       addFieldButton: document.getElementById('addFieldButton'),
       deleteFieldButton: document.getElementById('deleteFieldButton'),
+      recordSelect: document.getElementById('recordSelect'),
+      refreshRecordsButton: document.getElementById('refreshRecordsButton'),
+      recordBanner: document.getElementById('recordBanner'),
       fieldList: document.getElementById('fieldList'),
       previewImage: document.getElementById('previewImage'),
       markerLayer: document.getElementById('markerLayer'),
@@ -417,7 +451,21 @@
         state.mapping.fields[key] = normalizeField(key, field)
       })
     }
-    const fieldDisplayValue = (key, field) => field.test_value || field.label || key
+    const resolveRecordValue = (key) => {
+      const data = state.recordData
+      if (!data) return ''
+      if (data[key]) return String(data[key])
+      const alias = FIELD_ALIASES[key]
+      if (alias && data[alias]) return String(data[alias])
+      return ''
+    }
+    const fieldDisplayValue = (key, field) => {
+      if (state.recordData) {
+        const resolved = resolveRecordValue(key)
+        if (resolved) return resolved
+      }
+      return field.test_value || field.label || key
+    }
 
     const scale = () => {
       const page = currentPageInfo()
@@ -710,6 +758,57 @@
       setStatus('')
     }
 
+    const renderRecordOptions = () => {
+      const previousValue = els.recordSelect.value
+      els.recordSelect.innerHTML = '<option value="">（手動テスト値）</option>'
+      state.records.forEach((record) => {
+        const option = document.createElement('option')
+        option.value = String(record.id)
+        const who = record.company_name || record.customer_name || '-'
+        option.textContent = `${record.title}（${who}）`
+        els.recordSelect.appendChild(option)
+      })
+      if (state.records.some((record) => String(record.id) === previousValue)) {
+        els.recordSelect.value = previousValue
+      }
+    }
+
+    const renderRecordBanner = () => {
+      if (!state.recordData) {
+        els.recordBanner.style.display = 'none'
+        els.recordBanner.textContent = ''
+        return
+      }
+      els.recordBanner.style.display = 'block'
+      els.recordBanner.textContent = `実データ表示中：${state.recordLabel}（この会社／顧客のデータが無いフィールドは手動テスト値のまま表示されます）`
+    }
+
+    const loadRecords = async () => {
+      const category = currentTemplate()?.category || ''
+      const query = category ? `?category=${encodeURIComponent(category)}` : ''
+      state.records = await fetchJson(`zei-pdf-position-debug/records/${query}`)
+      renderRecordOptions()
+    }
+
+    const loadRecordData = async (recordId) => {
+      if (!recordId) {
+        state.recordId = ''
+        state.recordData = null
+        state.recordLabel = ''
+        renderRecordBanner()
+        render()
+        return
+      }
+      setStatus('実データを読み込み中...')
+      const data = await fetchJson(`zei-pdf-position-debug/record-data/?record_id=${encodeURIComponent(recordId)}`)
+      state.recordId = String(recordId)
+      state.recordData = data.data
+      state.recordLabel = `${data.title}（${data.company_name || data.customer_name || '-'}）`
+      renderRecordBanner()
+      render()
+      setStatus('')
+    }
+
     const saveMapping = async () => {
       updateSelectedFromInputs()
       const data = await fetchJson('zei-pdf-position-debug/mapping/', {
@@ -732,7 +831,7 @@
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken(),
         },
-        body: JSON.stringify({ template_key: state.currentTemplateKey }),
+        body: JSON.stringify({ template_key: state.currentTemplateKey, record_id: state.recordId || null }),
       })
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
@@ -839,8 +938,18 @@
     })
     els.templateSelect.addEventListener('change', async () => {
       state.currentTemplateKey = els.templateSelect.value
+      state.recordId = ''
+      state.recordData = null
+      state.recordLabel = ''
+      els.recordSelect.value = ''
+      renderRecordBanner()
       await loadCurrentTemplate()
+      await loadRecords().catch((error) => setStatus(error.message))
     })
+    els.recordSelect.addEventListener('change', () => {
+      loadRecordData(els.recordSelect.value).catch((error) => setStatus(error.message))
+    })
+    els.refreshRecordsButton.addEventListener('click', () => loadRecords().catch((error) => setStatus(error.message)))
     els.prevPage.addEventListener('click', async () => {
       if (state.currentPage <= 1) return
       state.currentPage -= 1
@@ -912,6 +1021,7 @@
       try {
         await loadTemplates()
         await loadCurrentTemplate()
+        await loadRecords()
       } catch (error) {
         setStatus(error.message)
       }

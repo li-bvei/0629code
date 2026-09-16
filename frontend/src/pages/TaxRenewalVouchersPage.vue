@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { listCases } from '../api/cases'
 import { listCompanies } from '../api/companies'
 import { listCustomers } from '../api/customers'
 import { listEmployees } from '../api/employees'
@@ -19,7 +20,7 @@ import {
   updateTaxRenewalAgentTemplate,
   updateTaxRenewalRecord,
 } from '../api/accounting'
-import type { Company, Customer, Employee } from '../types/api'
+import type { Case, Company, Customer, Employee } from '../types/api'
 import type {
   TaxRenewalAgentTemplate,
   TaxRenewalAgentTemplatePayload,
@@ -35,6 +36,7 @@ import './accounting/accounting.css'
 const records = ref<TaxRenewalVoucherRecord[]>([])
 const templates = ref<TaxRenewalTemplate[]>([])
 const agentTemplates = ref<TaxRenewalAgentTemplate[]>([])
+const cases = ref<Case[]>([])
 const companies = ref<Company[]>([])
 const customers = ref<Customer[]>([])
 const employees = ref<Employee[]>([])
@@ -61,10 +63,13 @@ const fieldLabels: Record<string, string> = {
   company_number: '法人番号',
   company_address: '事業所所在地',
   company_phone: '会社電話',
+  pension_number: '年金番号',
   representative_name: '事業主氏名',
   representative_kana: '代表者カナ',
   representative_birth_date: '代表者生年月日',
   representative_position: '代表者肩書',
+  representative_postal_code: '代表者郵便番号',
+  representative_address: '代表者住所',
   establishment_symbol: '記号',
   establishment_number: '事業所番号',
   applicant_name: '申請人氏名',
@@ -113,6 +118,8 @@ const fieldGroups = [
       'representative_kana',
       'representative_birth_date',
       'representative_position',
+      'representative_postal_code',
+      'representative_address',
       'establishment_symbol',
       'establishment_number',
     ],
@@ -191,8 +198,11 @@ const emptyFormData = (): TaxRenewalFormData => ({
   company_number: '',
   company_address: '',
   company_phone: '',
+  pension_number: '',
   representative_name: '',
   representative_kana: '',
+  representative_postal_code: '',
+  representative_address: '',
   representative_birth_date: null,
   applicant_name: '',
   applicant_kana: '',
@@ -246,6 +256,7 @@ const emptyFormData = (): TaxRenewalFormData => ({
 const form = reactive<TaxRenewalVoucherPayload>({
   title: '',
   category: 'renewal',
+  case: null,
   company: null,
   customer: null,
   employee: null,
@@ -291,8 +302,6 @@ const unavailableReason = (template: TaxRenewalTemplate) => {
 }
 
 const templateDisabled = (template: TaxRenewalTemplate) => Boolean(unavailableReason(template))
-const hasSocialInsuranceTemplate = (record: TaxRenewalVoucherRecord) =>
-  (record.selected_templates || []).includes(SOCIAL_INSURANCE_TEMPLATE_KEY)
 const selectedTemplateObjects = computed(() =>
   form.selected_templates
     .map((key) => templates.value.find((template) => template.key === key))
@@ -396,23 +405,34 @@ const loadAgentTemplates = async () => {
 }
 
 const loadOptions = async () => {
-  const [templateData, companyData, customerData, employeeData] = await Promise.all([
+  const [templateData, caseData, companyData, customerData, employeeData] = await Promise.all([
     listTaxRenewalTemplates(),
+    listCases({ page_size: 100 }),
     listCompanies(),
     listCustomers(),
     listEmployees(),
     loadAgentTemplates(),
   ])
   templates.value = templateData
+  cases.value = caseData.results
   companies.value = companyData.results
   customers.value = customerData.results
   employees.value = employeeData.results
+}
+
+const handleCaseSelect = (caseId: number | null) => {
+  const target = cases.value.find((item) => item.id === caseId)
+  if (!target) return
+  form.customer = target.customer
+  form.company = target.company
+  form.employee = target.responsible_employee
 }
 
 const resetForm = () => {
   editingId.value = null
   form.title = ''
   form.category = 'renewal'
+  form.case = null
   form.company = null
   form.customer = null
   form.employee = null
@@ -435,6 +455,7 @@ const openEdit = (record: TaxRenewalVoucherRecord) => {
   editingId.value = record.id
   form.title = record.title
   form.category = record.category
+  form.case = record.case || null
   form.company = record.company || null
   form.customer = record.customer || null
   form.employee = record.employee || null
@@ -456,8 +477,12 @@ const applyExistingData = () => {
     form.form_data.company_number = company.corporate_number || company.corporate_registration_number || ''
     form.form_data.company_address = company.address || ''
     form.form_data.company_phone = company.phone || ''
+    form.form_data.establishment_symbol = company.establishment_symbol || ''
+    form.form_data.establishment_number = company.establishment_number || ''
     form.form_data.representative_name = company.representative_name || ''
     form.form_data.representative_kana = company.representative_name_kana || ''
+    form.form_data.representative_postal_code = company.representative_postal_code || ''
+    form.form_data.representative_address = company.representative_address || ''
     form.form_data.representative_birth_date = valueOf(company, 'representative_birth_date') || null
   }
 
@@ -596,6 +621,7 @@ const buildPayload = (): TaxRenewalVoucherPayload => {
   return {
     title: form.title.trim(),
     category: form.category,
+    case: form.case || null,
     company: form.company || null,
     customer: form.customer || null,
     employee: form.employee || null,
@@ -685,21 +711,40 @@ const generatePdf = async (record: TaxRenewalVoucherRecord) => {
   }
 }
 
-const downloadSocialInsurancePdf = async (record: TaxRenewalVoucherRecord) => {
+const DOWNLOADABLE_TEMPLATES: Record<string, string> = {
+  [SOCIAL_INSURANCE_TEMPLATE_KEY]: '社会保険納入証明書兼委任状',
+  pension_office_application: '年金新規適用届',
+  pension_insured_qualification_acquisition: '年金被保険者資格取得届',
+  dependent_change_notification: '年金被扶養者（異動）届',
+}
+
+const getDownloadableTemplates = (record: TaxRenewalVoucherRecord) => (
+  (record.selected_templates || []).filter((key) => key in DOWNLOADABLE_TEMPLATES)
+)
+
+const downloadTemplatePdf = async (record: TaxRenewalVoucherRecord, templateKey: string) => {
   generatingId.value = record.id
   try {
     const result = await generateTaxRenewalRecordPdf(record.id, {
-      template_key: SOCIAL_INSURANCE_TEMPLATE_KEY,
+      template_key: templateKey,
     })
     downloadBlob(result.blob, result.contentDisposition)
-    const warningFields = result.warningFields ? decodeURIComponent(result.warningFields) : ''
-    if (warningFields) {
-      ElMessage.warning(`PDF生成しました。warning: ${warningFields}`)
+    const missingKeys = result.missingRequiredFields
+      ? decodeURIComponent(result.missingRequiredFields).split(',').filter(Boolean)
+      : []
+    if (missingKeys.length) {
+      const missingLabels = missingKeys.map((key) => fieldLabels[key] || key).join('、')
+      ElMessage({
+        type: 'warning',
+        duration: 0,
+        showClose: true,
+        message: `PDFを生成しましたが、未入力の項目があります：${missingLabels}`,
+      })
     } else {
-      ElMessage.success('社会保険PDFを生成しました。')
+      ElMessage.success(`${DOWNLOADABLE_TEMPLATES[templateKey] || 'PDF'}を生成しました。`)
     }
   } catch (error) {
-    ElMessage.warning(errorMessage(error, '社会保険PDFの生成に失敗しました。'))
+    ElMessage.warning(errorMessage(error, 'PDFの生成に失敗しました。'))
   } finally {
     generatingId.value = null
   }
@@ -889,6 +934,7 @@ onMounted(async () => {
         <el-table-column label="分类" width="110">
           <template #default="{ row }">{{ categoryLabel(row.category) }}</template>
         </el-table-column>
+        <el-table-column prop="case_number" label="案件番号" min-width="150" show-overflow-tooltip />
         <el-table-column prop="company_name" label="公司" min-width="160" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="100" />
@@ -908,11 +954,12 @@ onMounted(async () => {
                   <el-dropdown-item @click="openEdit(row)">编辑</el-dropdown-item>
                   <el-dropdown-item :disabled="generatingId === row.id" @click="generatePdf(row)">PDF生成</el-dropdown-item>
                   <el-dropdown-item
-                    v-if="hasSocialInsuranceTemplate(row)"
+                    v-for="templateKey in getDownloadableTemplates(row)"
+                    :key="templateKey"
                     :disabled="generatingId === row.id"
-                    @click="downloadSocialInsurancePdf(row)"
+                    @click="downloadTemplatePdf(row, templateKey)"
                   >
-                    社会保険PDF
+                    {{ DOWNLOADABLE_TEMPLATES[templateKey] }}PDF
                   </el-dropdown-item>
                   <el-dropdown-item divided class="danger-item" :disabled="deletingId === row.id" @click="deleteRecord(row)">
                     删除
@@ -993,6 +1040,27 @@ onMounted(async () => {
 
           <div class="tax-section-title">自动套用资料</div>
           <el-row :gutter="12">
+            <el-col :xs="24" :md="21">
+              <el-form-item label="案件（選択すると顧客・会社・担当者を自動反映）">
+                <el-select
+                  v-model="form.case"
+                  clearable
+                  filterable
+                  placeholder="案件を選択（任意）"
+                  class="full-width"
+                  @change="handleCaseSelect"
+                >
+                  <el-option
+                    v-for="item in cases"
+                    :key="item.id"
+                    :label="`${item.case_number}（${item.customer_name || '-'}）`"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="12">
             <el-col :xs="24" :md="7">
               <el-form-item label="公司">
                 <el-select v-model="form.company" clearable filterable placeholder="会社">
@@ -1040,12 +1108,15 @@ onMounted(async () => {
                 <el-col v-if="isFieldRequired('company_name')" :xs="24" :md="8"><el-form-item :label="fieldLabels.company_name"><el-input v-model="form.form_data.company_name" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('company_number')" :xs="24" :md="8"><el-form-item :label="fieldLabels.company_number"><el-input v-model="form.form_data.company_number" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('company_phone')" :xs="24" :md="8"><el-form-item :label="fieldLabels.company_phone"><el-input v-model="form.form_data.company_phone" /></el-form-item></el-col>
+                <el-col :xs="24" :md="8"><el-form-item :label="`${fieldLabels.pension_number}（任意）`"><el-input v-model="form.form_data.pension_number" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('establishment_symbol')" :xs="24" :md="8"><el-form-item :label="fieldLabels.establishment_symbol"><el-input v-model="form.form_data.establishment_symbol" placeholder="例：12イロ" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('establishment_number')" :xs="24" :md="8"><el-form-item :label="fieldLabels.establishment_number"><el-input v-model="form.form_data.establishment_number" placeholder="例：123456" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('representative_name')" :xs="24" :md="8"><el-form-item :label="fieldLabels.representative_name"><el-input v-model="form.form_data.representative_name" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('representative_kana')" :xs="24" :md="8"><el-form-item :label="fieldLabels.representative_kana"><el-input v-model="form.form_data.representative_kana" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('representative_position')" :xs="24" :md="8"><el-form-item :label="fieldLabels.representative_position"><el-input v-model="form.form_data.representative_position" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('representative_birth_date')" :xs="24" :md="8"><el-form-item :label="fieldLabels.representative_birth_date"><el-date-picker v-model="form.form_data.representative_birth_date" value-format="YYYY-MM-DD" /></el-form-item></el-col>
+                <el-col v-if="isFieldRequired('representative_postal_code')" :xs="24" :md="8"><el-form-item :label="fieldLabels.representative_postal_code"><el-input v-model="form.form_data.representative_postal_code" placeholder="例：530-0001" /></el-form-item></el-col>
+                <el-col v-if="isFieldRequired('representative_address')" :xs="24"><el-form-item :label="fieldLabels.representative_address"><el-input v-model="form.form_data.representative_address" /></el-form-item></el-col>
                 <el-col v-if="isFieldRequired('company_address')" :xs="24"><el-form-item :label="fieldLabels.company_address"><el-input v-model="form.form_data.company_address" /></el-form-item></el-col>
               </el-row>
             </el-collapse-item>

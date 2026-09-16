@@ -20,7 +20,7 @@ from apps.companies.views import CompanyStaffViewSet, CompanyViewSet
 from apps.customers.views import CustomerViewSet, FamilyMemberViewSet, ResidenceStatusMasterViewSet
 from apps.documents.views import DocumentViewSet
 from apps.employees.views import EmployeeViewSet
-from apps.reminders.views import ReminderViewSet
+from apps.reminders.views import DismissedDeadlineViewSet, ReminderViewSet
 from apps.tasks.views import TaskViewSet
 from apps.timelines.views import TimelineViewSet
 from .views import DashboardDeadlinesView, ReceptionCreateView
@@ -45,6 +45,7 @@ router.register('case-checklist-template-items', CaseChecklistTemplateItemViewSe
 router.register('case-checklist-items', CaseChecklistItemViewSet, basename='case-checklist-item')
 router.register('tasks', TaskViewSet, basename='task')
 router.register('reminders', ReminderViewSet, basename='reminder')
+router.register('dismissed-deadlines', DismissedDeadlineViewSet, basename='dismissed-deadline')
 router.register('timelines', TimelineViewSet, basename='timeline')
 router.register('documents', DocumentViewSet, basename='document')
 

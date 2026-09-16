@@ -1,5 +1,11 @@
 import http from '../services/http'
-import type { ListParams, PaginatedResponse, SystemUser, SystemUserCreatePayload } from '../types/api'
+import type {
+  ListParams,
+  PaginatedResponse,
+  SystemUser,
+  SystemUserCreatePayload,
+  SystemUserUpdatePayload,
+} from '../types/api'
 
 export const listUsers = async (params?: ListParams) => {
   const response = await http.get<PaginatedResponse<SystemUser>>('/users/', { params })
@@ -13,6 +19,11 @@ export const createUser = async (payload: SystemUserCreatePayload) => {
 
 export const setUserActive = async (id: number, isActive: boolean) => {
   const response = await http.patch<SystemUser>(`/users/${id}/`, { is_active: isActive })
+  return response.data
+}
+
+export const updateUser = async (id: number, payload: SystemUserUpdatePayload) => {
+  const response = await http.patch<SystemUser>(`/users/${id}/`, payload)
   return response.data
 }
 

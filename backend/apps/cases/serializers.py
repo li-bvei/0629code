@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from apps.tasks.models import Task
 
+from .utils import auto_apply_default_checklist_template
 from .models import (
     AcquisitionPlacePreset,
     Case,
@@ -161,6 +162,7 @@ class CaseSerializer(serializers.ModelSerializer):
             'result_notified_at',
             'result_received_at',
             'result_note',
+            'residence_card_received_at',
             'withdrawn_at',
             'completed_at',
             'archived_at',
@@ -242,7 +244,9 @@ class CaseSerializer(serializers.ModelSerializer):
         case_type_master = validated_data.get('case_type_master')
         if case_type_master:
             validated_data['case_type'] = case_type_master.name
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+        auto_apply_default_checklist_template(instance)
+        return instance
 
     def update(self, instance, validated_data):
         case_type_master = validated_data.get('case_type_master')
@@ -507,6 +511,8 @@ class CaseChecklistTemplateItemSerializer(serializers.ModelSerializer):
 class CaseChecklistTemplateSerializer(serializers.ModelSerializer):
     items = CaseChecklistTemplateItemSerializer(many=True, read_only=True)
     item_count = serializers.SerializerMethodField()
+    case_type_master_name = serializers.CharField(source='case_type_master.name', read_only=True)
+    application_category_name = serializers.CharField(source='application_category.name', read_only=True)
 
     class Meta:
         model = CaseChecklistTemplate
@@ -514,6 +520,10 @@ class CaseChecklistTemplateSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'description',
+            'case_type_master',
+            'case_type_master_name',
+            'application_category',
+            'application_category_name',
             'is_active',
             'sort_order',
             'deleted_at',

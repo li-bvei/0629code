@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, Check, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -22,6 +22,7 @@ import {
   regenerateCaseNumber,
   updateCase,
   updateCaseChecklistItem,
+  updateCaseProgressInfo,
 } from '../api/cases'
 import { listCompanies } from '../api/companies'
 import { listCustomers } from '../api/customers'
@@ -35,6 +36,8 @@ import type {
   CaseChecklistItemType,
   CaseChecklistTemplate,
   CasePayload,
+  CaseStatus,
+  CaseStatusPayload,
   CaseTypeMaster,
   ChecklistItemPreset,
   Company,
@@ -46,12 +49,17 @@ import type {
 } from '../types/api'
 import {
   caseRegistrationStatusOptions,
+  caseStatusOptionGroups,
   caseStatusOptions,
   getCaseDisplayStatus,
   getCaseDisplayStatusTagType,
   getCaseRegistrationStatusLabel,
   getCaseRegistrationStatusTagType,
+  getCaseStageDisplays,
+  getCaseStageSubBadge,
+  isCaseWithdrawn,
 } from '../utils/caseStatus'
+import type { CaseStageDisplay } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -186,9 +194,83 @@ const progressUpdateForm = ref({
   result_received_at: null as string | null,
   permission_number: '',
   result_note: '',
+  residence_card_received_at: null as string | null,
   withdrawn_at: null as string | null,
   completed_at: null as string | null,
 })
+
+const showAppliedFields = computed(() => (
+  progressUpdateForm.value.new_status === 'applied' || Boolean(caseDetail.value?.applied_at)
+))
+const showAdditionalDocumentsFields = computed(() => (
+  progressUpdateForm.value.new_status === 'additional_documents' || Boolean(caseDetail.value?.additional_documents_requested_at)
+))
+const showAdditionalDocumentsSubmittedField = computed(() => (
+  progressUpdateForm.value.new_status === 'additional_documents_submitted' || Boolean(caseDetail.value?.additional_documents_submitted_at)
+))
+const showResultFields = computed(() => (
+  progressUpdateForm.value.new_status === 'approved'
+  || progressUpdateForm.value.new_status === 'rejected'
+  || Boolean(caseDetail.value?.result_notified_at)
+  || Boolean(caseDetail.value?.result_received_at)
+))
+const resultDateLabel = computed(() => (
+  progressUpdateForm.value.new_status === 'rejected'
+  || (progressUpdateForm.value.new_status !== 'approved' && caseDetail.value?.status === 'rejected')
+    ? '不許可日'
+    : '許可日'
+))
+const showWithdrawnField = computed(() => (
+  progressUpdateForm.value.new_status === 'withdrawn' || Boolean(caseDetail.value?.withdrawn_at)
+))
+const showCompletedField = computed(() => (
+  progressUpdateForm.value.new_status === 'completed' || Boolean(caseDetail.value?.completed_at)
+))
+const showResidenceCardField = computed(() => (
+  progressUpdateForm.value.new_status === 'approved'
+  || caseDetail.value?.status === 'approved'
+  || Boolean(caseDetail.value?.residence_card_received_at)
+))
+
+const stageDisplays = computed(() => getCaseStageDisplays(caseDetail.value?.status))
+const stageSubBadge = computed(() => getCaseStageSubBadge(caseDetail.value?.status))
+const caseIsWithdrawn = computed(() => isCaseWithdrawn(caseDetail.value?.status))
+const residenceCardDone = computed(() => Boolean(caseDetail.value?.residence_card_received_at))
+const residenceCardCurrent = computed(() => (
+  caseDetail.value?.status === 'approved' && !residenceCardDone.value
+))
+
+// ステッパーの各ノードをクリックした時に「進捗を更新」ダイアログへ渡す代表ステータス。
+// 現在のステージをクリックした場合はバックエンドの提案ステータスを優先する。
+const stageEntryStatus: Record<string, CaseStatus> = {
+  preparation: 'ready_to_apply',
+  applied: 'applied',
+  under_review: 'under_review',
+  result: 'approved',
+  completed: 'completed',
+}
+
+const handleStageClick = (stage: CaseStageDisplay) => {
+  if (!caseDetail.value) return
+  if (stage.state === 'current' && caseDetail.value.suggested_case_status) {
+    openProgressUpdateDialog(caseDetail.value.suggested_case_status)
+  } else {
+    openProgressUpdateDialog(stageEntryStatus[stage.key])
+  }
+}
+
+const handleResidenceCardClick = () => {
+  if (!caseDetail.value) return
+  if (!residenceCardDone.value && !residenceCardCurrent.value) {
+    ElMessage.info('先に「許可」まで進めてから在留カード受取日を入力できます。')
+    return
+  }
+  openProgressUpdateDialog(caseDetail.value.status)
+}
+
+const handleWithdrawnClick = () => {
+  openProgressUpdateDialog('withdrawn')
+}
 const correctionForm = ref({
   consulted_at: null as string | null,
   accepted_at: null as string | null,
@@ -206,6 +288,7 @@ const correctionForm = ref({
   result_received_at: null as string | null,
   permission_number: '',
   result_note: '',
+  residence_card_received_at: null as string | null,
   withdrawn_at: null as string | null,
   completed_at: null as string | null,
 })
@@ -342,7 +425,7 @@ const fetchCaseDetail = async () => {
     const [caseData, timelineData, checklistData, templateData, presetData] = await Promise.all([
       getCase(caseId.value),
       listTimelines({ case: caseId.value }),
-      listCaseChecklistItems({ case: caseId.value }),
+      listCaseChecklistItems({ case: caseId.value, page_size: 100 }),
       listCaseChecklistTemplates({ is_active: true }),
       listChecklistItemPresets({ is_active: true, ordering: 'sort_order' }),
     ])
@@ -364,7 +447,7 @@ const fetchTimelines = async () => {
 }
 
 const fetchChecklistItems = async () => {
-  const data = await listCaseChecklistItems({ case: caseId.value })
+  const data = await listCaseChecklistItems({ case: caseId.value, page_size: 100 })
   checklistItems.value = data.results
   caseDetail.value = await getCase(caseId.value)
 }
@@ -454,6 +537,7 @@ const openProgressUpdateDialog = (suggestedStatus?: string) => {
     result_received_at: caseDetail.value.result_received_at || today,
     permission_number: caseDetail.value.permission_number || '',
     result_note: caseDetail.value.result_note || '',
+    residence_card_received_at: caseDetail.value.residence_card_received_at,
     withdrawn_at: caseDetail.value.withdrawn_at || today,
     completed_at: caseDetail.value.completed_at || today,
   }
@@ -479,6 +563,7 @@ const openCorrectionDialog = () => {
     result_received_at: caseDetail.value.result_received_at,
     permission_number: caseDetail.value.permission_number || '',
     result_note: caseDetail.value.result_note || '',
+    residence_card_received_at: caseDetail.value.residence_card_received_at,
     withdrawn_at: caseDetail.value.withdrawn_at,
     completed_at: caseDetail.value.completed_at,
   }
@@ -624,6 +709,41 @@ const submitProgressUpdate = async () => {
         completed_at: progressUpdateForm.value.completed_at,
       },
     })
+    // new_status 側の分岐に該当しない「すでに到達済みの項目」への修正は、
+    // change-status では反映されないため、別途 progress-info で差分だけ保存する。
+    // 非表示のフィールドはフォーム上の「today」仮デフォルト値が紛れ込んでいる可能性があるため、
+    // 画面に実際に表示されている項目だけを送る。
+    const progressInfoPayload: CaseStatusPayload = {}
+    if (showAppliedFields.value) {
+      progressInfoPayload.applied_at = progressUpdateForm.value.applied_at
+      progressInfoPayload.application_receipt_number = progressUpdateForm.value.application_receipt_number
+    }
+    if (showAdditionalDocumentsFields.value) {
+      progressInfoPayload.additional_documents_requested_at = progressUpdateForm.value.additional_documents_requested_at
+      progressInfoPayload.additional_documents_detail = progressUpdateForm.value.additional_documents_detail
+    }
+    if (showAdditionalDocumentsSubmittedField.value) {
+      progressInfoPayload.additional_documents_submitted_at = progressUpdateForm.value.additional_documents_submitted_at
+    }
+    if (showResultFields.value) {
+      progressInfoPayload.result_received_at = progressUpdateForm.value.result_received_at
+      progressInfoPayload.result_note = progressUpdateForm.value.result_note
+      if (progressUpdateForm.value.new_status === 'approved' || caseDetail.value.permission_number) {
+        progressInfoPayload.permission_number = progressUpdateForm.value.permission_number
+      }
+    }
+    if (showResidenceCardField.value) {
+      progressInfoPayload.residence_card_received_at = progressUpdateForm.value.residence_card_received_at
+    }
+    if (showWithdrawnField.value) {
+      progressInfoPayload.withdrawn_at = progressUpdateForm.value.withdrawn_at
+    }
+    if (showCompletedField.value) {
+      progressInfoPayload.completed_at = progressUpdateForm.value.completed_at
+    }
+    if (Object.keys(progressInfoPayload).length) {
+      await updateCaseProgressInfo(caseId.value, progressInfoPayload)
+    }
     const orphanUpdates: Partial<CasePayload> = {}
     if (progressUpdateForm.value.result_notified_at !== caseDetail.value.result_notified_at) {
       orphanUpdates.result_notified_at = progressUpdateForm.value.result_notified_at || null
@@ -668,6 +788,7 @@ const progressFieldLabels: Record<string, string> = {
   result_received_at: '許可日 / 不許可日',
   permission_number: '許可番号',
   result_note: '結果備考',
+  residence_card_received_at: '在留カード受取日',
   withdrawn_at: '取下げ日',
   completed_at: '完了日',
 }
@@ -712,6 +833,7 @@ const buildCorrectionPayload = () => {
   trackDate('result_received_at', current.result_received_at, form.result_received_at)
   trackText('permission_number', current.permission_number, form.permission_number)
   trackText('result_note', current.result_note, form.result_note)
+  trackDate('residence_card_received_at', current.residence_card_received_at, form.residence_card_received_at)
   trackDate('withdrawn_at', current.withdrawn_at, form.withdrawn_at)
   trackDate('completed_at', current.completed_at, form.completed_at)
 
@@ -1087,6 +1209,7 @@ const submitBasicInfo = async () => {
   const form = basicInfoForm.value
   const payload: Partial<CasePayload> = {}
   const changedLines: string[] = []
+  let customerChanged = false
 
   const trackRef = (
     key: 'case_type_master' | 'application_category' | 'customer' | 'company' | 'responsible_employee',
@@ -1096,6 +1219,7 @@ const submitBasicInfo = async () => {
   ) => {
     if ((newValue || null) === (oldValue || null)) return
     payload[key] = newValue
+    if (key === 'customer') customerChanged = true
     const oldLabel = options.find((option) => option.id === oldValue)?.name || '-'
     const newLabel = options.find((option) => option.id === newValue)?.name || '-'
     changedLines.push(`${basicInfoFieldLabels[key]}：${oldLabel} → ${newLabel}`)
@@ -1125,6 +1249,9 @@ const submitBasicInfo = async () => {
     ElMessage.success('案件基本情報を更新しました。')
     basicInfoDialogVisible.value = false
     await Promise.all([fetchCaseDetail(), fetchTimelines()])
+    if (customerChanged) {
+      await confirmRegenerateCaseNumber()
+    }
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.detail || '更新に失敗しました。')
   } finally {
@@ -1190,7 +1317,68 @@ onMounted(() => {
             </div>
           </div>
         </template>
-        <el-descriptions v-if="caseDetail" :column="2" border>
+        <div v-if="caseDetail" class="case-stage-stepper">
+          <template v-for="(stage, index) in stageDisplays.slice(0, 4)" :key="stage.key">
+            <div
+              class="case-stage-step is-clickable"
+              :class="`is-${stage.state}`"
+              role="button"
+              tabindex="0"
+              @click="handleStageClick(stage)"
+              @keydown.enter="handleStageClick(stage)"
+            >
+              <div class="case-stage-dot">
+                <el-icon v-if="stage.state === 'done'"><Check /></el-icon>
+              </div>
+              <span class="case-stage-label">{{ stage.label }}</span>
+              <span v-if="stage.key === 'under_review' && stageSubBadge" class="case-stage-badge">{{ stageSubBadge }}</span>
+            </div>
+            <div v-if="index < 3" class="case-stage-connector" :class="{ 'is-done': stage.state === 'done' }" />
+          </template>
+
+          <div class="case-stage-connector" :class="{ 'is-done': residenceCardDone }" />
+          <div
+            class="case-stage-step is-clickable"
+            :class="residenceCardDone ? 'is-done' : residenceCardCurrent ? 'is-current' : 'is-pending'"
+            role="button"
+            tabindex="0"
+            @click="handleResidenceCardClick"
+            @keydown.enter="handleResidenceCardClick"
+          >
+            <div class="case-stage-dot">
+              <el-icon v-if="residenceCardDone"><Check /></el-icon>
+            </div>
+            <span class="case-stage-label">在留カード受取</span>
+          </div>
+
+          <div class="case-stage-connector" :class="{ 'is-done': stageDisplays[3].state === 'done' && residenceCardDone }" />
+          <div
+            class="case-stage-step is-clickable"
+            :class="`is-${stageDisplays[4].state}`"
+            role="button"
+            tabindex="0"
+            @click="handleStageClick(stageDisplays[4])"
+            @keydown.enter="handleStageClick(stageDisplays[4])"
+          >
+            <div class="case-stage-dot">
+              <el-icon v-if="stageDisplays[4].state === 'done'"><Check /></el-icon>
+            </div>
+            <span class="case-stage-label">{{ stageDisplays[4].label }}</span>
+          </div>
+
+          <template v-if="caseIsWithdrawn">
+            <div class="case-stage-connector" />
+            <div class="case-stage-step is-withdrawn is-clickable" role="button" tabindex="0" @click="handleWithdrawnClick" @keydown.enter="handleWithdrawnClick">
+              <div class="case-stage-dot"><el-icon><Close /></el-icon></div>
+              <span class="case-stage-label">取下げ</span>
+            </div>
+          </template>
+        </div>
+        <p v-if="caseIsWithdrawn" class="case-stage-withdrawn-note">
+          この案件は取下げになりました。取下げ前の進捗は「過去の項目を修正」から確認できます。
+        </p>
+        <p class="case-stage-hint">進捗ノードをクリックすると、そのステージの状態と日付を直接入力できます。</p>
+        <el-descriptions v-if="caseDetail" :column="2" border class="case-stage-detail">
           <el-descriptions-item label="現在の進捗">
             <el-tag :type="getCaseDisplayStatusTagType(caseDetail.status)">
               {{ displayStatus }}
@@ -1217,6 +1405,7 @@ onMounted(() => {
               <el-descriptions-item v-if="caseDetail.result_received_at" :label="caseDetail.status === 'rejected' ? '不許可日' : '許可日'">{{ formatDate(caseDetail.result_received_at) }}</el-descriptions-item>
               <el-descriptions-item v-if="caseDetail.permission_number" label="許可番号">{{ caseDetail.permission_number }}</el-descriptions-item>
               <el-descriptions-item v-if="caseDetail.result_note" label="結果備考" :span="2">{{ caseDetail.result_note }}</el-descriptions-item>
+              <el-descriptions-item v-if="caseDetail.residence_card_received_at" label="在留カード受取日">{{ formatDate(caseDetail.residence_card_received_at) }}</el-descriptions-item>
               <el-descriptions-item v-if="caseDetail.withdrawn_at" label="取下げ日">{{ formatDate(caseDetail.withdrawn_at) }}</el-descriptions-item>
               <el-descriptions-item v-if="caseDetail.completed_at" label="完了日">{{ formatDate(caseDetail.completed_at) }}</el-descriptions-item>
               <el-descriptions-item v-if="caseDetail.review_duration_days !== null" label="審査期間">{{ caseDetail.review_duration_days }}日</el-descriptions-item>
@@ -1373,12 +1562,14 @@ onMounted(() => {
         </el-form-item>
         <el-form-item label="新しい進捗">
           <el-select v-model="progressUpdateForm.new_status" class="form-control">
-            <el-option
-              v-for="option in caseStatusOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
+            <el-option-group v-for="group in caseStatusOptionGroups" :key="group.label" :label="group.label">
+              <el-option
+                v-for="value in group.values"
+                :key="value"
+                :label="caseStatusOptions.find((option) => option.value === value)?.label || value"
+                :value="value"
+              />
+            </el-option-group>
           </el-select>
         </el-form-item>
         <el-form-item v-if="progressUpdateForm.new_status !== caseDetail?.status" label="変更日">
@@ -1390,7 +1581,7 @@ onMounted(() => {
             class="form-control"
           />
         </el-form-item>
-        <template v-if="progressUpdateForm.new_status === 'applied'">
+        <template v-if="showAppliedFields">
           <el-form-item label="入管局受理日">
             <el-date-picker v-model="progressUpdateForm.applied_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
@@ -1398,7 +1589,7 @@ onMounted(() => {
             <el-input v-model="progressUpdateForm.application_receipt_number" />
           </el-form-item>
         </template>
-        <template v-if="progressUpdateForm.new_status === 'additional_documents'">
+        <template v-if="showAdditionalDocumentsFields">
           <el-form-item label="補正資料通知日">
             <el-date-picker v-model="progressUpdateForm.additional_documents_requested_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
@@ -1409,27 +1600,30 @@ onMounted(() => {
             <el-date-picker v-model="progressUpdateForm.additional_documents_due_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
         </template>
-        <el-form-item v-if="progressUpdateForm.new_status === 'additional_documents_submitted'" label="補正資料提出日">
+        <el-form-item v-if="showAdditionalDocumentsSubmittedField" label="補正資料提出日">
           <el-date-picker v-model="progressUpdateForm.additional_documents_submitted_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
         </el-form-item>
-        <template v-if="progressUpdateForm.new_status === 'approved' || progressUpdateForm.new_status === 'rejected'">
+        <template v-if="showResultFields">
           <el-form-item label="通知日">
             <el-date-picker v-model="progressUpdateForm.result_notified_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
-          <el-form-item :label="progressUpdateForm.new_status === 'approved' ? '許可日' : '不許可日'">
+          <el-form-item :label="resultDateLabel">
             <el-date-picker v-model="progressUpdateForm.result_received_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
-          <el-form-item v-if="progressUpdateForm.new_status === 'approved'" label="許可番号">
+          <el-form-item v-if="progressUpdateForm.new_status === 'approved' || caseDetail?.permission_number" label="許可番号">
             <el-input v-model="progressUpdateForm.permission_number" />
           </el-form-item>
           <el-form-item label="結果備考">
             <el-input v-model="progressUpdateForm.result_note" type="textarea" :rows="2" />
           </el-form-item>
         </template>
-        <el-form-item v-if="progressUpdateForm.new_status === 'withdrawn'" label="取下げ日">
+        <el-form-item v-if="showResidenceCardField" label="在留カード受取日">
+          <el-date-picker v-model="progressUpdateForm.residence_card_received_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+        </el-form-item>
+        <el-form-item v-if="showWithdrawnField" label="取下げ日">
           <el-date-picker v-model="progressUpdateForm.withdrawn_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
         </el-form-item>
-        <el-form-item v-if="progressUpdateForm.new_status === 'completed'" label="完了日">
+        <el-form-item v-if="showCompletedField" label="完了日">
           <el-date-picker v-model="progressUpdateForm.completed_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
         </el-form-item>
         <el-alert
@@ -1445,7 +1639,7 @@ onMounted(() => {
           </ul>
         </el-alert>
         <el-button
-          v-if="!progressUpdateNoteVisible"
+          v-if="!progressUpdateNoteVisible && !progressUpdateWarnings.length"
           text
           size="small"
           class="note-toggle-button"
@@ -1453,7 +1647,7 @@ onMounted(() => {
         >
           備考を追加
         </el-button>
-        <el-form-item v-else label="備考">
+        <el-form-item v-else :label="progressUpdateWarnings.length ? '備考（強制変更する場合は必須）' : '備考'">
           <el-input v-model="progressUpdateForm.note" type="textarea" :rows="2" />
         </el-form-item>
         <el-checkbox v-if="progressUpdateWarnings.length" v-model="progressUpdateForm.force">警告を確認して強制変更する</el-checkbox>
@@ -1524,6 +1718,9 @@ onMounted(() => {
           </el-form-item>
           <el-form-item label="許可番号">
             <el-input v-model="correctionForm.permission_number" />
+          </el-form-item>
+          <el-form-item label="在留カード受取日">
+            <el-date-picker v-model="correctionForm.residence_card_received_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
           </el-form-item>
           <el-form-item label="取下げ日">
             <el-date-picker v-model="correctionForm.withdrawn_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
@@ -1860,6 +2057,120 @@ onMounted(() => {
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.case-stage-stepper {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.case-stage-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.case-stage-step.is-clickable {
+  cursor: pointer;
+  border-radius: var(--el-border-radius-base);
+  padding: 4px 2px;
+  transition: background-color 0.15s;
+}
+
+.case-stage-step.is-clickable:hover {
+  background: var(--el-fill-color-light);
+}
+
+.case-stage-step.is-clickable:hover .case-stage-dot {
+  border-color: var(--el-color-primary);
+}
+
+.case-stage-step.is-clickable:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+
+.case-stage-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  margin: -8px 0 12px;
+}
+
+.case-stage-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--el-border-color);
+  color: var(--el-text-color-placeholder);
+  background: var(--el-bg-color);
+  font-size: 14px;
+}
+
+.case-stage-step.is-done .case-stage-dot {
+  border-color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+}
+
+.case-stage-step.is-current .case-stage-dot {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary);
+  color: #fff;
+}
+
+.case-stage-step.is-withdrawn .case-stage-dot {
+  border-color: var(--el-color-danger);
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+}
+
+.case-stage-label {
+  font-size: 12px;
+  margin-top: 6px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+}
+
+.case-stage-step.is-current .case-stage-label {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+.case-stage-badge {
+  font-size: 11px;
+  margin-top: 2px;
+  padding: 1px 8px;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  white-space: nowrap;
+}
+
+.case-stage-connector {
+  height: 2px;
+  background: var(--el-border-color);
+  flex: 0.6;
+  margin-top: 14px;
+}
+
+.case-stage-connector.is-done {
+  background: var(--el-color-success);
+}
+
+.case-stage-withdrawn-note {
+  font-size: 13px;
+  color: var(--el-color-danger);
+  margin: 0 0 12px;
+}
+
+.case-stage-detail {
+  margin-top: 4px;
 }
 
 .progress-correction-link {

@@ -1,0 +1,2819 @@
+{
+  "companies": [
+    {
+      "name": "宮家村合同会社",
+      "name_kana": "",
+      "corporate_number": "3120003032158",
+      "postal_code": "546-0002",
+      "address": "大阪市東住吉区杭全５丁目１番２－３０１号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "宮磊",
+        "1982-04-08"
+      ],
+      "representative_name_raw": "GONG LEI",
+      "representative_kana_raw": "ク　レイ",
+      "source_sheet": "宮家村合同会社"
+    },
+    {
+      "name": "フィルムジャパン合同会社",
+      "name_kana": "",
+      "corporate_number": "7120003031701",
+      "postal_code": "",
+      "address": "大阪府大阪市都島区東野田町３丁目７番１７－２０５号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "06 6755 4684",
+      "representative_identity": [
+        "喬玉玲",
+        "1973-02-24"
+      ],
+      "representative_name_raw": "喬 玉玲",
+      "representative_kana_raw": "キョウ　ギョクレイ",
+      "source_sheet": "フィルムジャパン合同会社"
+    },
+    {
+      "name": "愉躍国際合同会社",
+      "name_kana": "ユヤクコクサイ",
+      "corporate_number": "8120003031700",
+      "postal_code": "",
+      "address": "大阪府大阪市阿倍野区阿倍野筋５丁目８番９号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "呉潔",
+        "1975-02-28"
+      ],
+      "representative_name_raw": "呉 潔",
+      "representative_kana_raw": "ウ　ケツ",
+      "source_sheet": "愉躍国際合同会社（解散中）"
+    },
+    {
+      "name": "桜橋国際合同会社",
+      "name_kana": "サクラバシコクサイ",
+      "corporate_number": "8120003030215",
+      "postal_code": "",
+      "address": "大阪府大阪市住吉区杉本１丁目９番１６－４０１号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "付強",
+        "1981-01-20"
+      ],
+      "representative_name_raw": "付　強",
+      "representative_kana_raw": "フ　キョウ",
+      "source_sheet": "桜橋国際合同会社"
+    },
+    {
+      "name": "佳瑞福合同会社",
+      "name_kana": "カリフ",
+      "corporate_number": "1120003030601",
+      "postal_code": "550-0014",
+      "address": "大阪市住吉区遠里小野６丁目１７番１８－５０４号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "许钰芳",
+        "1972-06-05"
+      ],
+      "representative_name_raw": "许钰芳",
+      "representative_kana_raw": "シュ ユーファン",
+      "source_sheet": "佳瑞福合同会社（帰国済み）"
+    },
+    {
+      "name": "朝暉合同会社",
+      "name_kana": "チョウキ",
+      "corporate_number": "4120003030879",
+      "postal_code": "558-0051",
+      "address": "大阪府大阪市住吉区東粉浜３丁目７番１１－１０５号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "刘暁芬",
+        "1976-06-27"
+      ],
+      "representative_name_raw": "刘 暁芬",
+      "representative_kana_raw": "リュウ　ギョウフン",
+      "source_sheet": "暁暉合同会社"
+    },
+    {
+      "name": "豊瑞合同会社",
+      "name_kana": "ホウズイ",
+      "corporate_number": "8120003029793",
+      "postal_code": "537-0025",
+      "address": "大阪市東成区中道4丁目16番21－415号",
+      "address_new": "大阪府大阪市東淀川区淡路２丁目４－７ 1A",
+      "fiscal_month": "2025-05-31 00:00:00",
+      "phone": "",
+      "representative_identity": [
+        "王珍",
+        "1962-05-19"
+      ],
+      "representative_name_raw": "王  珍",
+      "representative_kana_raw": "オウ　チン",
+      "source_sheet": "豊瑞合同会社"
+    },
+    {
+      "name": "環宇we-media合同会社",
+      "name_kana": "カンウウィメディア",
+      "corporate_number": "2120003031136",
+      "postal_code": "547-0014",
+      "address": "大阪市平野区長吉川辺1丁目北2番38号　エクセル平野403",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "李環",
+        "1973-03-02"
+      ],
+      "representative_name_raw": "李　環",
+      "representative_kana_raw": "リ　カン",
+      "source_sheet": "環宇we-media合同会社"
+    },
+    {
+      "name": "SAKURA桜悦合同会社",
+      "name_kana": "サクラオオエツ",
+      "corporate_number": "7120003029860",
+      "postal_code": "",
+      "address": "大阪府大阪市東住吉区杭全8-7-27",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "何楠",
+        "1994-01-03"
+      ],
+      "representative_name_raw": "何　楠",
+      "representative_kana_raw": "カ　ナン",
+      "source_sheet": "SAKURA桜悦合同会社"
+    },
+    {
+      "name": "盛沢合同会社",
+      "name_kana": "モリサワ",
+      "corporate_number": "7120003029704",
+      "postal_code": "572-0824",
+      "address": "大阪府寝屋川市萱島東１丁目９番２１－３０３号",
+      "address_new": "",
+      "fiscal_month": "2025-05-31 00:00:00",
+      "phone": "",
+      "representative_identity": null,
+      "representative_name_raw": "夏  穎",
+      "representative_kana_raw": "シャ　エイ",
+      "source_sheet": "盛沢合同会社"
+    },
+    {
+      "name": "雨楽合同会社",
+      "name_kana": "",
+      "corporate_number": "6120003028780",
+      "postal_code": "",
+      "address": "大阪市東成区中道4丁目16番21－401号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "余楽添",
+        "2004-02-11"
+      ],
+      "representative_name_raw": "余　楽添",
+      "representative_kana_raw": "ヨ　ラクテン",
+      "source_sheet": "雨楽合同会社"
+    },
+    {
+      "name": "神武国際貿易株式会社",
+      "name_kana": "じんむこくさいぼうえき",
+      "corporate_number": "3120001274157",
+      "postal_code": "537-0025",
+      "address": "大阪市東成区中道4丁目16番21-402号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "06-6561-8535",
+      "representative_identity": [
+        "郭慶峰",
+        "1981-10-26"
+      ],
+      "representative_name_raw": "郭 慶峰",
+      "representative_kana_raw": "かく　ケイホウ",
+      "source_sheet": "神武国際貿易株式会社"
+    },
+    {
+      "name": "益成合同会社",
+      "name_kana": "エキセイ",
+      "corporate_number": "120003028491",
+      "postal_code": "",
+      "address": "大阪市住吉区長居西１丁目１２－３２みずほマンション１０３号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "06-7651-6369",
+      "representative_identity": [
+        "趙日春",
+        "1979-08-31"
+      ],
+      "representative_name_raw": "趙　日春",
+      "representative_kana_raw": "チョウ　ヒション",
+      "source_sheet": "益成合同会社"
+    },
+    {
+      "name": "銀河啓動合同会社",
+      "name_kana": "ギンガケイドウ",
+      "corporate_number": "7120003029101",
+      "postal_code": "537-0025",
+      "address": "大阪市東成区中道4丁目16-21-412号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "蘭仲尭",
+        "1984-02-25"
+      ],
+      "representative_name_raw": "蘭 仲尭",
+      "representative_kana_raw": "ラン　チュウギョウ",
+      "source_sheet": "銀河啓動合同会社"
+    },
+    {
+      "name": "合同会社信安",
+      "name_kana": "",
+      "corporate_number": "5120003029103",
+      "postal_code": "",
+      "address": "大阪市住吉区湯里４丁目11番14号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "欧勇鉅",
+        "1987-07-07"
+      ],
+      "representative_name_raw": "欧　勇鉅",
+      "representative_kana_raw": "ハ　ユウキョ",
+      "source_sheet": "合同会社信安"
+    },
+    {
+      "name": "繁盛商事合同会社",
+      "name_kana": "",
+      "corporate_number": "4120003029104",
+      "postal_code": "",
+      "address": "大阪市東成区中道4丁目16-21-413号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "劉鉄男",
+        "1962-07-22"
+      ],
+      "representative_name_raw": "劉　鉄男",
+      "representative_kana_raw": "リュウ　テツオ",
+      "source_sheet": "繁盛商事合同会社"
+    },
+    {
+      "name": "響嬴合同会社",
+      "name_kana": "キョウエイ",
+      "corporate_number": "6120003029102",
+      "postal_code": "537-0025",
+      "address": "大阪市東成区中道4丁目16番21－405号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "王樹亮",
+        "1958-01-16"
+      ],
+      "representative_name_raw": "王　樹亮",
+      "representative_kana_raw": "オウ　キリョウ",
+      "source_sheet": "響嬴合同会社"
+    },
+    {
+      "name": "邁楽合同会社",
+      "name_kana": "",
+      "corporate_number": "120003028693",
+      "postal_code": "",
+      "address": "大阪市住吉区遠里小野６丁目17番18ー405",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "丁銀泉",
+        "1985-11-20"
+      ],
+      "representative_name_raw": "丁　銀泉",
+      "representative_kana_raw": "テイ　ギンセン",
+      "source_sheet": "邁楽合同会社"
+    },
+    {
+      "name": "株式会社TGC",
+      "name_kana": "",
+      "corporate_number": "2120001268936",
+      "postal_code": "",
+      "address": "大阪市港区弁天３丁目１０番２０号１",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "丁月華",
+        "1965-07-14"
+      ],
+      "representative_name_raw": "丁　月華",
+      "representative_kana_raw": "テイ　ゲツカ",
+      "source_sheet": "株式会社TGC"
+    },
+    {
+      "name": "大成組合合同会社",
+      "name_kana": "",
+      "corporate_number": "2030003023497",
+      "postal_code": "",
+      "address": "東京都新宿区大久保２丁目１３番４－３０３号",
+      "address_new": "東京都新宿区大久保２丁目１３番４－３０３号",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "袁大程",
+        "2001-09-02"
+      ],
+      "representative_name_raw": "袁　大程",
+      "representative_kana_raw": "エン　ダイテイ",
+      "source_sheet": "大成組合合同会社"
+    },
+    {
+      "name": "焱途合同会社",
+      "name_kana": "",
+      "corporate_number": "6120003027295",
+      "postal_code": "545-0034",
+      "address": "大阪市阿倍野区阿倍野元町１番２号松虫店舗２Ｆ",
+      "address_new": "大阪府大阪市西成区千本南２丁目７番１８－１０１号",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "杜煜",
+        "1996-03-18"
+      ],
+      "representative_name_raw": "杜 煜",
+      "representative_kana_raw": "ト　イク",
+      "source_sheet": "焱途合同会社"
+    },
+    {
+      "name": "百里株式会社",
+      "name_kana": "",
+      "corporate_number": "3120001270081",
+      "postal_code": "",
+      "address": "大阪市東成区中道四丁目16番21号山上ビル407号室",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "白楊",
+        "1986-07-04"
+      ],
+      "representative_name_raw": "白　楊",
+      "representative_kana_raw": "ハク　ヨウ",
+      "source_sheet": "百里株式会社"
+    },
+    {
+      "name": "合同会社盛安",
+      "name_kana": "",
+      "corporate_number": "未定",
+      "postal_code": "",
+      "address": "",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "張瓊",
+        "1971-11-10"
+      ],
+      "representative_name_raw": "張　瓊",
+      "representative_kana_raw": "チョウ　ケイ",
+      "source_sheet": "合同会社盛安"
+    },
+    {
+      "name": "楽米株式会社",
+      "name_kana": "",
+      "corporate_number": "6120001267645",
+      "postal_code": "",
+      "address": "大阪市都島区東野田町3丁目7-17 ハイツ京橋301号室",
+      "address_new": "大阪市東成区中道四丁目16番21号山上ビル409号室",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "武雪瑩",
+        "1988-02-05"
+      ],
+      "representative_name_raw": "武　雪瑩",
+      "representative_kana_raw": "ブ　ユキエイ",
+      "source_sheet": "楽米株式会社"
+    },
+    {
+      "name": "天翊商事合同会社",
+      "name_kana": "ホウ　テンイ",
+      "corporate_number": "8120003025982",
+      "postal_code": "537-0025",
+      "address": "大阪市東成区中道四丁目16番21号山上ビル410号室",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "彭日",
+        "1995-03-08"
+      ],
+      "representative_name_raw": "彭 日",
+      "representative_kana_raw": "ペン リ",
+      "source_sheet": "天翊商事合同会社"
+    },
+    {
+      "name": "瀧錫商事合同会社",
+      "name_kana": "",
+      "corporate_number": "9120003026344",
+      "postal_code": "558-0056",
+      "address": "大阪市住吉区万代東1-3-22-107",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": null,
+      "representative_name_raw": "彭 月",
+      "representative_kana_raw": "ホウ　ツキ",
+      "source_sheet": "瀧錫商事合同会社"
+    },
+    {
+      "name": "ジェミニ株式会社",
+      "name_kana": "",
+      "corporate_number": "9120001264846",
+      "postal_code": "",
+      "address": "大阪市中央区日本橋一丁目9番11－802号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "呂浩聞",
+        "1996-11-04"
+      ],
+      "representative_name_raw": "呂 浩聞",
+      "representative_kana_raw": "ロ コウブン",
+      "source_sheet": "ジェミニ"
+    },
+    {
+      "name": "条野長合同会社",
+      "name_kana": "ジョウノチョウ",
+      "corporate_number": "9120103006007",
+      "postal_code": "",
+      "address": "大阪府大阪市中央区高津３丁目１４番３４－１０２号",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "汪彦",
+        "1983-06-16"
+      ],
+      "representative_name_raw": "汪 彦",
+      "representative_kana_raw": "オウ　ゲン",
+      "source_sheet": "条野長合同会社"
+    },
+    {
+      "name": "東文合同会社",
+      "name_kana": "トウブン",
+      "corporate_number": "1120003028397",
+      "postal_code": "544-0001",
+      "address": "大阪市生野区新今里５丁目７番６－４０４号",
+      "address_new": "大阪府岸和田市松風町17-41号",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "馮東文",
+        "1980-05-17"
+      ],
+      "representative_name_raw": "馮　東文",
+      "representative_kana_raw": "フ　トウブン",
+      "source_sheet": "東文合同会社"
+    },
+    {
+      "name": "一葉舟株式会社",
+      "name_kana": "",
+      "corporate_number": "9120001258906",
+      "postal_code": "",
+      "address": "大阪市中央区平野町１丁目６番８号メロディハイム平野町５１０号室",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "施維",
+        "1982-08-13"
+      ],
+      "representative_name_raw": "施　維",
+      "representative_kana_raw": "シ　ウェイ",
+      "source_sheet": "一葉舟株式会社"
+    },
+    {
+      "name": "新橋株式会社",
+      "name_kana": "",
+      "corporate_number": "8120001265366",
+      "postal_code": "547-0003",
+      "address": "大阪市平野区加美南４丁目４番２８－４１５号",
+      "address_new": "大阪市生野区林寺3-5-27",
+      "fiscal_month": "",
+      "phone": "090-6601-6477",
+      "representative_identity": [
+        "趙珺",
+        "1980-02-11"
+      ],
+      "representative_name_raw": "趙　珺",
+      "representative_kana_raw": "チョウ　クン",
+      "source_sheet": "新橋株式会社"
+    },
+    {
+      "name": "興永合同会社",
+      "name_kana": "",
+      "corporate_number": "4120003026068",
+      "postal_code": "591-8002",
+      "address": "大阪府堺市北区北花田町4-120-14",
+      "address_new": "",
+      "fiscal_month": "",
+      "phone": "",
+      "representative_identity": [
+        "王自力",
+        "1988-11-18"
+      ],
+      "representative_name_raw": "王　自力",
+      "representative_kana_raw": "オウ　ジリョク",
+      "source_sheet": "興永合同会社"
+    }
+  ],
+  "people": [
+    {
+      "identity": [
+        "宮磊",
+        "1982-04-08"
+      ],
+      "name": "宮 磊",
+      "name_kana": "ク　レイ",
+      "birth_date": "1982-04-08",
+      "fields": {
+        "phone": "070-2299-3654",
+        "postal_code": "546-0002",
+        "address": "大阪市東住吉区杭全４丁目9-1　フォレスタ育和503",
+        "company_name": "宮家村合同会社",
+        "source_sheet": "宮家村合同会社",
+        "salary_note": "400,000",
+        "passport_no": "E76165802",
+        "passport_expiry": "2026-03-09T00:00:00",
+        "residence_card_no": "LJ01022501MA",
+        "residence_expiry": "2026-05-05T00:00:00",
+        "entry_date": "2026-01-05T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "LIULI",
+        "1983-03-19"
+      ],
+      "name": "LIU  LI",
+      "name_kana": "リュウ　リ",
+      "birth_date": "1983-03-19",
+      "fields": {
+        "phone": "080-7074-6037",
+        "company_name": "宮家村合同会社",
+        "source_sheet": "宮家村合同会社",
+        "salary_note": "0",
+        "residence_card_no": "LJ01022528MA",
+        "residence_expiry": "2026-05-05T00:00:00",
+        "entry_date": "2026-01-05T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "GONGYI",
+        "2017-02-18"
+      ],
+      "name": "GONG YI",
+      "name_kana": "ク　イツ",
+      "birth_date": "2017-02-18",
+      "fields": {
+        "company_name": "宮家村合同会社",
+        "source_sheet": "宮家村合同会社",
+        "residence_card_no": "LJ01022519MA",
+        "residence_expiry": "2026-05-05T00:00:00",
+        "entry_date": "2026-01-05T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "GONGMINGLIN",
+        "2023-04-12"
+      ],
+      "name": "GONG MINGLIN",
+      "name_kana": "ク　ミンリン",
+      "birth_date": "2023-04-12",
+      "fields": {
+        "company_name": "宮家村合同会社",
+        "source_sheet": "宮家村合同会社",
+        "residence_card_no": "LJ01022537MA",
+        "residence_expiry": "2026-05-05T00:00:00",
+        "entry_date": "2026-01-05T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "喬玉玲",
+        "1973-02-24"
+      ],
+      "name": "喬 玉玲",
+      "name_kana": "キョウ　ギョクレイ",
+      "birth_date": "1973-02-24",
+      "fields": {
+        "phone": "080-5102-5294",
+        "postal_code": "546-0002",
+        "address": "大阪市東住吉区杭全2-2-21-903",
+        "company_name": "フィルムジャパン合同会社",
+        "source_sheet": "フィルムジャパン合同会社",
+        "salary_note": "250,000",
+        "residence_card_no": "UH05966556MA",
+        "residence_expiry": "2026-04-19T00:00:00",
+        "entry_date": "2025-12-19T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "趙郝男",
+        "1998-12-18"
+      ],
+      "name": "趙 郝男",
+      "name_kana": "チョウ カクナン",
+      "birth_date": "1998-12-18",
+      "fields": {
+        "postal_code": "658-0052",
+        "address": "神戸市東灘区住吉東町1丁目6番26-206",
+        "company_name": "フィルムジャパン合同会社",
+        "source_sheet": "フィルムジャパン合同会社",
+        "employment_start_date": "2026(令和8)-02-01",
+        "salary_note": "220000"
+      }
+    },
+    {
+      "identity": [
+        "呉潔",
+        "1975-02-28"
+      ],
+      "name": "呉 潔",
+      "name_kana": "ウ　ケツ",
+      "birth_date": "1975-02-28",
+      "fields": {
+        "phone": "090-6751-4793",
+        "postal_code": "546-0001",
+        "address": "大阪市東住吉区今林2-6-8　ドリームコート503",
+        "company_name": "愉躍国際合同会社",
+        "source_sheet": "愉躍国際合同会社（解散中）",
+        "salary_note": "300,000",
+        "residence_card_no": "UH17034898MA",
+        "residence_expiry": "2026-02-28T00:00:00",
+        "entry_date": "2025-10-29T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "LIUSIYUE",
+        "2013-01-24"
+      ],
+      "name": "LIU SIYUE",
+      "name_kana": "リュウ　シエツ",
+      "birth_date": "2013-01-24",
+      "fields": {
+        "company_name": "愉躍国際合同会社",
+        "source_sheet": "愉躍国際合同会社（解散中）",
+        "salary_note": "0",
+        "residence_card_no": "UH35163981MA",
+        "residence_expiry": "2026-02-28T00:00:00",
+        "entry_date": "2025-10-29T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "付強",
+        "1981-01-20"
+      ],
+      "name": "付　強",
+      "name_kana": "フ　キョウ",
+      "birth_date": "1981-01-20",
+      "fields": {
+        "phone": "090 9263 4852",
+        "postal_code": "546-0002",
+        "address": "大阪市東住吉区杭全2-2-21-404",
+        "company_name": "桜橋国際合同会社",
+        "source_sheet": "桜橋国際合同会社",
+        "salary_note": "1700000",
+        "residence_card_no": "UH73922459LA",
+        "residence_expiry": "2030-09-26T00:00:00",
+        "entry_date": "2025-09-26T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "張静",
+        "1981-05-26"
+      ],
+      "name": "張　静",
+      "name_kana": "チョウ　セイ",
+      "birth_date": "1981-05-26",
+      "fields": {
+        "phone": "070 1796 4452",
+        "company_name": "桜橋国際合同会社",
+        "source_sheet": "桜橋国際合同会社",
+        "salary_note": "0",
+        "residence_card_no": "UH67079296LA",
+        "residence_expiry": "2030-09-26T00:00:00",
+        "entry_date": "2025-09-26T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "付予暄",
+        "2010-08-08"
+      ],
+      "name": "付 予暄",
+      "name_kana": "フ　ヨケン",
+      "birth_date": "2010-08-08",
+      "fields": {
+        "company_name": "桜橋国際合同会社",
+        "source_sheet": "桜橋国際合同会社",
+        "residence_card_no": "UH02637759LA",
+        "residence_expiry": "2030-09-26T00:00:00",
+        "entry_date": "2025-09-26T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "许钰芳",
+        "1972-06-05"
+      ],
+      "name": "许钰芳",
+      "name_kana": "シュ ユーファン",
+      "birth_date": "1972-06-05",
+      "fields": {
+        "phone": "070-9104-2682",
+        "postal_code": "550-0014",
+        "address": "大阪市西区北堀江2丁目10番16-301号",
+        "company_name": "佳瑞福合同会社",
+        "source_sheet": "佳瑞福合同会社（帰国済み）",
+        "salary_note": "350,000",
+        "passport_no": "E17885193",
+        "passport_expiry": "2035-01-25T00:00:00",
+        "residence_card_no": "UH86352477MA",
+        "residence_expiry": "2025-11-04T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "陳波",
+        "1975-03-18"
+      ],
+      "name": "陳波",
+      "name_kana": "チン ボー",
+      "birth_date": "1975-03-18",
+      "fields": {
+        "postal_code": "550-0014",
+        "address": "大阪市西区北堀江2丁目10番16-301号",
+        "company_name": "佳瑞福合同会社",
+        "source_sheet": "佳瑞福合同会社（帰国済み）",
+        "salary_note": "なし",
+        "passport_no": "EC1580193",
+        "passport_expiry": "2029-10-31T00:00:00",
+        "residence_card_no": "UH00537375MA",
+        "residence_expiry": "2025-11-04T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "刘暁芬",
+        "1976-06-27"
+      ],
+      "name": "刘 暁芬",
+      "name_kana": "リュウ　ギョウフン",
+      "birth_date": "1976-06-27",
+      "fields": {
+        "phone": "080-5350-9702",
+        "postal_code": "552-0021",
+        "address": "大阪市港区築港4丁目2番21-404号",
+        "company_name": "朝暉合同会社",
+        "source_sheet": "暁暉合同会社",
+        "salary_note": "350,000",
+        "passport_no": "EL7122278",
+        "passport_expiry": "2034-01-08T00:00:00",
+        "residence_card_no": "UH96520237MA",
+        "residence_expiry": "2025-11-29T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "王珍",
+        "1962-05-19"
+      ],
+      "name": "王  珍",
+      "name_kana": "オウ　チン",
+      "birth_date": "1962-05-19",
+      "fields": {
+        "phone": "080-5320-1666",
+        "postal_code": "545-0003",
+        "address": "大阪市阿倍野区美章園2丁目2-22-804",
+        "company_name": "豊瑞合同会社",
+        "source_sheet": "豊瑞合同会社",
+        "salary_note": "250,000",
+        "passport_no": "EJ3649339",
+        "passport_expiry": "2030-08-13T00:00:00",
+        "residence_card_no": "UH18056672LA",
+        "residence_expiry": "2025-09-17T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "李環",
+        "1973-03-02"
+      ],
+      "name": "李　環",
+      "name_kana": "リ　カン",
+      "birth_date": "1973-03-02",
+      "fields": {
+        "phone": "090-3892-3942",
+        "postal_code": "547-0002",
+        "address": "大阪市平野区加美東4丁目15番12号-603",
+        "company_name": "環宇we-media合同会社",
+        "source_sheet": "環宇we-media合同会社",
+        "salary_note": "250000",
+        "passport_no": "EK3826703",
+        "passport_expiry": "2033-04-26T00:00:00",
+        "residence_card_no": "UH65441609MA",
+        "residence_expiry": "2026-11-27T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "何楠",
+        "1994-01-03"
+      ],
+      "name": "何　楠",
+      "name_kana": "カ　ナン",
+      "birth_date": "1994-01-03",
+      "fields": {
+        "phone": "080-6728-2828",
+        "postal_code": "546-0002",
+        "address": "大阪府大阪市東住吉区杭全8-7-27",
+        "company_name": "SAKURA桜悦合同会社",
+        "source_sheet": "SAKURA桜悦合同会社",
+        "salary_note": "300,000",
+        "passport_no": "EM1779904",
+        "passport_expiry": "2034-03-21T00:00:00",
+        "residence_card_no": "UH97683790LA",
+        "residence_expiry": "2025-07-31T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "張秋林",
+        "1988-07-13"
+      ],
+      "name": "張　秋林",
+      "name_kana": "チョウ　シュウリン",
+      "birth_date": "1988-07-13",
+      "fields": {
+        "phone": "080-6728-2828",
+        "postal_code": "546-0002",
+        "address": "大阪府大阪市東住吉区杭全8-7-27",
+        "company_name": "SAKURA桜悦合同会社",
+        "source_sheet": "SAKURA桜悦合同会社",
+        "salary_note": "なし",
+        "passport_no": "EL7201030",
+        "passport_expiry": "2034-01-17T00:00:00",
+        "residence_card_no": "UH32596931LA",
+        "residence_expiry": "2025-07-31T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "余楽添",
+        "2004-02-11"
+      ],
+      "name": "余　楽添",
+      "name_kana": "ヨ　ラクテン",
+      "birth_date": "2004-02-11",
+      "fields": {
+        "phone": "090-9277-1990",
+        "postal_code": "532-0013",
+        "address": "大阪市淀川区木川西3-3-14-901",
+        "company_name": "雨楽合同会社",
+        "source_sheet": "雨楽合同会社",
+        "salary_note": "250,000",
+        "residence_card_no": "UH71446130LA",
+        "residence_expiry": "2025-05-17T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "郭慶峰",
+        "1981-10-26"
+      ],
+      "name": "郭 慶峰",
+      "name_kana": "かく　ケイホウ",
+      "birth_date": "1981-10-26",
+      "fields": {
+        "phone": "09019186999",
+        "postal_code": "556-0023",
+        "address": "大阪市浪速区稲荷2丁目7番13-1004号",
+        "residence_card_no": "UH55683493LA",
+        "residence_expiry": "2025-06-27 00:00:00",
+        "company_name": "神武国際貿易株式会社",
+        "source_sheet": "神武国際貿易株式会社"
+      }
+    },
+    {
+      "identity": [
+        "LIANGGUANGYAN",
+        "2001-11-26"
+      ],
+      "name": "LIANG GUANGYAN",
+      "name_kana": "リョウ コウエン",
+      "birth_date": "2001-11-26",
+      "fields": {
+        "phone": "070-5474-4924",
+        "postal_code": "556-0023",
+        "address": "大阪市浪速区稲荷2丁目7番13-1004号",
+        "gender": "女",
+        "company_name": "神武国際貿易株式会社",
+        "source_sheet": "神武国際貿易株式会社",
+        "salary_note": "200000"
+      }
+    },
+    {
+      "identity": [
+        "GUJIE",
+        "2000-10-14"
+      ],
+      "name": "GU JIE",
+      "name_kana": "コク ケツ",
+      "birth_date": "2000-10-14",
+      "fields": {
+        "phone": "070-1876-5876",
+        "postal_code": "556-0023",
+        "address": "大阪市浪速区稲荷2丁目7番13-1004号",
+        "company_name": "神武国際貿易株式会社",
+        "source_sheet": "神武国際貿易株式会社",
+        "salary_note": "200000"
+      }
+    },
+    {
+      "identity": [
+        "趙日春",
+        "1979-08-31"
+      ],
+      "name": "趙　日春",
+      "name_kana": "チョウ　ヒション",
+      "birth_date": "1979-08-31",
+      "fields": {
+        "phone": "08057372326",
+        "postal_code": "558-0001",
+        "address": "大阪市住吉区大領4-8-15-3C",
+        "company_name": "益成合同会社",
+        "source_sheet": "益成合同会社",
+        "salary_note": "300000",
+        "passport_no": "EE2509111",
+        "passport_expiry": "2028-09-05T00:00:00",
+        "residence_card_no": "SA54053401LA",
+        "residence_expiry": "2025-02-23T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "倪華琴",
+        "1979-11-18"
+      ],
+      "name": "倪　華琴",
+      "name_kana": "ゲイ　カキン",
+      "birth_date": "1979-11-18",
+      "fields": {
+        "phone": "07075732335",
+        "postal_code": "558-0001",
+        "address": "大阪市住吉区大領4-8-15-3C",
+        "company_name": "益成合同会社",
+        "source_sheet": "益成合同会社",
+        "salary_note": "なし",
+        "residence_card_no": "SA29093392LA",
+        "residence_expiry": "2025-02-23T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "蘭仲尭",
+        "1984-02-25"
+      ],
+      "name": "蘭 仲尭",
+      "name_kana": "ラン　チュウギョウ",
+      "birth_date": "1984-02-25",
+      "fields": {
+        "phone": "090-8174-6659",
+        "postal_code": "544-0006",
+        "address": "大阪市生野区中川東2丁目16-4-308",
+        "company_name": "銀河啓動合同会社",
+        "source_sheet": "銀河啓動合同会社",
+        "salary_note": "350000",
+        "passport_no": "EE4977929",
+        "passport_expiry": "2028-10-21T00:00:00",
+        "residence_card_no": "UH17852211LA",
+        "residence_expiry": "2026-07-10T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "丁婷婷",
+        "1985-11-22"
+      ],
+      "name": "丁婷婷",
+      "name_kana": "チョウ　テイテイ",
+      "birth_date": "1985-11-22",
+      "fields": {
+        "phone": "9081746677",
+        "company_name": "銀河啓動合同会社",
+        "source_sheet": "銀河啓動合同会社",
+        "passport_no": "EL7247924",
+        "passport_expiry": "2034年1月22日",
+        "residence_card_no": "UH42491191LA",
+        "residence_expiry": "2026-07-10T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "蘭弼麟",
+        "2013-11-06"
+      ],
+      "name": "蘭　弼麟",
+      "name_kana": "ラン　ヒツリン",
+      "birth_date": "2013-11-06",
+      "fields": {
+        "phone": "7055021059",
+        "company_name": "銀河啓動合同会社",
+        "source_sheet": "銀河啓動合同会社",
+        "passport_no": "EL7247920",
+        "passport_expiry": "2029-01-22T00:00:00",
+        "residence_card_no": "UH35680073LA",
+        "residence_expiry": "2026-07-10T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "欧勇鉅",
+        "1987-07-07"
+      ],
+      "name": "欧　勇鉅",
+      "name_kana": "ハ　ユウキョ",
+      "birth_date": "1987-07-07",
+      "fields": {
+        "phone": "09062494463",
+        "postal_code": "546-0013",
+        "address": "大阪市東住吉区湯里4-11-14",
+        "company_name": "合同会社信安",
+        "source_sheet": "合同会社信安",
+        "salary_note": "300000",
+        "residence_card_no": "UH85724661LA",
+        "residence_expiry": "2525-07-06T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "蔡琳",
+        "1987-04-03"
+      ],
+      "name": "蔡　琳",
+      "name_kana": "サイ　リン",
+      "birth_date": "1987-04-03",
+      "fields": {
+        "phone": "07024213880",
+        "company_name": "合同会社信安",
+        "source_sheet": "合同会社信安",
+        "salary_note": "0",
+        "residence_card_no": "SA65361966GA",
+        "residence_expiry": "2025-09-26T00:00:00",
+        "note": "在留卡无汉字名"
+      }
+    },
+    {
+      "identity": [
+        "OULEXIN",
+        "2016-03-24"
+      ],
+      "name": "OU　LEXIN",
+      "name_kana": "ハ　ラクシン",
+      "birth_date": "2016-03-24",
+      "fields": {
+        "company_name": "合同会社信安",
+        "source_sheet": "合同会社信安",
+        "residence_card_no": "UH34756237GA",
+        "residence_expiry": "2525-07-06T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "劉鉄男",
+        "1962-07-22"
+      ],
+      "name": "劉　鉄男",
+      "name_kana": "リュウ　テツオ",
+      "birth_date": "1962-07-22",
+      "fields": {
+        "phone": "090-8083-4567",
+        "postal_code": "557-0053",
+        "address": "大阪市西成区千本北1-13-8",
+        "company_name": "繁盛商事合同会社",
+        "source_sheet": "繁盛商事合同会社",
+        "salary_note": "500000",
+        "passport_no": "EJ353L079",
+        "passport_expiry": "2023-06-07T00:00:00",
+        "residence_card_no": "UH68312119LA",
+        "residence_expiry": "2026-05-31T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "楊紅玲",
+        "1974-11-12"
+      ],
+      "name": "楊　紅玲",
+      "name_kana": "ヨウ コウレイ",
+      "birth_date": "1974-11-12",
+      "fields": {
+        "phone": "090-2026-6789",
+        "company_name": "繁盛商事合同会社",
+        "source_sheet": "繁盛商事合同会社",
+        "residence_card_no": "UH37954240LA",
+        "residence_expiry": "2026-05-31T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "楊在山",
+        "2011-01-27"
+      ],
+      "name": "楊　在山",
+      "name_kana": "ヨウ　ザイサン",
+      "birth_date": "2011-01-27",
+      "fields": {
+        "company_name": "繁盛商事合同会社",
+        "source_sheet": "繁盛商事合同会社",
+        "residence_card_no": "UH21625080LA",
+        "residence_expiry": "2026-05-31T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "刘雲舒",
+        "2016-09-29"
+      ],
+      "name": "刘　雲舒",
+      "name_kana": "リュウ　ウンジョ",
+      "birth_date": "2016-09-29",
+      "fields": {
+        "company_name": "繁盛商事合同会社",
+        "source_sheet": "繁盛商事合同会社",
+        "residence_card_no": "UH51628578LA",
+        "residence_expiry": "2026-05-31T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "王樹亮",
+        "1958-01-16"
+      ],
+      "name": "王　樹亮",
+      "name_kana": "オウ　キリョウ",
+      "birth_date": "1958-01-16",
+      "fields": {
+        "phone": "08061619869",
+        "postal_code": "550-0013",
+        "address": "大阪市西区新町2丁目5-1-1606",
+        "company_name": "響嬴合同会社",
+        "source_sheet": "響嬴合同会社",
+        "salary_note": "400000",
+        "residence_card_no": "UH08263381LA",
+        "residence_expiry": "2025-06-17T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "張惠荣",
+        "1963-04-23"
+      ],
+      "name": "張　惠荣",
+      "name_kana": "チョウ　ホイエイ",
+      "birth_date": "1963-04-23",
+      "fields": {
+        "phone": "07076439868",
+        "company_name": "響嬴合同会社",
+        "source_sheet": "響嬴合同会社",
+        "residence_card_no": "UH37954240LA",
+        "residence_expiry": "2025-05-31T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "丁銀泉",
+        "1985-11-20"
+      ],
+      "name": "丁　銀泉",
+      "name_kana": "テイ　ギンセン",
+      "birth_date": "1985-11-20",
+      "fields": {
+        "postal_code": "532-0013",
+        "company_name": "邁楽合同会社",
+        "source_sheet": "邁楽合同会社",
+        "phone": "090-9393-2140",
+        "address": "大阪市天王寺区烏ケ辻2丁目10番4-1006号",
+        "passport_no": "EM5227449",
+        "passport_expiry": "2034-05-20T00:00:00",
+        "residence_card_no": "UH50168443MA",
+        "residence_expiry": "2030-07-27T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "丁月華",
+        "1965-07-14"
+      ],
+      "name": "丁　月華",
+      "name_kana": "テイ　ゲツカ",
+      "birth_date": "1965-07-14",
+      "fields": {
+        "postal_code": "532-0013",
+        "company_name": "株式会社TGC",
+        "source_sheet": "株式会社TGC"
+      }
+    },
+    {
+      "identity": [
+        "袁大程",
+        "2001-09-02"
+      ],
+      "name": "袁　大程",
+      "name_kana": "エン　ダイテイ",
+      "birth_date": "2001-09-02",
+      "fields": {
+        "phone": "080-9272-7290",
+        "postal_code": "135-0061",
+        "address": "東京都江東区豊洲4-10-5-206",
+        "company_name": "大成組合合同会社",
+        "source_sheet": "大成組合合同会社",
+        "salary_note": "250,000"
+      }
+    },
+    {
+      "identity": [
+        "杜煜",
+        "1996-03-18"
+      ],
+      "name": "杜 煜",
+      "name_kana": "ト　イク",
+      "birth_date": "1996-03-18",
+      "fields": {
+        "phone": "08074951221",
+        "postal_code": "542-0082",
+        "address": "大阪市中央区島之内2丁目13番30号501室",
+        "company_name": "焱途合同会社",
+        "source_sheet": "焱途合同会社"
+      }
+    },
+    {
+      "identity": [
+        "白楊",
+        "1986-07-04"
+      ],
+      "name": "白　楊",
+      "name_kana": "ハク　ヨウ",
+      "birth_date": "1986-07-04",
+      "fields": {
+        "phone": "09062299834",
+        "address": "578-0973 大阪府東大阪市東鴻池町4−4−20ブランチ913−603",
+        "company_name": "百里株式会社",
+        "source_sheet": "百里株式会社",
+        "salary_note": "300,000",
+        "postal_code": "578-0973",
+        "passport_no": "EJ89I64I8",
+        "passport_expiry": "2033-02-19T00:00:00",
+        "residence_card_no": "SA27474719LA",
+        "residence_expiry": "2025-12-26T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "李蓉蓉",
+        "1985-09-15"
+      ],
+      "name": "李　蓉蓉",
+      "name_kana": "リ　ヨウヨウ",
+      "birth_date": "1985-09-15",
+      "fields": {
+        "company_name": "百里株式会社",
+        "source_sheet": "百里株式会社",
+        "residence_card_no": "SA36311869LA",
+        "residence_expiry": "2025-12-26T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "張瓊",
+        "1971-11-10"
+      ],
+      "name": "張　瓊",
+      "name_kana": "チョウ　ケイ",
+      "birth_date": "1971-11-10",
+      "fields": {
+        "phone": "9037238911",
+        "postal_code": "545-0021",
+        "address": "大阪市淀川市木川西3-3-14-901",
+        "company_name": "合同会社盛安",
+        "source_sheet": "合同会社盛安",
+        "salary_note": "250,000",
+        "residence_card_no": "UH50340922LA",
+        "residence_expiry": "2025-06-17T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "武雪瑩",
+        "1988-02-05"
+      ],
+      "name": "武　雪瑩",
+      "name_kana": "ブ　ユキエイ",
+      "birth_date": "1988-02-05",
+      "fields": {
+        "address": "大阪府大阪市住吉区長居東1-11-26-306",
+        "company_name": "楽米株式会社",
+        "source_sheet": "楽米株式会社",
+        "salary_note": "300,000",
+        "phone": "09012241360",
+        "postal_code": "558-0004",
+        "residence_card_no": "UH82926330LA",
+        "residence_expiry": "2026-01-07T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "白全楽",
+        "1988-07-22"
+      ],
+      "name": "白　全楽",
+      "name_kana": "ハク　ゼンラク",
+      "birth_date": "1988-07-22",
+      "fields": {
+        "company_name": "楽米株式会社",
+        "source_sheet": "楽米株式会社",
+        "phone": "07024899888",
+        "residence_card_no": "UH22632455LA",
+        "residence_expiry": "2026-01-07T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "彭日",
+        "1995-03-08"
+      ],
+      "name": "彭 日",
+      "name_kana": "ペン リ",
+      "birth_date": "1995-03-08",
+      "fields": {
+        "phone": "070-4430-8448",
+        "postal_code": "544-0001",
+        "address": "大阪市生野区新今里3-1-4−404",
+        "company_name": "天翊商事合同会社",
+        "source_sheet": "天翊商事合同会社",
+        "salary_note": "300,000",
+        "residence_card_no": "NP37501174LA",
+        "residence_expiry": "2025-03-04T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "張蕾",
+        "1999-05-18"
+      ],
+      "name": "張　蕾",
+      "name_kana": "チョウ　ライ",
+      "birth_date": "1999-05-18",
+      "fields": {
+        "company_name": "天翊商事合同会社",
+        "source_sheet": "天翊商事合同会社",
+        "residence_card_no": "NP78941293MA",
+        "residence_expiry": "2025-03-04T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "呂浩聞",
+        "1996-11-04"
+      ],
+      "name": "呂 浩聞",
+      "name_kana": "ロ コウブン",
+      "birth_date": "1996-11-04",
+      "fields": {
+        "postal_code": "556-0016",
+        "address": "大阪市浪速区元町３丁目7番1−802号",
+        "company_name": "ジェミニ株式会社",
+        "source_sheet": "ジェミニ",
+        "salary_note": "250000"
+      }
+    },
+    {
+      "identity": [
+        "于昕宇",
+        "1997-07-11"
+      ],
+      "name": "于 昕宇",
+      "name_kana": "ウ キンウ",
+      "birth_date": "1997-07-11",
+      "fields": {
+        "address": "大阪市浪速区元町３丁目7番1−802号",
+        "company_name": "ジェミニ株式会社",
+        "source_sheet": "ジェミニ"
+      }
+    },
+    {
+      "identity": [
+        "趙洪榕",
+        "1997-11-07"
+      ],
+      "name": "趙 洪榕",
+      "name_kana": "チョウ コウヨウ",
+      "birth_date": "1997-11-07",
+      "fields": {
+        "postal_code": "556-0014",
+        "address": "大阪市浪速区大国1-7-8ホースタイ201",
+        "company_name": "ジェミニ株式会社",
+        "source_sheet": "ジェミニ",
+        "salary_note": "250000"
+      }
+    },
+    {
+      "identity": [
+        "陳玉",
+        "1998-07-31"
+      ],
+      "name": "陳  玉",
+      "name_kana": "チン ギョク",
+      "birth_date": "1998-07-31",
+      "fields": {
+        "company_name": "ジェミニ株式会社",
+        "source_sheet": "ジェミニ"
+      }
+    },
+    {
+      "identity": [
+        "張峰源",
+        "2000-02-20"
+      ],
+      "name": "張 峰源",
+      "name_kana": "チョウ　ホウゲン",
+      "birth_date": "2000-02-20",
+      "fields": {
+        "postal_code": "556-0016",
+        "address": "大阪市浪速区元町2-13-3-601",
+        "company_name": "ジェミニ株式会社",
+        "source_sheet": "ジェミニ",
+        "salary_note": "250000"
+      }
+    },
+    {
+      "identity": [
+        "汪彦",
+        "1983-06-16"
+      ],
+      "name": "汪 彦",
+      "name_kana": "オウ　ゲン",
+      "birth_date": "1983-06-16",
+      "fields": {
+        "phone": "080-6199-7083",
+        "postal_code": "596-0078",
+        "address": "大阪府岸和田市南上町一丁目26番14号",
+        "company_name": "条野長合同会社",
+        "source_sheet": "条野長合同会社",
+        "salary_note": "500000",
+        "residence_card_no": "SA38915538LA",
+        "residence_expiry": "2029-12-18T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "李遠波",
+        "1999-02-01"
+      ],
+      "name": "李　遠波",
+      "name_kana": "リ　エンハ",
+      "birth_date": "1999-02-01",
+      "fields": {
+        "phone": "090-9557-8048",
+        "postal_code": "596-0078",
+        "address": "大阪府岸和田市南上町一丁目26番14号",
+        "company_name": "条野長合同会社",
+        "source_sheet": "条野長合同会社",
+        "salary_note": "220000"
+      }
+    },
+    {
+      "identity": [
+        "馮東文",
+        "1980-05-17"
+      ],
+      "name": "馮　東文",
+      "name_kana": "フ　トウブン",
+      "birth_date": "1980-05-17",
+      "fields": {
+        "phone": "08061997110",
+        "postal_code": "5960078",
+        "address": "大阪府岸和田市南上町一丁目26番14号",
+        "company_name": "東文合同会社",
+        "source_sheet": "東文合同会社",
+        "salary_note": "250,000",
+        "residence_card_no": "SA58414324LA",
+        "residence_expiry": "2025-04-17T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "施維",
+        "1982-08-13"
+      ],
+      "name": "施　維",
+      "name_kana": "シ　ウェイ",
+      "birth_date": "1982-08-13",
+      "fields": {
+        "phone": "08092006371",
+        "address": "大阪市中央区久太郎町2丁目1番4-4406",
+        "company_name": "一葉舟株式会社",
+        "source_sheet": "一葉舟株式会社",
+        "salary_note": "1000000",
+        "postal_code": "541-0056",
+        "residence_card_no": "SA08946249LA",
+        "residence_expiry": "2029-02-15T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "WANGYUWEN",
+        "2015-10-05"
+      ],
+      "name": "WANG　YUWEN",
+      "name_kana": "オウ　ギョクブン",
+      "birth_date": "2015-10-05",
+      "fields": {
+        "company_name": "一葉舟株式会社",
+        "source_sheet": "一葉舟株式会社",
+        "residence_card_no": "SA59552406MA",
+        "residence_expiry": "2029-02-15T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "WANGYUTONG",
+        "2015-10-05"
+      ],
+      "name": "WANG　YUTONG",
+      "name_kana": "オウ　ギョクドウ",
+      "birth_date": "2015-10-05",
+      "fields": {
+        "company_name": "一葉舟株式会社",
+        "source_sheet": "一葉舟株式会社",
+        "residence_card_no": "SA53804957MA",
+        "residence_expiry": "2029-02-15T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "趙珺",
+        "1980-02-11"
+      ],
+      "name": "趙　珺",
+      "name_kana": "チョウ　クン",
+      "birth_date": "1980-02-11",
+      "fields": {
+        "phone": "090-6601-6477",
+        "address": "大阪府大阪市東住吉区杭全2丁目2番21-205号",
+        "company_name": "新橋株式会社",
+        "source_sheet": "新橋株式会社",
+        "salary_note": "350000",
+        "postal_code": "546-0002",
+        "passport_no": "EJ353L079",
+        "passport_expiry": "2023-06-07T00:00:00",
+        "residence_card_no": "UH34619292LA",
+        "residence_expiry": "2025-07-05T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "楊英",
+        "1979-11-14"
+      ],
+      "name": "楊　英",
+      "name_kana": "ヨウ　エイ",
+      "birth_date": "1979-11-14",
+      "fields": {
+        "company_name": "新橋株式会社",
+        "source_sheet": "新橋株式会社",
+        "residence_card_no": "SA26228151LA",
+        "residence_expiry": "2025-07-05T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "ZHAOYUXI",
+        "2015-06-19"
+      ],
+      "name": "ZHAO YUXI",
+      "name_kana": "チョウ　ウキ",
+      "birth_date": "2015-06-19",
+      "fields": {
+        "company_name": "新橋株式会社",
+        "source_sheet": "新橋株式会社",
+        "residence_card_no": "UH40942151LA",
+        "residence_expiry": "2025-07-05T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "王自力",
+        "1988-11-18"
+      ],
+      "name": "王　自力",
+      "name_kana": "オウ　ジリョク",
+      "birth_date": "1988-11-18",
+      "fields": {
+        "phone": "07042084926",
+        "postal_code": "558-0011",
+        "address": "大阪市住吉区苅田9-3-8",
+        "company_name": "興永合同会社",
+        "source_sheet": "興永合同会社",
+        "salary_note": "250,000",
+        "residence_card_no": "SA62609368LA",
+        "residence_expiry": "2025-06-01T00:00:00",
+        "entry_date": "2023-12-18T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "楊雅婷",
+        "1987-10-13"
+      ],
+      "name": "楊　雅婷",
+      "name_kana": "ヨウ　ガテイ",
+      "birth_date": "1987-10-13",
+      "fields": {
+        "company_name": "興永合同会社",
+        "source_sheet": "興永合同会社",
+        "residence_card_no": "SA05670315LA",
+        "residence_expiry": "2025-06-01T00:00:00",
+        "entry_date": "2024-08-01T00:00:00"
+      }
+    },
+    {
+      "identity": [
+        "李煜恒",
+        "1999-02-06"
+      ],
+      "name": "李　煜恒",
+      "name_kana": "リ　イクコウ",
+      "birth_date": "1999-02-06",
+      "fields": {
+        "address": "大阪府堺市北区北花田町4-120-14",
+        "company_name": "興永合同会社",
+        "source_sheet": "興永合同会社",
+        "salary_note": "250,000"
+      }
+    },
+    {
+      "identity": [
+        "徐宏梅",
+        "1983-01-05"
+      ],
+      "name": "徐 宏梅",
+      "name_kana": "ジョ　コウメイ",
+      "birth_date": "1983-01-05",
+      "fields": {
+        "phone": "080-6214-3660",
+        "postal_code": "543-0054",
+        "address": "大阪市天王寺区南河堀町1-16-301",
+        "passport_no": "EP0864943",
+        "passport_expiry": "2035-03-23T00:00:00",
+        "residence_card_no": "UH41231023MA",
+        "residence_expiry": "2026-01-25T00:00:00",
+        "company_name": "逸坊合同会社",
+        "entry_date": "2025-09-25T00:00:00",
+        "source_sheet": "徐宏梅"
+      }
+    },
+    {
+      "identity": [
+        "蔡欣瑶",
+        "2012-06-15"
+      ],
+      "name": "蔡 欣瑶",
+      "name_kana": "サイ　キンヨウ",
+      "birth_date": "2012-06-15",
+      "fields": {
+        "passport_no": "EP0924336",
+        "passport_expiry": "2030-03-26T00:00:00",
+        "residence_card_no": "UH33148869MA",
+        "residence_expiry": "2026-01-25T00:00:00",
+        "entry_date": "2025-09-25T00:00:00",
+        "source_sheet": "徐宏梅"
+      }
+    },
+    {
+      "identity": [
+        "金卉",
+        "1989-04-03"
+      ],
+      "name": "金卉",
+      "name_kana": "キン    キ",
+      "birth_date": "1989-04-03",
+      "fields": {
+        "phone": "090-9118-9111",
+        "postal_code": "552-0002",
+        "address": "大阪市港区市岡元町2丁目9番26号",
+        "passport_no": "EL9704385",
+        "passport_expiry": "2034-02-27T00:00:00",
+        "company_name": "合同会社MIOS",
+        "source_sheet": "金卉"
+      }
+    },
+    {
+      "identity": [
+        "刘章程",
+        "1996-10-25"
+      ],
+      "name": "刘章程",
+      "name_kana": "リュウ　ショウテイ",
+      "birth_date": "1996-10-25",
+      "fields": {
+        "phone": "090-6825-9111",
+        "passport_no": "EP1474060",
+        "passport_expiry": "2035-02-11T00:00:00",
+        "source_sheet": "金卉"
+      }
+    },
+    {
+      "identity": [
+        "宋志浩",
+        "1981-02-22"
+      ],
+      "name": "宋志浩",
+      "name_kana": "ソウ  シコウ",
+      "birth_date": "1981-02-22",
+      "fields": {
+        "phone": "070-8718-5588",
+        "postal_code": "546-0044",
+        "address": "大阪市東住吉区北田辺1丁目11-19-3B",
+        "passport_no": "E64452791",
+        "passport_expiry": "2025年12月02号",
+        "residence_card_no": "UH99595167MA",
+        "residence_expiry": "2026-01-01T00:00:00",
+        "company_name": "鈴木川城合同会社",
+        "source_sheet": "宋志浩（帰国済み）"
+      }
+    },
+    {
+      "identity": [
+        "徐萍",
+        "1985-04-25"
+      ],
+      "name": "徐萍",
+      "name_kana": "ジョ  ヘイ",
+      "birth_date": "1985-04-25",
+      "fields": {
+        "phone": "090-3656-3688",
+        "passport_no": "EG6886544",
+        "passport_expiry": "2029-07-01T00:00:00",
+        "residence_card_no": "UH95556605MA",
+        "residence_expiry": "2026-01-01T00:00:00",
+        "source_sheet": "宋志浩（帰国済み）"
+      }
+    },
+    {
+      "identity": [
+        "范可心",
+        "1981-07-24"
+      ],
+      "name": "范可心",
+      "name_kana": "ハン　カシン",
+      "birth_date": "1981-07-24",
+      "fields": {
+        "phone": "090-6339-0296",
+        "postal_code": "543-0062",
+        "address": "大阪市天王寺区逢坂1丁目1番3-602号",
+        "passport_no": "EM6186497",
+        "passport_expiry": "2034-05-28T00:00:00",
+        "residence_card_no": "UH96796963MA",
+        "residence_expiry": "2025-12-13T00:00:00",
+        "company_name": "大川国際合同会社",
+        "source_sheet": "范可心"
+      }
+    },
+    {
+      "identity": [
+        "孟宪宝",
+        "1979-03-28"
+      ],
+      "name": "孟宪宝",
+      "name_kana": "モウ　ケンホウ",
+      "birth_date": "1979-03-28",
+      "fields": {
+        "passport_no": "EM7043677",
+        "passport_expiry": "2034-06-04T00:00:00",
+        "residence_card_no": "UH69144621MA",
+        "residence_expiry": "2025-12-13T00:00:00",
+        "source_sheet": "范可心"
+      }
+    },
+    {
+      "identity": [
+        "孟曈",
+        "2020-01-20"
+      ],
+      "name": "孟曈",
+      "name_kana": "モウ　ドウ",
+      "birth_date": "2020-01-20",
+      "fields": {
+        "passport_no": "EK7599410",
+        "passport_expiry": "2028-07-05T00:00:00",
+        "residence_card_no": "UH67966004MA",
+        "residence_expiry": "2025-12-13T00:00:00",
+        "source_sheet": "范可心"
+      }
+    },
+    {
+      "identity": [
+        "孟想",
+        "2013-08-02"
+      ],
+      "name": "孟想",
+      "name_kana": "モウ　ソウ",
+      "birth_date": "2013-08-02",
+      "fields": {
+        "passport_no": "EK3041420",
+        "passport_expiry": "2028-04-17T00:00:00",
+        "residence_card_no": "UH86240180MA",
+        "residence_expiry": "2025-12-13T00:00:00",
+        "source_sheet": "范可心"
+      }
+    },
+    {
+      "identity": [
+        "洪瑞",
+        "1981-01-08"
+      ],
+      "name": "洪 瑞",
+      "name_kana": "コウ　ズイ",
+      "birth_date": "1981-01-08",
+      "fields": {
+        "phone": "090-1294-6075",
+        "postal_code": "545-0003",
+        "address": "大阪市阿倍野区美章園1丁目9番5-803号",
+        "passport_no": "EA5155691",
+        "passport_expiry": "2027-06-18T00:00:00",
+        "residence_card_no": "UH38976378MA",
+        "residence_expiry": "2025-11-30T00:00:00",
+        "company_name": "RHC貿易合同会社",
+        "source_sheet": "洪瑞"
+      }
+    },
+    {
+      "identity": [
+        "楊文艶",
+        "1983-04-03"
+      ],
+      "name": "楊文艶",
+      "name_kana": "ヨウ　ブンエン",
+      "birth_date": "1983-04-03",
+      "fields": {
+        "residence_card_no": "UH70134890MA",
+        "residence_expiry": "2026-01-09T00:00:00",
+        "source_sheet": "洪瑞"
+      }
+    },
+    {
+      "identity": [
+        "洪㬢",
+        "2011-10-21"
+      ],
+      "name": "洪　㬢",
+      "name_kana": "コウ　ギ",
+      "birth_date": "2011-10-21",
+      "fields": {
+        "residence_card_no": "UH65265107MA",
+        "residence_expiry": "2026-01-09T00:00:00",
+        "source_sheet": "洪瑞"
+      }
+    },
+    {
+      "identity": [
+        "洪RONALD",
+        "2017-09-27"
+      ],
+      "name": "洪　RONALD",
+      "name_kana": "コウ　ロナルド",
+      "birth_date": "2017-09-27",
+      "fields": {
+        "residence_expiry": "2026-01-09T00:00:00",
+        "source_sheet": "洪瑞"
+      }
+    },
+    {
+      "identity": [
+        "王义金",
+        "1973-11-11"
+      ],
+      "name": "王 义金",
+      "name_kana": "オウ　ギキン",
+      "birth_date": "1973-11-11",
+      "fields": {
+        "residence_card_no": "LJ21227332MA",
+        "residence_expiry": "2027-02-08T00:00:00",
+        "source_sheet": "李環"
+      }
+    },
+    {
+      "identity": [
+        "曹海暉",
+        "2010-05-10"
+      ],
+      "name": "曹 海暉",
+      "name_kana": "ソウ　カイキ",
+      "birth_date": "2010-05-10",
+      "fields": {
+        "phone": "090-9642-7183",
+        "passport_no": "EL7127258",
+        "passport_expiry": "2029-01-08T00:00:00",
+        "residence_card_no": "UH89762514MA",
+        "residence_expiry": "2025-11-29T00:00:00",
+        "source_sheet": "刘晓芬"
+      }
+    },
+    {
+      "identity": [
+        "陳奕瑜",
+        "2010-11-10"
+      ],
+      "name": "陳 奕瑜",
+      "name_kana": "チン イーユー",
+      "birth_date": "2010-11-10",
+      "fields": {
+        "passport_no": "EK9237727",
+        "passport_expiry": "2029-03-04T00:00:00",
+        "residence_card_no": "UH13671029MA",
+        "residence_expiry": "2025-11-04T00:00:00",
+        "source_sheet": "许钰芳(帰国済み)"
+      }
+    },
+    {
+      "identity": [
+        "胡金金",
+        "1985-04-05"
+      ],
+      "name": "胡 金金",
+      "name_kana": "コ　キンキン",
+      "birth_date": "1985-04-05",
+      "fields": {
+        "passport_no": "EN5636827",
+        "passport_expiry": "2034-11-18T00:00:00",
+        "residence_card_no": "UH02141877MA",
+        "residence_expiry": "2030-07-27T00:00:00",
+        "source_sheet": "丁銀泉"
+      }
+    },
+    {
+      "identity": [
+        "丁可唯",
+        "2013-11-01"
+      ],
+      "name": "丁 可唯",
+      "name_kana": "テイ　カイ",
+      "birth_date": "2013-11-01",
+      "fields": {
+        "passport_no": "EN4639883",
+        "passport_expiry": "2029-11-13T00:00:00",
+        "residence_card_no": "UH56760417MA",
+        "residence_expiry": "2030-07-27T00:00:00",
+        "source_sheet": "丁銀泉"
+      }
+    },
+    {
+      "identity": [
+        "丁鈿宇",
+        "2019-07-23"
+      ],
+      "name": "丁 鈿宇",
+      "name_kana": "テイ　テンウ",
+      "birth_date": "2019-07-23",
+      "fields": {
+        "passport_no": "EL0559960",
+        "passport_expiry": "2028-08-23T00:00:00",
+        "residence_card_no": "UH23672598MA",
+        "residence_expiry": "2030-07-27T00:00:00",
+        "source_sheet": "丁銀泉"
+      }
+    },
+    {
+      "identity": [
+        "王傳軍",
+        "1980-02-13"
+      ],
+      "name": "王傳軍",
+      "name_kana": "オウ　 デングン",
+      "birth_date": "1980-02-13",
+      "fields": {
+        "passport_no": "EH9173842",
+        "passport_expiry": "2029-12-10T00:00:00",
+        "residence_card_no": "UH50999713MA",
+        "residence_expiry": "2025年７月21日",
+        "source_sheet": "夏穎"
+      }
+    },
+    {
+      "identity": [
+        "陳友琪",
+        "1962-10-11"
+      ],
+      "name": "陳　友琪",
+      "name_kana": "チン　ユウキ",
+      "birth_date": "1962-10-11",
+      "fields": {
+        "phone": "09037237475",
+        "postal_code": "544-0001",
+        "address": "大阪市生野区新今里6-11-17-1006",
+        "residence_card_no": "UH08263381LA",
+        "residence_expiry": "2025-06-17T00:00:00",
+        "source_sheet": "陳友琪（契約終了）"
+      }
+    },
+    {
+      "identity": [
+        "張鐸",
+        "1963-04-05"
+      ],
+      "name": "張　鐸",
+      "name_kana": "チョウ　タク",
+      "birth_date": "1963-04-05",
+      "fields": {
+        "phone": "090-2026-6789",
+        "residence_card_no": "UH74670302LA",
+        "residence_expiry": "2025-06-17T00:00:00",
+        "source_sheet": "陳友琪（契約終了）"
+      }
+    },
+    {
+      "identity": [
+        "张建明",
+        "1982-07-05"
+      ],
+      "name": "张建明",
+      "name_kana": "",
+      "birth_date": "1982-07-05",
+      "fields": {
+        "phone": "08058467877",
+        "address": "大阪市大正区千島2−4−4−236",
+        "passport_no": "E868I3934",
+        "passport_expiry": "2026-09-26T00:00:00",
+        "residence_card_no": "SA54771333LA",
+        "residence_expiry": "2025-01-31T00:00:00",
+        "source_sheet": "張建明"
+      }
+    },
+    {
+      "identity": [
+        "张少飞",
+        "1982-10-19"
+      ],
+      "name": "张少飞",
+      "name_kana": "",
+      "birth_date": "1982-10-19",
+      "fields": {
+        "phone": "暂无",
+        "passport_no": "E868I3673",
+        "passport_expiry": "2026/9/25",
+        "residence_card_no": "SA44969866LA",
+        "residence_expiry": "2025-01-31T00:00:00",
+        "source_sheet": "張建明"
+      }
+    },
+    {
+      "identity": [
+        "张瞳",
+        "2014-10-14"
+      ],
+      "name": "张瞳",
+      "name_kana": "",
+      "birth_date": "2014-10-14",
+      "fields": {
+        "phone": "暂无",
+        "passport_no": "EL4I92775",
+        "passport_expiry": "2028-11-20T00:00:00",
+        "residence_card_no": "SA91322403LA",
+        "residence_expiry": "2025-01-31T00:00:00",
+        "source_sheet": "張建明"
+      }
+    },
+    {
+      "identity": [
+        "张飒",
+        "2017-04-04"
+      ],
+      "name": "张飒",
+      "name_kana": "",
+      "birth_date": "2017-04-04",
+      "fields": {
+        "phone": "暂无",
+        "passport_no": "EL4I97550",
+        "passport_expiry": "2028-11-21T00:00:00",
+        "residence_card_no": "SA67846721LA",
+        "residence_expiry": "2025-01-31T00:00:00",
+        "source_sheet": "張建明"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "head": {
+        "name": "许钰芳",
+        "birth_date": "1972-06-05"
+      },
+      "dependent": {
+        "name": "陳波",
+        "birth_date": "1975-03-18"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "何楠",
+        "birth_date": "1994-01-03"
+      },
+      "dependent": {
+        "name": "張秋林",
+        "birth_date": "1988-07-13"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "趙日春",
+        "birth_date": "1979-08-31"
+      },
+      "dependent": {
+        "name": "倪華琴",
+        "birth_date": "1979-11-18"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "蘭仲尭",
+        "birth_date": "1984-02-25"
+      },
+      "dependent": {
+        "name": "丁婷婷",
+        "birth_date": "1985-11-22"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "蘭仲尭",
+        "birth_date": "1984-02-25"
+      },
+      "dependent": {
+        "name": "蘭弼麟",
+        "birth_date": "2013-11-06"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "欧勇鉅",
+        "birth_date": "1987-07-07"
+      },
+      "dependent": {
+        "name": "蔡琳",
+        "birth_date": "1987-04-03"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "欧勇鉅",
+        "birth_date": "1987-07-07"
+      },
+      "dependent": {
+        "name": "OULEXIN",
+        "birth_date": "2016-03-24"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "劉鉄男",
+        "birth_date": "1962-07-22"
+      },
+      "dependent": {
+        "name": "楊紅玲",
+        "birth_date": "1974-11-12"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "劉鉄男",
+        "birth_date": "1962-07-22"
+      },
+      "dependent": {
+        "name": "楊在山",
+        "birth_date": "2011-01-27"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "劉鉄男",
+        "birth_date": "1962-07-22"
+      },
+      "dependent": {
+        "name": "刘雲舒",
+        "birth_date": "2016-09-29"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "王樹亮",
+        "birth_date": "1958-01-16"
+      },
+      "dependent": {
+        "name": "張惠荣",
+        "birth_date": "1963-04-23"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "白楊",
+        "birth_date": "1986-07-04"
+      },
+      "dependent": {
+        "name": "李蓉蓉",
+        "birth_date": "1985-09-15"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "武雪瑩",
+        "birth_date": "1988-02-05"
+      },
+      "dependent": {
+        "name": "白全楽",
+        "birth_date": "1988-07-22"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "彭日",
+        "birth_date": "1995-03-08"
+      },
+      "dependent": {
+        "name": "張蕾",
+        "birth_date": "1999-05-18"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "呂浩聞",
+        "birth_date": "1996-11-04"
+      },
+      "dependent": {
+        "name": "于昕宇",
+        "birth_date": "1997-07-11"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "趙洪榕",
+        "birth_date": "1997-11-07"
+      },
+      "dependent": {
+        "name": "陳玉",
+        "birth_date": "1998-07-31"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "施維",
+        "birth_date": "1982-08-13"
+      },
+      "dependent": {
+        "name": "WANGYUTONG",
+        "birth_date": "2015-10-05"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "趙珺",
+        "birth_date": "1980-02-11"
+      },
+      "dependent": {
+        "name": "楊英",
+        "birth_date": "1979-11-14"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "趙珺",
+        "birth_date": "1980-02-11"
+      },
+      "dependent": {
+        "name": "ZHAOYUXI",
+        "birth_date": "2015-06-19"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "王自力",
+        "birth_date": "1988-11-18"
+      },
+      "dependent": {
+        "name": "楊雅婷",
+        "birth_date": "1987-10-13"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "宮磊",
+        "birth_date": "1982-04-08"
+      },
+      "dependent": {
+        "name": "LIULI",
+        "birth_date": "1983-03-19"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "宮磊",
+        "birth_date": "1982-04-08"
+      },
+      "dependent": {
+        "name": "GONGYI",
+        "birth_date": "2017-02-18"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "宮磊",
+        "birth_date": "1982-04-08"
+      },
+      "dependent": {
+        "name": "GONGMINGLIN",
+        "birth_date": "2023-04-12"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "呉潔",
+        "birth_date": "1975-02-28"
+      },
+      "dependent": {
+        "name": "LIUSIYUE",
+        "birth_date": "2013-01-24"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "付強",
+        "birth_date": "1981-01-20"
+      },
+      "dependent": {
+        "name": "張静",
+        "birth_date": "1981-05-26"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "付強",
+        "birth_date": "1981-01-20"
+      },
+      "dependent": {
+        "name": "付予暄",
+        "birth_date": "2010-08-08"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "徐宏梅",
+        "birth_date": "1983-01-05"
+      },
+      "dependent": {
+        "name": "蔡欣瑶",
+        "birth_date": "2012-06-15"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "金卉",
+        "birth_date": "1989-04-03"
+      },
+      "dependent": {
+        "name": "刘章程",
+        "birth_date": "1996-10-25"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "宋志浩",
+        "birth_date": "1981-02-22"
+      },
+      "dependent": {
+        "name": "徐萍",
+        "birth_date": "1985-04-25"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "范可心",
+        "birth_date": "1981-07-24"
+      },
+      "dependent": {
+        "name": "孟宪宝",
+        "birth_date": "1979-03-28"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "范可心",
+        "birth_date": "1981-07-24"
+      },
+      "dependent": {
+        "name": "孟曈",
+        "birth_date": "2020-01-20"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "范可心",
+        "birth_date": "1981-07-24"
+      },
+      "dependent": {
+        "name": "孟想",
+        "birth_date": "2013-08-02"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "洪瑞",
+        "birth_date": "1981-01-08"
+      },
+      "dependent": {
+        "name": "楊文艶",
+        "birth_date": "1983-04-03"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "洪瑞",
+        "birth_date": "1981-01-08"
+      },
+      "dependent": {
+        "name": "洪㬢",
+        "birth_date": "2011-10-21"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "洪瑞",
+        "birth_date": "1981-01-08"
+      },
+      "dependent": {
+        "name": "洪RONALD",
+        "birth_date": "2017-09-27"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "李環",
+        "birth_date": "1973-03-02"
+      },
+      "dependent": {
+        "name": "王义金",
+        "birth_date": "1973-11-11"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "刘暁芬",
+        "birth_date": "1976-06-27"
+      },
+      "dependent": {
+        "name": "曹海暉",
+        "birth_date": "2010-05-10"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "许钰芳",
+        "birth_date": "1972-06-05"
+      },
+      "dependent": {
+        "name": "陳奕瑜",
+        "birth_date": "2010-11-10"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "丁銀泉",
+        "birth_date": "1985-11-20"
+      },
+      "dependent": {
+        "name": "胡金金",
+        "birth_date": "1985-04-05"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "丁銀泉",
+        "birth_date": "1985-11-20"
+      },
+      "dependent": {
+        "name": "丁可唯",
+        "birth_date": "2013-11-01"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "丁銀泉",
+        "birth_date": "1985-11-20"
+      },
+      "dependent": {
+        "name": "丁鈿宇",
+        "birth_date": "2019-07-23"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "劉鉄男",
+        "birth_date": "1962-07-22"
+      },
+      "dependent": {
+        "name": "刘雲舒",
+        "birth_date": "2016-09-29"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "陳友琪",
+        "birth_date": "1962-10-11"
+      },
+      "dependent": {
+        "name": "張鐸",
+        "birth_date": "1963-04-05"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "施維",
+        "birth_date": "1982-08-13"
+      },
+      "dependent": {
+        "name": "WANGYUWEN",
+        "birth_date": "2015-10-05"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "张建明",
+        "birth_date": "1982-07-05"
+      },
+      "dependent": {
+        "name": "张少飞",
+        "birth_date": "1982-10-19"
+      },
+      "relationship": "spouse"
+    },
+    {
+      "head": {
+        "name": "张建明",
+        "birth_date": "1982-07-05"
+      },
+      "dependent": {
+        "name": "张瞳",
+        "birth_date": "2014-10-14"
+      },
+      "relationship": "child"
+    },
+    {
+      "head": {
+        "name": "张建明",
+        "birth_date": "1982-07-05"
+      },
+      "dependent": {
+        "name": "张飒",
+        "birth_date": "2017-04-04"
+      },
+      "relationship": "child"
+    }
+  ],
+  "staff_links": [
+    {
+      "company_name": "フィルムジャパン合同会社",
+      "employee": {
+        "name": "趙郝男",
+        "birth_date": "1998-12-18"
+      }
+    },
+    {
+      "company_name": "神武国際貿易株式会社",
+      "employee": {
+        "name": "LIANGGUANGYAN",
+        "birth_date": "2001-11-26"
+      }
+    },
+    {
+      "company_name": "神武国際貿易株式会社",
+      "employee": {
+        "name": "GUJIE",
+        "birth_date": "2000-10-14"
+      }
+    },
+    {
+      "company_name": "ジェミニ株式会社",
+      "employee": {
+        "name": "趙洪榕",
+        "birth_date": "1997-11-07"
+      }
+    },
+    {
+      "company_name": "ジェミニ株式会社",
+      "employee": {
+        "name": "張峰源",
+        "birth_date": "2000-02-20"
+      }
+    },
+    {
+      "company_name": "条野長合同会社",
+      "employee": {
+        "name": "李遠波",
+        "birth_date": "1999-02-01"
+      }
+    },
+    {
+      "company_name": "興永合同会社",
+      "employee": {
+        "name": "李煜恒",
+        "birth_date": "1999-02-06"
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "name": "何 永健",
+      "name_kana": "カ　エイケン",
+      "birth_date": "1975-03-18",
+      "phone": "",
+      "postal_code": "552-0021",
+      "address": "大阪市港区築港4丁目2番21-404号",
+      "passport_no": "",
+      "passport_expiry": "",
+      "residence_card_no": "",
+      "residence_expiry": "",
+      "gender": "",
+      "company_name": "朝暉合同会社",
+      "source_sheet": "暁暉合同会社",
+      "employment_start_date": "",
+      "salary_note": "なし"
+    },
+    {
+      "name": "夏  穎",
+      "name_kana": "シャ　エイ",
+      "birth_date": "1980-05-19",
+      "phone": "08061326777",
+      "postal_code": "555-0001",
+      "address": "大阪市西淀川区佃２丁目15番1－502",
+      "passport_no": "",
+      "passport_expiry": "",
+      "residence_card_no": "",
+      "residence_expiry": "",
+      "gender": "",
+      "company_name": "盛沢合同会社",
+      "source_sheet": "盛沢合同会社",
+      "employment_start_date": "",
+      "salary_note": ""
+    },
+    {
+      "name": "彭 月",
+      "name_kana": "ホウ　ツキ",
+      "birth_date": null,
+      "phone": "",
+      "postal_code": "544-0001",
+      "address": "大阪市生野区新今里3-1-4−404",
+      "passport_no": "",
+      "passport_expiry": "",
+      "residence_card_no": "",
+      "residence_expiry": "",
+      "gender": "",
+      "company_name": "瀧錫商事合同会社",
+      "source_sheet": "瀧錫商事合同会社",
+      "employment_start_date": "",
+      "salary_note": "250,000"
+    },
+    {
+      "name": "WANG　JING",
+      "name_kana": "オウ　セイ",
+      "birth_date": "1970-03-21",
+      "phone": "",
+      "postal_code": "",
+      "address": "",
+      "passport_no": "",
+      "passport_expiry": "",
+      "residence_card_no": "",
+      "residence_expiry": "",
+      "gender": "",
+      "company_name": "一葉舟株式会社",
+      "source_sheet": "一葉舟株式会社",
+      "employment_start_date": "",
+      "salary_note": ""
+    },
+    {
+      "name": "何 永健",
+      "name_kana": "カ　エイケン",
+      "birth_date": "1967-10-30",
+      "phone": "",
+      "postal_code": "",
+      "address": "",
+      "passport_no": "EL7124144",
+      "passport_expiry": "2034-01-08T00:00:00",
+      "residence_card_no": "UH23428341MA",
+      "residence_expiry": "2025-11-29T00:00:00",
+      "company_name": "",
+      "entry_date": "",
+      "source_sheet": "刘晓芬"
+    },
+    {
+      "name": "夏穎",
+      "name_kana": "カ　エイ",
+      "birth_date": "1980-08-06",
+      "phone": "080-6132-6777",
+      "postal_code": "555-0001",
+      "address": "大阪市西淀川区佃２丁目15番1－502",
+      "passport_no": "EH9173841",
+      "passport_expiry": "2029-12-10T00:00:00",
+      "residence_card_no": "UH26409313LA",
+      "residence_expiry": "2025年７月21日",
+      "company_name": "盛沢合同会社",
+      "entry_date": "",
+      "source_sheet": "夏穎"
+    },
+    {
+      "name": "WANG JING",
+      "name_kana": "オウ　セイ",
+      "birth_date": "1979-11-14",
+      "phone": "",
+      "postal_code": "",
+      "address": "",
+      "passport_no": "",
+      "passport_expiry": "",
+      "residence_card_no": "SA76166304MA",
+      "residence_expiry": "2029-02-15T00:00:00",
+      "company_name": "",
+      "entry_date": "",
+      "source_sheet": "施維"
+    }
+  ]
+}

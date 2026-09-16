@@ -29,8 +29,10 @@ Frontend:
 
 ```bash
 cd frontend
-npm run dev
+npm run dev -- --port 5174
 ```
+
+或直接用 `frontend/dev.sh`（内容是 `export PATH="/opt/homebrew/bin:$PATH"` 后 `exec npm run dev -- --port 5174`——沙盒/受限 shell 环境下 `PATH` 可能不含 Homebrew 的 `npm`/`node`，用这个脚本可以保证能找到；`.claude/launch.json` 的 `frontend-dev` 配置已经指向这个脚本）。本地固定用 `5174` 端口，不是 Vite 默认的 `5173`。
 
 常用验证:
 
@@ -80,7 +82,7 @@ docker compose --env-file .env.prod exec backend python manage.py collectstatic 
 
 当前统一入口:
 
-- Menu: 案件業務 -> 案件・担当設定管理
+- Menu: システム -> 案件・担当設定管理（2026-08 起，从案件業務移到システム，与「設定」并列——理由是这是"配置一次、之后很少碰"的模板/主数据管理，不是日常案件操作，混在案件業務菜单里会干扰日常项目）
 - Route: `/case-checklists`
 - Page: `frontend/src/pages/CaseChecklistTemplatesPage.vue`
 
@@ -424,7 +426,7 @@ PDF 文件:
 
 ## 4. 税务证明更新用模块现状
 
-状态: PDF 坐标映射工具已完成增强；正式 PDF 生成已先接入「社会保险纳入证明兼委任状」这一份。
+状态: PDF 坐标映射工具已完成增强；正式 PDF 生成当前已接入 4 份（社会保险纳入证明兼委任状 + 年金加入类 3 份），其余 6 份仍返回「PDF字段映射未完成」。
 
 ### 页面和路由
 
@@ -479,22 +481,38 @@ PDF 坐标映射调试:
 - `/api/accounting/zei-pdf-position-debug/preview/`
 - `/api/accounting/zei-pdf-position-debug/test-pdf/`
 
-正式 PDF 生成当前支持:
+正式 PDF 生成当前支持（`backend/apps/accounting/tax_renewal_pdf.py` 的 `SUPPORTED_TEMPLATE_KEYS` 集合，2026-08 从单一 `SUPPORTED_TEMPLATE_KEY` 常量扩展成集合）:
 
-- `social_insurance_payment_certificate_power_of_attorney`
-- API payload: `{ "template_key": "social_insurance_payment_certificate_power_of_attorney" }`
-- 使用模板: `backend/assets/pdf_templates/zei/pdf/社会保険納入証明書兼委任状.pdf`
-- 使用 mapping: `backend/assets/pdf_templates/zei/field_mappings/social_insurance_payment_certificate_power_of_attorney.json`
-- 前端记录列表在已选择该模板时显示「社会保険PDF」按钮。
+- `social_insurance_payment_certificate_power_of_attorney`（社会保险纳入证明兼委任状，`renewal` 分类第1项）
+- `pension_office_application`（年金适用事务所加入届/事務所設立，`pension` 分类第8项）
+- `pension_insured_qualification_acquisition`（年金被保险者资格取得届/被保険者加入，`pension` 分类第9项）
+- `dependent_change_notification`（被扶养者（异动）届/被扶养者加入，`pension` 分类第10项，只 `has_dependents=true` 时可选）
+
+API payload: `{ "template_key": "<上面任一 key>" }`。
+
+- 使用模板文件: `backend/assets/pdf_templates/zei/pdf/{年金新規適用届,年金被保険者資格取得届,年金被扶養者（異動）届,社会保険納入証明書兼委任状}.pdf`
+- 使用 mapping: `backend/assets/pdf_templates/zei/field_mappings/{template_key}.json`，一个模板一个 key
+- 前端记录列表操作下拉，会对当前记录 `selected_templates` 里属于上述 4 个 key 的每一个都显示一条「{模板名}PDF」下载项（`DOWNLOADABLE_TEMPLATES` 映射 + `getDownloadableTemplates()`，取代了原来只针对社会保险这一份写死的单一按钮）。
 - 正式生成只读取 `record.form_data` / record 根字段 / company / customer / employee / `agent_snapshot`，不读取 mapping 的 `test_value`。
 - 空字段跳过，不写 field key / label。
-- 其他 9 个 template_key 仍返回:
+- 下载文件名和 `Content-Disposition` 会根据实际选中的 `template_key` 动态取对应 PDF 文件名（`Path(template['filename']).stem`），不再固定写死"社会保険納入証明書兼委任状"。
+- 其他 6 个 template_key（纳税证明书系列、労働保険料等納入証明書等）仍返回:
 
 ```text
 PDF字段映射未完成
 ```
 
-不要假装其他 PDF 已经生成。
+不要假装其他 6 份 PDF 已经生成。
+
+3 份年金加入类 PDF 的填写范围（刻意限定，不是全表覆盖）：
+
+- **年金新規適用届（事務所設立）**：只填提出日、事業所所在地（含郵便番号）、事業所名称、電話番号、事業主氏名（含フリガナ）。**刻意不填**事業所整理記号/事業所番号——这份表本身就是在"申请获得"这两个编号，此时还不存在。
+- **年金被保険者資格取得届（被保険者加入）**：填公司信息（含事業所整理記号/番号）+ 被保険者（即 voucher 的 `customer`）氏名/フリガナ/住所。该表最多支持4个被保険者，当前只填第1个，对应 voucher 选中的那一位客户。
+- **被扶養者（異動）届（被扶養者加入）**：填公司信息 + A.被保険者欄（voucher 的 `customer`）。**B.配偶者欄、C.その他の被扶養者欄没有做**——需要填被扶养人本人的姓名/生年月日/続柄等，当前数据模型里没有对应"被扶养人"这个人物的数据来源（跟 `Customer` 不是同一人），只能手工在纸质表上填，或后续单独设计数据结构支持。
+
+3 份表单头部统一有「令和／年／月／日提出」这种拆成 3 个独立数字的日期格式，靠 `tax_renewal_pdf.py` 新增的 `reiwa_date_parts(value)` 把 `form_data.submit_date`（`YYYY-MM-DD`）转换成 `"令和年-月-日"` 格式的字符串，再用已有的 `render_mode=split` + `split_pattern='-'` 机制拆成 3 个坐标区域分别写入——这是一个可复用的通用转换，不是每个模板各自实现一遍。
+
+**排查过的一个真实 bug（已修复）**：新增这 3 份 mapping 时，好几个字段（記号、事業所番号、郵便番号等）完全没打印出来，但 `written_field_count` 却显示"成功"。根因是 PyMuPDF 的 `insert_textbox()` 在文本框 `height` 相对 `font_size` 留白不够时会返回负数（表示放不下），此时**整体放弃绘制、不抛异常**——而 `draw_text_field()` 原有代码不管 `rc` 正负都无条件 `return True`，导致"画失败"和"画成功"从调用方看不出区别。已经把这 3 份新 mapping 里所有字段的 `height` 都放宽到安全余量（约 `font_size * 1.7` 以上）修复。**这是这套坐标 mapping 机制本身的通用陷阱，不是这 3 份文件独有的**——以后再加新字段/新模板时，`height` 写太紧会静默不显示，必须留够余量，且最好用 `warning_fields`（见下）核对一遍。
 
 ### PDF 模板目录
 
@@ -544,11 +562,35 @@ PDF字段映射未完成
 ### 第二阶段录入优化
 
 - 页面可选择公司 / 客户 / 员工后点击「套用资料」，把现有资料反映到 `form_data`。
-- 公司可反映: `company_name`, `company_number`, `company_address`, `company_phone`, `representative_name`, `representative_kana`, `representative_birth_date`。
+- 公司可反映: `company_name`, `company_number`, `company_address`, `company_phone`, `establishment_symbol`, `establishment_number`（2026-08 新增，见下方「公司事業所整理記号／事業所番号」小节）, `representative_name`, `representative_kana`, `representative_birth_date`。
 - 客户可反映: `applicant_name`, `applicant_kana`, `applicant_address`, `applicant_phone`, `applicant_birth_date`。
 - 员工可反映: `employee_name`, `employee_kana`, `employee_birth_date`, `employee_address`, `employee_phone`, `employee_my_number`, `employment_start_date`, `salary_amount`。现有 Employee 字段不足时能取多少填多少。
 - 代理人模板选择会复制模板内容到当前记录 `form_data`，并保存 `agent_template_id` 和 `agent_snapshot`，后续模板修改不影响旧记录。
 - 决算期间使用日期范围选择器，保存 `fiscal_period_start` / `fiscal_period_end`，并自动拆分保存 `fiscal_start_year/month/day` 与 `fiscal_end_year/month/day`。
+- `年金番号`（个人年金番号，任意填写）作为独立 `form_data.pension_number` 字段，公司信息分组里常显，不受 `required_fields` 门控。
+
+### 案件と紐付け（`TaxRenewalVoucherRecord.case`）
+
+- `TaxRenewalVoucherRecord` 新增可选外键 `case`（`on_delete=SET_NULL`），迁移 `apps/accounting/migrations/0014_taxrenewalvoucherrecord_case.py`。
+- 前端新建/编辑 Drawer 顶部新增「案件（選択すると顧客・会社・担当者を自動反映）」下拉，选中案件后 `handleCaseSelect()` 会把 `form.customer`/`form.company`/`form.employee` 自动设成该案件的 `customer`/`company`/`responsible_employee`（不需要再分别选三次）。
+- 列表新增「案件番号」列（`case_number`，序列化器 `source='case.case_number'`）。
+- 这个关联纯粹是数据层面的"减少重复选择"，不会反过来影响 `Case` 或触发任何案件状态变化。
+
+### 公司事業所整理記号／事業所番号
+
+背景：`年金の記号`（事業所整理記号）和 `事業所番号` 是社保/厚生年金相关文书都需要的公司级编号，过去只能在每次新建税务证明 voucher 时手动重复输入，容易漏填。
+
+- `Company` 新增 `establishment_symbol`（事業所整理記号）、`establishment_number`（事業所番号）两个自由文本字段，迁移 `apps/companies/migrations/0009_company_establishment_number_and_more.py`。
+- 三处录入/展示界面都已加上：会社管理列表的新建/编辑弹窗（`CompaniesPage.vue`）、会社详情页「会社基本情報」卡片（`CompanyDetailPage.vue`，只读展示）、新規受付「会社情報（任意）」区块（`ReceptionNewPage.vue`）。
+- `TaxRenewalVoucherRecord` 的「套用资料」（见上方「第二阶段录入优化」）会把这两个字段一起带过去，`tax_renewal_pdf.py` 的 `build_record_data()` 也在 `fallbacks` 里加了这两项——即使 voucher 的 `form_data` 里没手动填、也没点过「套用资料」，只要 voucher 关联了 `company` 且该公司档案里有值，生成 PDF 时依然会自动带入，双重兜底。
+
+### 必填项缺失时的提示（`X-Missing-Required-Fields`）
+
+背景：排查发现生成 PDF 时，`required_fields` 里声明但实际为空的字段会被**静默跳过**，不会显示任何提示——`X-Warning-Fields` 这个既有机制只对结构性错误（字段类型错、页码越界、写入失败）报警，不对"必填项确实是空的"这种情况报警。
+
+- `TaxRenewalPdfStats` 新增 `missing_required_fields: list[str]`。`generate_tax_renewal_template_pdf_result()` 在字段值为空时，额外检查该字段（用 `FIELD_ALIASES` 映射到规范 key 后）是否在该模板的 `required_fields` 里，是的话记入这个新列表。
+- 响应新增 `X-Missing-Required-Fields` header（`tax_renewal_pdf_response()`）。
+- 前端 `generateTaxRenewalRecordPdf()`（`api/accounting.ts`）解析这个 header 为 `missingRequiredFields`；`TaxRenewalVouchersPage.vue` 的 `downloadTemplatePdf()`（原 `downloadSocialInsurancePdf()`，2026-08 泛化成支持全部 4 个已支持模板）生成成功后如果这个列表非空，会用常驻不自动消失的 `ElMessage`（`duration: 0, showClose: true`）列出具体哪些必填字段（翻译成日文 label）还没填，需要用户手动关闭；全部填了则显示普通的成功提示。
 
 ### 第三阶段 PDF 字段诊断
 
@@ -562,7 +604,7 @@ PDF字段映射未完成
 ### 第四阶段 PDF 坐标映射工具
 
 - 内部静态工具页面: `frontend/public/zei-pdf-position-debug.html`
-- 本地访问: `http://localhost:5173/zei-pdf-position-debug.html`
+- 本地访问: `http://localhost:5174/zei-pdf-position-debug.html`
 - 线上访问: `http://43.139.37.150/sun/zei-pdf-position-debug.html`
 - 不加入正式菜单。
 - 工具可选择模板、预览 PDF 页面 PNG、切换页码、加载 / 保存 mapping、点击定位、拖动字段区域、方向键微调、导入常用字段、生成测试 PDF。
@@ -575,15 +617,17 @@ PDF字段映射未完成
 - 测试 PDF 写入每个字段的 `test_value`；为空时才回退到 `label` 或 field key。测试 PDF 仅用于确认位置、字号、宽高、换行、对齐和拆分效果，不属于正式业务 PDF。
 - 如果测试内容放不进字段区域，后端会返回 warning: `字段内容超出范围：field_key`。
 - 原始 PDF 模板不能被覆盖。
+- **実データ読み込み（2026-08 新增）**：工具栏新增「実データ」下拉，可选择一条真实 `TaxRenewalVoucherRecord`（按当前模板的 `category` 自动过滤 renewal/pension），选中后所有标记文字会改用该记录经 `tax_renewal_pdf.build_record_data()` 解析出的**真实字段值**（跟正式生成用的完全同一套逻辑，不是另外临时拼的），没有对应真实数据的字段仍退回显示手动 `test_value`/`label`，两种数据源可以混着看。「生成测试PDF」也会带上选中的 `record_id`，用真实数据渲染出的测试 PDF 更接近实际效果。后端新增两个只读接口：`GET zei-pdf-position-debug/records/?category=`（记录选项列表）、`GET zei-pdf-position-debug/record-data/?record_id=`（单条记录的完整解析结果）。这个功能对全部 10 个 zei 税务证明模板（已实现 4 个 + 未实现 6 个）通用，不需要为将来新增的模板单独改工具。
 
-### 正式 PDF 第一份
+### 正式 PDF 第一份（社会保险纳入证明兼委任状，实现细节）
 
-- 已支持模板 key: `social_insurance_payment_certificate_power_of_attorney`
+- 模板 key: `social_insurance_payment_certificate_power_of_attorney`（现在不是唯一已支持的模板，完整清单见上方「正式 PDF 生成当前支持」）
 - `generate_tax_renewal_template_pdf(record, template_key)` 返回 PDF bytes。
 - 内部统计包含 mapping 字段数、成功写入字段数、跳过空字段数、warning 字段。
 - 当前 mapping 中 `establishment_symbol`（記号）和 `establishment_number`（事業所番号）使用 `boxes`，分别为 4 格和 6 格；每个字符单独写入一个格子。
 - 正式生成器兼容旧日文字段 key，并映射到 `establishment_symbol`, `establishment_number`, `application_reason`, `fiscal_start_year_jp`, `company_address`, `representative_name`, `agent_name` 等真实数据字段。
 - 社会保险正式 PDF 固定使用并嵌入 `backend/assets/fonts/YuMincho.ttf`；缺失时直接报错，不 fallback 到 dengxian。
+- **已修复的真实 bug**：mapping 里原来缺了 `company_name`（事業所名称）、`company_phone`（電話番号）两个字段的坐标——用户反馈"下面要写公司名称和电话，缺少这两项"后，直接用 PyMuPDF 从原始 PDF 提取 `事業所所在地`/`事業主氏名` 等相邻行的精确文字坐标，按同一 mapping 里其它字段已经确立的"标签右侧约 33pt"偏移规律补上坐标（`x=204.6, y=601.1` / `x=204.6, y=642.7`），生成 PDF 转图片核对过对齐正确。
 - 当前验证 warning 为空。
 
 ### 新建 / 编辑表单动态字段
@@ -608,6 +652,10 @@ PDF字段映射未完成
   - `agent_phone`
   - `agent_relationship`
   - `submit_date`
+- 3 份年金加入类模板的 required fields（2026-08 新增，均在 `tax_renewal_templates.py`）:
+  - `pension_office_application`: `company_name`, `company_address`, `company_phone`, `representative_name`, `submit_date`
+  - `pension_insured_qualification_acquisition`: `company_name`, `company_address`, `representative_name`, `establishment_symbol`, `establishment_number`, `applicant_name`, `applicant_kana`, `submit_date`
+  - `dependent_change_notification`: `company_name`, `company_address`, `representative_name`, `establishment_symbol`, `applicant_name`, `applicant_kana`, `submit_date`（这份表的 header 只有 1 个整理記号方框、没有独立的事業所番号方框，所以没有把 `establishment_number` 列为必填）
 
 ## 4A. 案件业务模块现状
 
@@ -623,7 +671,7 @@ PDF字段映射未完成
   - `/cases/:id`
   - `/employees`
   - `/tasks`（仍注册，但菜单已移除，见下方 Task 章节）
-- Menu: 案件業務 -> 案件一覧、案件・担当設定管理、顧客管理、会社管理（タスク一覧已从菜单移除；担当者管理没有独立菜单项，通过案件・担当設定管理页或案件详情内的按钮跳转 `/employees`）
+- Menu: 案件業務 -> ダッシュボード、新規受付、案件一覧、顧客管理、会社管理（タスク一覧已从菜单移除；担当者管理没有独立菜单项，通过案件・担当設定管理页或案件详情内的按钮跳转 `/employees`；案件・担当設定管理已移到システム菜单，见 4A 章节开头）
 
 ### 当前保留范围
 
@@ -814,6 +862,55 @@ API: `/api/tasks/`、`/api/tasks/{id}/`，支持 `?case={case_id}`。案件列�
 
 验证：`manage.py check`、`npm run build` 均通过；浏览器用真实本地数据核对：之前因为「許可」状态被错误保留在「申請中案件」里的 3 条案件（`CASE-2026-0002`/`CASE-2026-0005`/`経管-更新-202607-喬 玉玲-0001`）修复后正确消失，只剩下真正 `審査中` 的 1 条；案件一覧確認列数精简正确、`審査中` 案件的審査期間从"-"变成"20日"这样的具体天数。
 
+### 家族から独立案件を作成 + 逆リンク自動生成（2026-08）
+
+背景：配偶/兄弟姐妹一方原本只是挂在案主名下的 `FamilyMember`，之后需要自己单独立案（比如从家族滞在转技人国工签）时，过去在顧客詳細页「案件を追加」弹窗里选不到这个人——弹窗的「顧客」下拉本来就只绑定当前顧客本人。
+
+- `CustomerDetailPage.vue`「案件を追加」弹窗新增「対象顧客」下拉（`caseTargetOptions`，必选），选项包括本人 + 所有已经"顧客として登録"（即 `family_customer` 已关联）的家族成员，选中会决定 `createCase()` 提交时的 `customer` 字段（不再写死当前顧客 id）；选本人时自动带出关联会社，选家族成员时会社清空需要手动选。
+- 如果某个家族成员还没有独立顧客身份（`family_customer` 为空），家族卡片会显示「独立した顧客情報がありません」提示 + 「顧客として登録する」按钮，点击后走 `startEditFamilyMember()` 的内联编辑，勾选/填写 `new_customer` 即可创建独立 `Customer` 并建立关联（复用 4D 章节已有的 `new_customer` 机制，非新逻辑，只是补了这个入口按钮）。
+- **配套 bug 修复**：`FamilyMemberSerializer.update()` 原来只有 `create()` 处理了 `new_customer`，`update()` 直接把这个字段 `pop()` 丢弃——用户点"顧客として登録する"勾选后保存，实际什么也没发生。已修复 `update()`，跟 `create()` 一样调用 `CustomerSerializer` 建号并设置 `family_customer`。
+- **配偶/兄弟姐妹反向关系自动生成**：新增 `backend/apps/customers/utils.py` 的 `sync_reverse_family_link(family_member)`，在 `FamilyMemberSerializer.create()`/`update()` 和 `ReceptionSerializer.create()`（新規受付里填家族信息时）之后调用。只对**对称关系**（配偶 `spouse`、兄弟姐妹 `sibling`，`SYMMETRIC_RELATIONSHIPS` 常量）生效，且仅当 `family_customer` 已关联独立顧客时才有意义——比如给 A 添加"配偶 B"的家族记录，会自动在 B 名下也建一条"配偶 A"的反向 `FamilyMember`，不需要手动两边各录一次。父子等非对称关系不做自动反向（无法从关系本身推断"对方是我的父亲还是母亲"，需要人工判断）。已存在反向记录时不会重复创建。
+
+### 顧客リモート検索（`CasesPage.vue`「新規案件」弹窗）
+
+原来「顧客」下拉是一次性拉取的固定列表，顧客数量多了以后找不到人。已改成 `el-select` 的 `remote` + `remote-method`（`handleCustomerSearch()`，300ms 防抖调用 `searchCustomers(query)` 按 `?search=` 查询后端），编辑已有案件时用 `ensureCustomerOption()` 确保当前案件的顧客即使不在搜索结果里也会被临时插入一条候选，避免编辑弹窗打开时选中值"凭空消失"。
+
+### 案件番号の再生成プロンプト（顧客変更時）
+
+`CaseDetailPage.vue`「案件基本情報を編集」弹窗（4C 章节已有描述）的 `submitBasicInfo()` 新增 `customerChanged` 标记：diff 后如果 `customer` 字段确实变化了，保存成功后自动弹出已有的「案件番号を再生成」确认框（`confirmRegenerateCaseNumber()`，复用既有的手动入口，不是新功能，只是自动触发）——因为案件番号里嵌入了顧客名，换了顧客之后番号如果不重新生成会显示旧顧客的名字，容易被忽略。
+
+### デッドライン集計の重複人物統合（`DashboardDeadlinesView`）
+
+背景：同一个真实的人如果既是独立顧客（有自己的案件）、又是另一家公司的従業員（`CompanyStaff.customer` 关联同一个 `Customer`），首页「期限提醒」会把这个人算两次——一次来自遍历全部 `Customer` 时按他自己的案件生成一条，一次来自遍历全部 `CompanyStaff` 时按他任职公司的案件又生成一条，同一个在留期限/パスポート期限被重复展示两遍、分别挂着不同的案件号。
+
+- `backend/api/views.py` 的 `DashboardDeadlinesView.get()` 改成先用 `customer_id` 建一个 `customer_entries` 字典，把全部 `Customer` 各自的到期日 + 本人最新案件先放进去；随后遍历 `FamilyMember`/`CompanyStaff` 时，如果对应的人已经是字典里的真实 `Customer`（`family_customer`/`customer` 已关联），**不再单独生成新的提醒条目**，只在这个人自己名下没有案件时（`entry['case'] is None`）才用家族/公司这边找到的案件补上案件号；最后统一从 `customer_entries` 遍历一次生成提醒。真正的旧仕様孤立记录（`family_customer` 未关联的 `FamilyMember`）不受影响，仍单独生成一条（这部分数据不属于任何 `Customer`，无法去重）。
+- 同一个逻辑缺陷（"同一个人有多条关系路径导致重复统计"）也存在于 `apps/cases/views.py` 的 `generate_reminders`（案件详情页手动生成提醒 Timeline 的 action）：家族成员一栏原来 `if not person: continue` 会**整个跳过**没有关联独立顧客的旧仕様 `FamilyMember`（这些人的在留期限提醒因此从未被生成过，属于静默漏发），已修复为 `person` 存在则读 `person.name`/`residence_expiry`（关联顧客数据），不存在则退回读 `family_member.name`/`family_member.residence_expiry`（旧仕様字段自身），两种情况都会正常生成提醒。
+
+### Checklistテンプレートの案件種別・申請区分自動適用
+
+背景：新建案件时案件事項/必要資料清单过去必须手动去「案件進捗・必要資料」卡片点「テンプレートから追加」再选一次模板，即使这个案件種別+申請区分组合已经有固定的标准材料清单也不会自动套用。
+
+- `CaseChecklistTemplate` 新增可选外键 `case_type_master`、`application_category`（迁移 `apps/cases/migrations/0012_casechecklisttemplate_application_category_and_more.py`），案件・担当設定管理页的模板新建/编辑弹窗新增对应下拉，模板列表新增「自動適用条件」列。
+- `backend/apps/cases/utils.py` 新增 `apply_checklist_template_to_case(case, template)`（把原来内嵌在 `apply_checklist_template` action 里的复制逻辑抽出来复用）和 `auto_apply_default_checklist_template(case)`（按 `case_type_master_id`+`application_category_id` 精确匹配一个 `is_active=True` 的模板，找到就应用，找不到静默跳过，不报错不提示——不是所有组合都配了模板，这是预期状态）。
+- 两个真实创建入口都接入了自动应用：`CaseSerializer.create()`（案件一覧/详情页新建案件）、`ReceptionSerializer.create()`（新規受付一次性创建顾客+案件）。
+- 用 Django 数据迁移（`RunPython`，非手工在 admin/UI 里配置）把 5 个已有模板按名称精确匹配对应上 `case_type_master`+`application_category`（`apps/cases/migrations/0013_seed_checklist_template_case_type_links.py`）：経営・管理新規申請↔経営・管理+新規、技人国ビザ新規申請↔技術・人文知識・国際業務+新規、経営・管理更新↔経営・管理+更新、技人国ビザ更新↔技術・人文知識・国際業務+更新、永住許可申請↔永住許可+新規。**刻意没有**给"特別高度人材新規申請"配对（`CaseTypeMaster` 里没有精确匹配的类型，不能猜）。用迁移而不是手工点击配置，是应用户明确要求——上线时 `manage.py migrate` 就能自动复现同样的配置，不需要每个环境各点一遍。
+- 新增了一个真实缺失模板的补丁：技人国ビザ変更申請（技術・人文知識・国際業務 + 変更）过去没有对应模板，导致真实案件（張静，变更类型工签）新建时没有自动套材料清单。数据迁移 `apps/cases/migrations/0014_seed_engineer_humanities_change_template.py` 复制"技人国ビザ新規申請"模板的全部 22 个项目内容，创建一份新模板"技人国ビザ変更申請"并关联到 技術・人文知識・国際業務+変更（用户已确认変更申请和新規申请所需材料相同）。同一迁移的 idempotent 检查：模板名已存在就跳过，不会重复创建。**这条迁移本身只创建模板，不会自动把材料清单补到已经存在的旧案件上**——已存在的張静案件是当时另外手动跑了一次 `apply_checklist_template_to_case()` 补上的（真实数据操作，非迁移）；因为这个操作依赖具体案件号才能精确定位那一条记录，之后又单独补了一条数据迁移 `apps/cases/migrations/0016_apply_change_template_to_case_zhang_jing.py`，按 `case_number='技人国-変更-202608-張 静-0001'` 精确查找、且仅当该案件当前完全没有任何清单项时才应用（幂等，生产环境跑 `migrate` 时如果这条案件已经手动补过材料就会自动跳过，不会重复添加）。
+- 排查这个问题时顺带核对了全部真实案件数据，发现还有几个案件種別+申請区分组合缺模板；用户明确要求跳过「その他」（关联到 4A 已知的"案件类型分类问题"，那批案件本身分类就不准，不该反过来配模板迁就）和 家族滞在 相关组合（"基本不会单独去做的，可以暂时不处理"）——这些缺口是**已知且经过用户确认的、暂不处理**，不是遗漏。
+
+### 在留カード受取日 + 案件進捗ステッパー + Dashboard進捗集計カード
+
+背景：用户描述了完整的案件进度理想模型（相談→資料準備→申請→入管局受理・審査中→許可/不許可→在留カード受取，中途可能"客人主动撤下"），并明确要求"進捗状態要好用、操作简便、一目了然"，同时要求进度节点可以直接点击选择状态。前提是**保留现有 13 种 `Case.STATUS_CHOICES` 完全不变**（`consultation`/`accepted`/`collecting_documents`/`preparing_documents`/`ready_to_apply`/`applied`/`under_review`/`additional_documents`/`additional_documents_submitted`/`approved`/`rejected`/`withdrawn`/`completed`），只在展示层做归类，不改动状态机本身和历史数据。
+
+- `Case` 新增 `residence_card_received_at`（在留カード受取日，可选日期字段，不是新状态——领取在留卡这件事发生在"許可"之后，用一个普通日期字段顺带记录即可，不需要为它单独发明一个 `status` 值）。加进了 `status_service.py` 的 `PROGRESS_INFO_FIELDS`/`DATE_PROGRESS_INFO_FIELDS`，走既有的「已到达阶段可编辑」`/progress-info/` 端点（4A「案件詳細页「現在の進捗」卡片」小节已描述过这套双轨机制：状态跳转字段走 `change_case_status`，已到达阶段的非跳转字段编辑走 `progress-info`）。「進捗を更新」和「過去の項目を修正」两个弹窗都加了对应的日期输入。
+- `frontend/src/utils/caseStatus.ts` 新增 `caseStageGroups`（5 个展示层大阶段：資料準備/申請済み/審査中/許可・不許可/完了，各自映射若干细分 `status`）、`getCaseStageDisplays(status)`（算出每个大阶段是 `done`/`current`/`pending`）、`getCaseStageSubBadge(status)`（審査中阶段内额外标注"追加資料対応中"等细分状态的小标签）、`isCaseWithdrawn(status)`、`caseStatusOptionGroups`（「進捗を更新」下拉分组用，4 组: 資料準備/申請〜審査/結果/その他）。这些都是纯前端计算，`Case.status` 字段本身、`status_service.py` 全部业务规则**完全没有改动**。
+- `CaseDetailPage.vue`「現在の進捗」卡片顶部新增一条大阶段 Stepper：5 个大阶段节点 + 手动的「在留カード受取」节点（依据 `residence_card_received_at` 是否有值判断完成状态，不是从 `status` 派生）+ 条件展示的「取下げ」例外节点（`caseIsWithdrawn` 为真时才出现，作为分支离开提示而非线性流程的一部分）。
+- **ステッパーはクリック可能**：每个节点可点击，打开既有的「進捗を更新」弹窗（复用 `openProgressUpdateDialog(suggestedStatus)`，这个函数本来就是给「状态を変更」建议按钮用的，非新函数）并预选一个该阶段的代表状态——点当前所在阶段时用后端算好的 `suggested_case_status`（更智能，比如资料齐了会建议"申請準備完了"），点其它阶段时用一个固定的代表状态（`stageEntryStatus` 映射：資料準備→`ready_to_apply`、申請済み→`applied`、審査中→`under_review`、許可・不許可→`approved`、完了→`completed`）；打开后用户仍可在下拉里自由改选具体状态，点击只是提供一个合理的默认起点，不是强制跳转。「在留カード受取」节点点击有专门守卫：案件还没到「許可」阶段时点击不会打开弹窗，只弹出提示"先に「許可」まで進めてから在留カード受取日を入力できます"（`ElMessage.info`），避免在案件还没许可时就误导用户去填一个业务上不成立的日期。
+- Dashboard（`DashboardPage.vue`）新增「案件の進捗状況」统计卡片，纯前端根据已加载的全部案件列表计算（复用 `caseStageGroups`，不需要新后端接口）：5 个大阶段 + 「在留カード受取待ち」（`status==='approved' && !residence_card_received_at` 的案件数，插在許可・不許可和完了之间）+「取下げ」，共 7 个数字。这个卡片跟案件详情页的 Stepper 用的是同一份大阶段划分逻辑，两处口径保持一致。
+
+### 新規受付「会社情報」「案件情報」默认收起
+
+`ReceptionNewPage.vue` 的「会社情報（任意）」「案件情報（任意）」两个区块过去常显所有输入框（哪怕大多数新規受付只是登记顾客本人信息，不涉及公司或还不确定要不要立案），现在默认收起，只显示一行说明文字 + 「追加する」文字按钮，点击才展开完整表单（`showCompanySection`/`showCaseSection`，各自独立控制）。
+
 ## 4B. 系统安全与账号管理
 
 用户反馈"后台（Django Admin）基本无用"，转而要求：把マイナンバー加密、给登录加防爆破、把账号管理搬到前端设置页。三件事都已实现。
@@ -837,10 +934,12 @@ API: `/api/tasks/`、`/api/tasks/{id}/`，支持 `?case={case_id}`。案件列�
 
 - 原来的 `/settings` 路由指向占位页 `PlaceholderPage`，现在换成真正的 `frontend/src/pages/SettingsPage.vue`，分两块：
   - **パスワードを変更**：所有登录用户都能用，需要输入当前密码校验通过后才能改，调用 `POST /api/users/change-password/`。
-  - **アカウント管理**：只有 `auth.user.is_superuser` 为真时才渲染这块（`v-if="isSuperUser"`），包含账号列表、「新規アカウント追加」、每行的「パスワードを再設定」「有効化・無効化」。新建账号目前不给 `is_staff`/`is_superuser`，纯前端登录账号，不获得 Django Admin 权限。
-- 后端新增 `backend/apps/authentication/serializers.py`（`SystemUserSerializer` 只读展示、`SystemUserCreateSerializer` 建号、`ChangeOwnPasswordSerializer` 自助改密（校验旧密码）、`ResetPasswordSerializer` root 强制重置（不需要旧密码））和 `backend/apps/authentication/permissions.py`（`IsSuperUser`）。
-- `apps/authentication/views.py` 新增 `SystemUserViewSet`：`get_permissions()` 按 `self.action` 区分——`change_password` 只要求登录，其余（`list`/`create`/`retrieve`/`reset_password`/`partial_update`）都要求 `IsSuperUser`；`http_method_names` 去掉了 `put`/`delete`（不允许整体替换或硬删除账号，只能改 `is_active`）；`partial_update` 强制只准改 `is_active` 一个字段，改别的字段会 400。路由注册在 `backend/api/urls.py` 的 `router.register('users', SystemUserViewSet, basename='system-user')`。
-- 权限边界已用 Django test client 分别以 root 和普通用户身份跑过一遍（列表/建号/强制改密/改自己密码/越权改别人密码），也用真实浏览器（临时注入本地测试 session cookie，没有走真实登录表单）走了一遍新建账号的 UI 流程，两种身份下界面表现符合预期。
+  - **アカウント管理**：只有 `auth.user.is_superuser` 为真时才渲染这块（`v-if="isSuperUser"`），包含账号列表、「新規アカウント追加」、每行的「ユーザー名・権限を編集」「パスワードを再設定」「有効化・無効化」。新建账号目前不给 `is_staff`/`is_superuser`，纯前端登录账号，不获得 Django Admin 权限。
+- 后端新增 `backend/apps/authentication/serializers.py`（`SystemUserSerializer` 只读展示、`SystemUserCreateSerializer` 建号、`ChangeOwnPasswordSerializer` 自助改密（校验旧密码）、`ResetPasswordSerializer` root 强制重置（不需要旧密码）、`SystemUserUpdateSerializer`——2026-08 新增，见下方）和 `backend/apps/authentication/permissions.py`（`IsSuperUser`）。
+- `apps/authentication/views.py` 的 `SystemUserViewSet`：`get_permissions()` 按 `self.action` 区分——`change_password` 只要求登录，其余（`list`/`create`/`retrieve`/`reset_password`/`partial_update`）都要求 `IsSuperUser`；`http_method_names` 去掉了 `put`/`delete`（不允许整体替换或硬删除账号）。路由注册在 `backend/api/urls.py` 的 `router.register('users', SystemUserViewSet, basename='system-user')`。
+- **root 现在可以编辑用户名、姓名和权限（2026-08 新增）**：`partial_update` 原来强制只准改 `is_active` 一个字段，改别的字段会 400——已改成用新增的 `SystemUserUpdateSerializer`（`fields = ['username', 'first_name', 'last_name', 'is_active', 'is_superuser']`，全部 `required=False` 支持部分更新）校验后保存，`username` 唯一性由 Django `User` 模型自带的 `unique=True` + DRF `ModelSerializer` 自动生成的 `UniqueValidator` 保证（更新时正确排除自身）。新增 `validate_is_superuser()`：如果要把 `is_superuser` 从 `True` 改成 `False`，且这个用户是当前系统里**最后一个** `is_superuser=True` 的账号，直接拒绝并报错"最後の管理者の権限は解除できません。"，防止误操作导致系统没有任何 root 账号。前端 `SettingsPage.vue` 账号列表每行操作下拉新增「ユーザー名・権限を編集」弹窗（用户名输入框 + 姓/名 + 权限单选 root/一般）。
+  - 有个已验证的真实行为（不是 bug，是权限实时生效的自然结果）：如果 root 把自己当前登录账号的权限改成"一般"，因为后端每次请求都会重新读取数据库判断权限（不是登录时缓存），改完当前会话会立刻失去继续做账号管理操作的权限，需要用其他 root 账号重新登录才能继续管理——操作时要注意别把自己正在用的账号降权。
+- 权限边界已用 Django test client 分别以 root 和普通用户身份跑过一遍（列表/建号/强制改密/改自己密码/越权改别人密码），也用真实浏览器走了一遍新建账号、改用户名/权限、触发"最后一个管理员不能降权"报错的 UI 流程，两种身份下界面表现符合预期。
 - Employee 和 `auth.User` 之间**没有建立关联**——这次的账号管理是独立于 `Employee`（担当者）体系之外的登录账号管理，如果以后需要"担当者一建号就自动能登录"这种联动，需要单独设计。
 
 ## 4C. 顧客・会社・案件本轮修复与新增（2026-08-04）

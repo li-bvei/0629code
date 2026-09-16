@@ -398,6 +398,8 @@ onMounted(() => {
             </router-link>
             <span v-else>{{ displayValue(getRepresentativeName(company)) }}</span>
           </el-descriptions-item>
+          <el-descriptions-item label="代表者郵便番号">{{ displayValue(company.representative_postal_code) }}</el-descriptions-item>
+          <el-descriptions-item label="代表者住所">{{ displayValue(company.representative_address) }}</el-descriptions-item>
           <el-descriptions-item label="法人番号">{{ displayValue(company.corporate_number) }}</el-descriptions-item>
           <el-descriptions-item label="会社法人等番号">{{ displayValue(company.corporate_registration_number) }}</el-descriptions-item>
           <el-descriptions-item label="メール">{{ displayValue(company.email) }}</el-descriptions-item>
@@ -405,6 +407,8 @@ onMounted(() => {
           <el-descriptions-item label="郵便番号" :span="2">{{ displayValue(company.postal_code) }}</el-descriptions-item>
           <el-descriptions-item label="住所" :span="2">{{ displayValue(company.address) }}</el-descriptions-item>
           <el-descriptions-item label="決算月">{{ formatFiscalMonth(company.fiscal_month) }}</el-descriptions-item>
+          <el-descriptions-item label="事業所整理記号（年金の記号）">{{ displayValue(company.establishment_symbol) }}</el-descriptions-item>
+          <el-descriptions-item label="事業所番号">{{ displayValue(company.establishment_number) }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
 
