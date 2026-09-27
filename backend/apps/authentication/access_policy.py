@@ -103,6 +103,19 @@ class BusinessAccessPolicy:
             return queryset.none()
         return rule.scope(self, queryset, action)
 
+    def queryset(self, resource, action='list'):
+        """規則に登録されたモデルの全件 queryset を、この利用者の範囲に絞って返す。
+
+        ビュー・Dashboard・集計・図表・出力は受控モデルを直接 .objects で読まず、必ずこれを使う。
+        """
+        from django.apps import apps
+
+        rule = self.rule(resource)
+        if not rule.model_label:
+            raise LookupError(f'{resource} には model_label が未設定です。')
+        model = apps.get_model(rule.model_label)
+        return self.scope(resource, model._default_manager.all(), action)
+
     def decide(self, resource, obj, action='view'):
         if not self.authenticated:
             return NOT_FOUND

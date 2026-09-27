@@ -7,6 +7,7 @@ from apps.companies.models import Company, CompanyStaff
 from apps.timelines.models import Timeline
 
 from .models import Customer, FamilyMember
+from apps.authentication.testing import grant_full_business_access
 
 
 class CustomerDetailRelatedDataTestCase(TestCase):
@@ -16,6 +17,7 @@ class CustomerDetailRelatedDataTestCase(TestCase):
             username='customer-related-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.customer = Customer.objects.create(
             name='関連確認顧客',
@@ -236,6 +238,7 @@ class CustomerRemoteSearchTestCase(TestCase):
             username='customer-remote-search',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
 
     def test_search_finds_customer_beyond_first_page(self):

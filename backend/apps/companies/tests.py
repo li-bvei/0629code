@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 from apps.customers.models import Customer
 
 from .models import Company
+from apps.authentication.testing import grant_full_business_access
 
 
 class CompanyRepresentativeCustomerApiTestCase(TestCase):
@@ -14,6 +15,7 @@ class CompanyRepresentativeCustomerApiTestCase(TestCase):
             username='company-representative-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.customer = Customer.objects.create(
             name='代表者顧客',

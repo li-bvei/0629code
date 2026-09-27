@@ -31,9 +31,23 @@ class ExpenseCategorySerializer(serializers.ModelSerializer):
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
+    owner_username = serializers.CharField(source='owner.username', read_only=True, default='')
+    owner_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Expense
         fields = '__all__'
+        # 所有者・作成者・更新者は後端が設定する。フロントからの指定は無視される。
+        read_only_fields = ['owner', 'created_by', 'updated_by']
+
+    def get_owner_name(self, obj):
+        owner = obj.owner
+        if owner is None:
+            return ''
+        employee = getattr(owner, 'employee', None) if hasattr(owner, 'employee') else None
+        if employee is not None:
+            return employee.name
+        return f'{owner.last_name}{owner.first_name}' or owner.username
 
 
 class IncomeSourceSerializer(serializers.ModelSerializer):

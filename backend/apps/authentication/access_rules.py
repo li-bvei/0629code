@@ -31,6 +31,7 @@ def _none_q(prefix=''):
 class Rule:
     view_code = None
     write_code = None
+    model_label = None  # policy.queryset() で使う 'app_label.ModelName'
 
     def module_code(self, action):
         if action in READ_ACTIONS:
@@ -60,9 +61,10 @@ class Rule:
 class ModuleRule(Rule):
     """モジュール単位の権限のみ（P0 では記録単位の所有者分離を行わない資源）。"""
 
-    def __init__(self, view_code, write_code=None):
+    def __init__(self, view_code, write_code=None, model_label=None):
         self.view_code = view_code
         self.write_code = write_code
+        self.model_label = model_label
 
 
 class DiagnosticsRule(Rule):
@@ -78,6 +80,7 @@ class DiagnosticsRule(Rule):
 
 class ExpenseRule(Rule):
     view_code = 'accounting.use_expense'
+    model_label = 'accounting.Expense'
     VIEW_ALL = 'accounting.expense_view_all'
     CHANGE_ALL = 'accounting.expense_change_all'
     EXPORT_ALL = 'accounting.expense_export_all'
@@ -130,6 +133,7 @@ class ExpenseCategoryRule(ModuleRule):
 
 class CaseRule(Rule):
     view_code = 'cases.use_cases'
+    model_label = 'cases.Case'
     VIEW_ALL = 'cases.case_view_all'
     CHANGE_ALL = 'cases.case_change_all'
 
@@ -190,9 +194,10 @@ class CaseChildRule(Rule):
     view_code = 'cases.use_cases'
     extra_view_all_codes = ()
 
-    def __init__(self, parent_field='case', nullable=False):
+    def __init__(self, parent_field='case', nullable=False, model_label=None):
         self.parent_field = parent_field
         self.nullable = nullable
+        self.model_label = model_label
 
     def can_view_all(self, policy):
         return CASE_RULE.can_view_all(policy) or policy.has_any(*self.extra_view_all_codes)
@@ -345,10 +350,12 @@ class PartyRule(Rule):
 
 class CustomerRule(PartyRule):
     case_fk = 'customer'
+    model_label = 'customers.Customer'
 
 
 class CompanyRule(PartyRule):
     case_fk = 'company'
+    model_label = 'companies.Company'
 
 
 CUSTOMER_RULE = CustomerRule()
@@ -360,9 +367,10 @@ class PartyChildRule(Rule):
 
     view_code = 'cases.use_cases'
 
-    def __init__(self, parent_rule, parent_field):
+    def __init__(self, parent_rule, parent_field, model_label=None):
         self.parent_rule = parent_rule
         self.parent_field = parent_field
+        self.model_label = model_label
 
     def scope(self, policy, queryset, action):
         if action in READ_ACTIONS and policy.has_any(PartyRule.VIEW_ALL, PartyRule.SENSITIVE):
@@ -414,8 +422,8 @@ RULES = {
     # 会計
     'expense': ExpenseRule(),
     'expense_category': ExpenseCategoryRule(),
-    'income': ModuleRule('accounting.use_income'),
-    'vehicle': ModuleRule('accounting.use_vehicle'),
+    'income': ModuleRule('accounting.use_income', model_label='accounting.IncomeSource'),
+    'vehicle': ModuleRule('accounting.use_vehicle', model_label='accounting.VehicleUsage'),
     'project': ModuleRule('accounting.use_project'),
     'voucher': ModuleRule('accounting.use_voucher'),
     'visa': ModuleRule('accounting.use_visa'),
@@ -427,14 +435,14 @@ RULES = {
     'timeline': CaseChildRule('case'),
     'task': CaseChildRule('case'),
     'reminder': CaseChildRule('case'),
-    'document': DocumentRule('case'),
+    'document': DocumentRule('case', model_label='documents.Document'),
     'case_settings': CASE_SETTINGS_RULE,
-    'dismissed_deadline': ModuleRule('cases.use_cases'),
+    'dismissed_deadline': ModuleRule('cases.use_cases', model_label='reminders.DismissedDeadline'),
     # 顧客・会社
     'customer': CUSTOMER_RULE,
-    'family_member': PartyChildRule(CUSTOMER_RULE, 'customer'),
+    'family_member': PartyChildRule(CUSTOMER_RULE, 'customer', model_label='customers.FamilyMember'),
     'company': COMPANY_RULE,
-    'company_staff': PartyChildRule(COMPANY_RULE, 'company'),
+    'company_staff': PartyChildRule(COMPANY_RULE, 'company', model_label='companies.CompanyStaff'),
     # システム
     'diagnostics': DiagnosticsRule(),
 }

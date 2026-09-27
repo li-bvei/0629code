@@ -14,6 +14,7 @@ from apps.timelines.models import Timeline
 
 from .models import Case, CaseApplicationCategory, CaseChecklistItem, CaseChecklistTemplate, CaseChecklistTemplateItem, CaseTypeMaster
 from .utils import generate_case_number, sanitize_case_number_name
+from apps.authentication.testing import grant_full_business_access
 
 
 TOKYO = ZoneInfo('Asia/Tokyo')
@@ -285,6 +286,7 @@ class CaseNumberApiTestCase(TestCase):
             username='case-number-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.customer = Customer.objects.create(
             name='張偉',
@@ -410,6 +412,7 @@ class CaseRegistrationStatusApiTestCase(TestCase):
             username='case-registration-status-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.customer = Customer.objects.create(
             name='登録状態テスト顧客',
@@ -567,6 +570,7 @@ class CaseChecklistFieldTestCase(TestCase):
             username='checklist-field-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.customer = Customer.objects.create(
             name='王小明',
@@ -741,6 +745,7 @@ class CaseStatusWorkflowTestCase(TestCase):
             username='case-status-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.customer = Customer.objects.create(
             name='王小明',
@@ -1069,6 +1074,7 @@ class DashboardSummaryApiTestCase(TestCase):
             username='dashboard-summary-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.customer = Customer.objects.create(name='ダッシュボード顧客', birth_date='1990-01-01')
 

@@ -44,6 +44,9 @@ from .serializers import (
     VisaReturnApplicationSerializer,
     VoucherItemTemplateSerializer,
 )
+from apps.audit.services import record
+from apps.authentication.drf import BusinessScopedViewSetMixin, business_api_view
+
 from .seifu_notice_pdf import seifu_notice_pdf_response
 from .tax_renewal_pdf import SUPPORTED_TEMPLATE_KEYS, tax_renewal_pdf_response
 from .tax_renewal_templates import get_tax_renewal_templates
@@ -74,7 +77,7 @@ def sum_decimal(queryset, field_name, decimal_places=0):
     )['total']
 
 
-def compute_period_balance_context(params):
+def compute_period_balance_context(params, expense_queryset, income_queryset):
     """対象期間（start_date/end_date）を基準にした期首残高・期間収入・期間支出。
 
     期首残高 = start_date より前のすべての収入・支出の累計差額（start_date が無ければ 0＝それ以前を含め全件が対象期間そのものになる）。
@@ -82,20 +85,19 @@ def compute_period_balance_context(params):
     カテゴリ・支払方法・精算済み・キーワードなど、明細表だけを絞り込むフィルタはここでは無視する
     ——残高は「表示中の明細」ではなく「実際の口座の状態」を表すべきなので、日付以外の条件で
     支出だけを狭めて残高計算に反映させると、実態より残高が多く出てしまう。
+
+    残高は会社全体の口座を表すため、呼び出し側は全体の会計権限（can_see_company_balance）を
+    確認したうえで、BusinessAccessPolicy で範囲を決めた queryset を渡すこと。
     """
     start_date = params.get('start_date')
     end_date = params.get('end_date')
 
-    income_qs = IncomeSource.objects.all()
-    expense_qs = Expense.objects.all()
+    income_qs = income_queryset
+    expense_qs = expense_queryset
 
     if start_date:
-        opening_income_total = sum_decimal(
-            IncomeSource.objects.filter(source_date__lt=start_date), 'amount',
-        )
-        opening_expense_total = sum_decimal(
-            Expense.objects.filter(expense_date__lt=start_date), 'amount',
-        )
+        opening_income_total = sum_decimal(income_queryset.filter(source_date__lt=start_date), 'amount')
+        opening_expense_total = sum_decimal(expense_queryset.filter(expense_date__lt=start_date), 'amount')
         opening_balance = opening_income_total - opening_expense_total
         income_qs = income_qs.filter(source_date__gte=start_date)
         expense_qs = expense_qs.filter(expense_date__gte=start_date)
@@ -112,8 +114,17 @@ def compute_period_balance_context(params):
     return opening_balance, period_incomes, period_expense_total
 
 
-def build_expense_chart(group_field):
-    rows = Expense.objects.values(group_field).annotate(total=Sum('amount')).order_by('-total')
+def can_see_company_balance(policy):
+    """期首残高・実際残高（会社全体の口座）を見られるか。
+
+    全員の支出（expense_view_all）と収入（use_income）の両方が明示付与されている場合だけ。
+    それ以外の利用者には個人の支出合計だけを示し、会社の残高として表示しない。
+    """
+    return policy.has('accounting.expense_view_all') and policy.module_allowed('income', 'list')
+
+
+def build_expense_chart(expense_queryset, group_field):
+    rows = expense_queryset.values(group_field).annotate(total=Sum('amount')).order_by('-total')
     grouped = {}
 
     for row in rows:
@@ -170,7 +181,8 @@ def build_project_expense_category_chart(projects):
     return [{'name': item['name'], 'amount': decimal_to_number(item['amount'])} for item in items]
 
 
-class ExpenseCategoryViewSet(ModelViewSet):
+class ExpenseCategoryViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'expense_category'
     queryset = ExpenseCategory.objects.all()
     serializer_class = ExpenseCategorySerializer
 
@@ -185,9 +197,48 @@ class ExpenseCategoryViewSet(ModelViewSet):
         return queryset.order_by('sort_order', 'id')
 
 
-class ExpenseViewSet(ModelViewSet):
-    queryset = Expense.objects.all()
+class ExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    """支出記録（報銷）。範囲は BusinessAccessPolicy の ExpenseRule が決める：
+    本人分のみ／expense_view_all で全員分（他人分は読み取り専用）／
+    expense_change_all で他人分の変更／expense_export_all で他人分の出力。"""
+
+    access_resource = 'expense'
+    access_action_map = {'excel': 'export', 'summary': 'list'}
+    queryset = Expense.objects.select_related('owner', 'owner__employee')
     serializer_class = ExpenseSerializer
+
+    def _audit_cross_user_view(self, queryset):
+        policy = self.business_policy
+        if not self.access_rule.sees_others(policy, 'view'):
+            return
+        if queryset.exclude(owner_id=policy.user_id).exists():
+            record(
+                module='accounting', action='expense_view_all', request=self.request,
+                via_permission='accounting.expense_view_all',
+                extra={'filters': dict(self.request.query_params.items()), 'view': self.action},
+            )
+
+    def list(self, request, *args, **kwargs):
+        self._audit_cross_user_view(self.filter_queryset(self.get_queryset()))
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.owner_id != self.business_policy.user_id:
+            record(module='accounting', action='expense_view_all', request=request, obj=instance,
+                   via_permission='accounting.expense_view_all')
+        return Response(self.get_serializer(instance).data)
+
+    def after_update(self, instance):
+        if instance.owner_id != self.business_policy.user_id:
+            record(module='accounting', action='expense_change_other', request=self.request, obj=instance,
+                   via_permission='accounting.expense_change_all')
+
+    def perform_destroy(self, instance):
+        if instance.owner_id != self.business_policy.user_id:
+            record(module='accounting', action='expense_change_other', request=self.request, obj=instance,
+                   via_permission='accounting.expense_change_all', extra={'op': 'delete'})
+        instance.delete()
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -230,9 +281,21 @@ class ExpenseViewSet(ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='excel')
     def excel(self, request):
-        expenses = self.get_queryset()
-        opening_balance, period_incomes, period_expense_total = compute_period_balance_context(
-            request.query_params,
+        policy = self.business_policy
+        expenses = self.get_queryset()  # export 範囲（expense_export_all が無ければ本人分のみ）
+        show_balance = can_see_company_balance(policy) and policy.has('accounting.expense_export_all')
+        opening_balance, period_incomes, period_expense_total = None, [], None
+        if show_balance:
+            opening_balance, period_incomes, period_expense_total = compute_period_balance_context(
+                request.query_params,
+                policy.queryset('expense', 'export'),
+                policy.queryset('income', 'list'),
+            )
+        record(
+            module='accounting', action='expense_export', request=request,
+            via_permission=self.access_rule.via_permission(policy, 'export'),
+            extra={'count': expenses.count(), 'filters': dict(request.query_params.items()),
+                   'includes_others': expenses.exclude(owner_id=policy.user_id).exists()},
         )
         return expenses_excel_response(
             expenses,
@@ -241,10 +304,12 @@ class ExpenseViewSet(ModelViewSet):
             generated_at=timezone.localtime(timezone.now()),
             opening_balance=opening_balance,
             period_expense_total=period_expense_total,
+            show_balance=show_balance,
         )
 
     @action(detail=False, methods=['get'], url_path='summary')
     def summary(self, request):
+        policy = self.business_policy
         expense_summary = self.get_queryset().order_by().aggregate(
             target_count=Count('id'),
             total_expense=Coalesce(
@@ -254,6 +319,23 @@ class ExpenseViewSet(ModelViewSet):
             ),
         )
         total_expense = expense_summary['total_expense'] or Decimal('0')
+        sees_others = self.access_rule.sees_others(policy, 'view')
+
+        if not can_see_company_balance(policy):
+            # 全体の会計権限が無い利用者：残高（会社の口座）は出さない。
+            return Response({
+                'target_count': expense_summary['target_count'] or 0,
+                'total_income': None,
+                'total_expense': decimal_to_number(total_expense),
+                'balance': None,
+                'opening_balance': None,
+                'period_income_total': None,
+                'period_expense_total': None,
+                'filtered_expense_total': decimal_to_number(total_expense),
+                'filtered_net': None,
+                'balance_visible': False,
+                'expense_scope': 'all' if sees_others else 'own',
+            })
 
         # 帳面残高は「今見えている絞り込み結果の収支」ではなく「対象期間開始時点からの
         # 実際の口座残高」を表すべきなので、Excel 出力と同じ compute_period_balance_context()
@@ -261,6 +343,8 @@ class ExpenseViewSet(ModelViewSet):
         # 期間収入・期間支出を計算する）。
         opening_balance, period_incomes, period_expense_total = compute_period_balance_context(
             request.query_params,
+            policy.queryset('expense', 'list'),
+            policy.queryset('income', 'list'),
         )
         period_income_total = sum_decimal(period_incomes, 'amount')
         balance = opening_balance + period_income_total - period_expense_total
@@ -278,10 +362,13 @@ class ExpenseViewSet(ModelViewSet):
             # 「絞り込み結果 収支」。現在の一覧フィルタに一致する支出のみの合計。
             'filtered_expense_total': decimal_to_number(total_expense),
             'filtered_net': decimal_to_number(period_income_total - total_expense),
+            'balance_visible': True,
+            'expense_scope': 'all' if sees_others else 'own',
         })
 
 
-class IncomeSourceViewSet(ModelViewSet):
+class IncomeSourceViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'income'
     queryset = IncomeSource.objects.all()
     serializer_class = IncomeSourceSerializer
 
@@ -304,7 +391,8 @@ class IncomeSourceViewSet(ModelViewSet):
         return queryset.order_by('-source_date', '-created_at')
 
 
-class VehicleUsageViewSet(ModelViewSet):
+class VehicleUsageViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'vehicle'
     queryset = VehicleUsage.objects.all()
     serializer_class = VehicleUsageSerializer
 
@@ -332,7 +420,8 @@ class VehicleUsageViewSet(ModelViewSet):
         return queryset.order_by('-usage_date', '-created_at')
 
 
-class AccountingProjectViewSet(ModelViewSet):
+class AccountingProjectViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'project'
     queryset = AccountingProject.objects.prefetch_related('project_incomes', 'project_expenses')
 
     def get_serializer_class(self):
@@ -361,7 +450,17 @@ class AccountingProjectViewSet(ModelViewSet):
         if not isinstance(expense_ids, list):
             expense_ids = []
 
-        expenses = Expense.objects.filter(id__in=expense_ids)
+        requested_ids = {int(i) for i in expense_ids if str(i).isdigit()}
+        # 参照できるのは、利用者が変更できる範囲の支出だけ（他人の支出は expense_change_all が必要）。
+        expenses = self.business_policy.queryset('expense', 'change').filter(id__in=requested_ids)
+        if expenses.count() != len(requested_ids):
+            record(module='accounting', action='access_denied', request=request, obj=project,
+                   result='denied', reason='copy-expenses: 参照権限の無い支出を含む',
+                   extra={'requested': sorted(requested_ids)})
+            return Response(
+                {'detail': '参照できない支出記録が含まれています。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         created_count = 0
 
         with transaction.atomic():
@@ -417,7 +516,8 @@ class AccountingProjectViewSet(ModelViewSet):
         return project_excel_response(project, incomes, expenses)
 
 
-class AccountingProjectIncomeViewSet(ModelViewSet):
+class AccountingProjectIncomeViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'project'
     queryset = AccountingProjectIncome.objects.select_related('project')
     serializer_class = AccountingProjectIncomeSerializer
 
@@ -439,7 +539,8 @@ class AccountingProjectIncomeViewSet(ModelViewSet):
         return queryset.order_by('-income_date', '-id')
 
 
-class AccountingProjectExpenseViewSet(ModelViewSet):
+class AccountingProjectExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'project'
     queryset = AccountingProjectExpense.objects.select_related('project', 'source_expense')
     serializer_class = AccountingProjectExpenseSerializer
 
@@ -465,7 +566,8 @@ class AccountingProjectExpenseViewSet(ModelViewSet):
         return queryset.order_by('-expense_date', '-id')
 
 
-class AccountingVoucherViewSet(ModelViewSet):
+class AccountingVoucherViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'voucher'
     queryset = AccountingVoucher.objects.select_related('created_by')
     serializer_class = AccountingVoucherSerializer
 
@@ -521,7 +623,8 @@ class AccountingVoucherViewSet(ModelViewSet):
         return voucher_pdf_response(voucher, with_seal=with_seal)
 
 
-class VoucherItemTemplateViewSet(ModelViewSet):
+class VoucherItemTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'voucher'
     queryset = VoucherItemTemplate.objects.all()
     serializer_class = VoucherItemTemplateSerializer
 
@@ -533,7 +636,8 @@ class VoucherItemTemplateViewSet(ModelViewSet):
         return queryset.order_by('sort_order', 'id')
 
 
-class VisaReturnApplicationViewSet(ModelViewSet):
+class VisaReturnApplicationViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'visa'
     queryset = VisaReturnApplication.objects.select_related('created_by')
     serializer_class = VisaReturnApplicationSerializer
 
@@ -587,7 +691,8 @@ class VisaReturnApplicationViewSet(ModelViewSet):
         return visa_return_pdf_response(application)
 
 
-class VisaGuarantorTemplateViewSet(ModelViewSet):
+class VisaGuarantorTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'visa'
     queryset = VisaGuarantorTemplate.objects.all()
     serializer_class = VisaGuarantorTemplateSerializer
 
@@ -614,7 +719,8 @@ class VisaGuarantorTemplateViewSet(ModelViewSet):
         instance.save(update_fields=['is_active', 'updated_at'])
 
 
-class SeifuNoticePdfRecordViewSet(ModelViewSet):
+class SeifuNoticePdfRecordViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'seifu'
     queryset = SeifuNoticePdfRecord.objects.select_related('created_by')
     serializer_class = SeifuNoticePdfRecordSerializer
 
@@ -640,7 +746,8 @@ class SeifuNoticePdfRecordViewSet(ModelViewSet):
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class TaxRenewalVoucherRecordViewSet(ModelViewSet):
+class TaxRenewalVoucherRecordViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'tax_renewal'
     queryset = TaxRenewalVoucherRecord.objects.select_related('case', 'company', 'customer', 'employee', 'created_by')
     serializer_class = TaxRenewalVoucherRecordSerializer
 
@@ -683,7 +790,8 @@ class TaxRenewalVoucherRecordViewSet(ModelViewSet):
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class TaxRenewalAgentTemplateViewSet(ModelViewSet):
+class TaxRenewalAgentTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'tax_renewal'
     queryset = TaxRenewalAgentTemplate.objects.all()
     serializer_class = TaxRenewalAgentTemplateSerializer
 
@@ -708,44 +816,92 @@ class TaxRenewalAgentTemplateViewSet(ModelViewSet):
         instance.save(update_fields=['is_active', 'updated_at'])
 
 
-@api_view(['GET'])
+@business_api_view(['GET'], 'tax_renewal')
 def tax_renewal_templates(request):
     return Response(get_tax_renewal_templates())
 
 
-@api_view(['GET'])
+@business_api_view(['GET'], 'expense', action='list')
 def dashboard(request):
+    """会計ダッシュボード。支出は利用者の範囲（本人分／expense_view_all で全員分）、
+    収入・車両は各モジュール権限がある場合だけ、残高は全体の会計権限がある場合だけ返す。"""
+    policy = request.business_policy
     today = timezone.localdate()
     start_date = today.replace(day=1)
     end_date = today
 
+    expenses = policy.queryset('expense', 'list')
+    show_income = policy.module_allowed('income', 'list')
+    show_vehicle = policy.module_allowed('vehicle', 'list')
+    show_balance = can_see_company_balance(policy)
+    incomes = policy.queryset('income', 'list') if show_income else None
+    vehicles = policy.queryset('vehicle', 'list') if show_vehicle else None
+
     monthly_expense_total = sum_decimal(
-        Expense.objects.filter(expense_date__gte=start_date, expense_date__lte=end_date),
+        expenses.filter(expense_date__gte=start_date, expense_date__lte=end_date),
         'amount',
-    )
-    monthly_income_source_total = sum_decimal(
-        IncomeSource.objects.filter(source_date__gte=start_date, source_date__lte=end_date),
-        'amount',
-    )
-    monthly_vehicle_km_total = sum_decimal(
-        VehicleUsage.objects.filter(usage_date__gte=start_date, usage_date__lte=end_date),
-        'distance_km',
-        decimal_places=1,
     )
     monthly_unreimbursed_total = sum_decimal(
-        Expense.objects.filter(
+        expenses.filter(
             expense_date__gte=start_date,
             expense_date__lte=end_date,
             is_reimbursed=False,
         ),
         'amount',
     )
-    total_expense_amount = sum_decimal(Expense.objects.all(), 'amount')
-    total_income_source_amount = sum_decimal(IncomeSource.objects.all(), 'amount')
-    current_balance = total_income_source_amount - total_expense_amount
+    total_expense_amount = sum_decimal(expenses, 'amount')
+
+    monthly_income_source_total = None
+    total_income_source_amount = None
+    recent_income_sources = []
+    if show_income:
+        monthly_income_source_total = sum_decimal(
+            incomes.filter(source_date__gte=start_date, source_date__lte=end_date),
+            'amount',
+        )
+        total_income_source_amount = sum_decimal(incomes, 'amount')
+        recent_income_sources = list(
+            incomes.order_by('-source_date', '-created_at').values(
+                'id',
+                'source_date',
+                'source_target',
+                'amount',
+                'note',
+                'is_exported',
+            )[:10]
+        )
+        for item in recent_income_sources:
+            item['amount'] = decimal_to_number(item['amount'])
+
+    monthly_vehicle_km_total = None
+    recent_vehicle_usages = []
+    if show_vehicle:
+        monthly_vehicle_km_total = sum_decimal(
+            vehicles.filter(usage_date__gte=start_date, usage_date__lte=end_date),
+            'distance_km',
+            decimal_places=1,
+        )
+        recent_vehicle_usages = list(
+            vehicles.order_by('-usage_date', '-created_at').values(
+                'id',
+                'usage_date',
+                'place',
+                'distance_km',
+                'usage_target',
+                'purpose',
+                'note',
+                'is_exported',
+            )[:10]
+        )
+        for item in recent_vehicle_usages:
+            item['distance_km'] = decimal_to_number(item['distance_km'])
+
+    current_balance = None
+    if show_balance:
+        current_balance = total_income_source_amount - total_expense_amount
 
     recent_expenses = list(
-        Expense.objects.order_by('-expense_date', '-created_at').values(
+        expenses.order_by('-expense_date', '-created_at').values(
             'id',
             'expense_date',
             'place',
@@ -756,48 +912,34 @@ def dashboard(request):
             'note',
             'is_reimbursed',
             'is_exported',
+            'owner_id',
         )[:10]
     )
-    recent_income_sources = list(
-        IncomeSource.objects.order_by('-source_date', '-created_at').values(
-            'id',
-            'source_date',
-            'source_target',
-            'amount',
-            'note',
-            'is_exported',
-        )[:10]
-    )
-    recent_vehicle_usages = list(
-        VehicleUsage.objects.order_by('-usage_date', '-created_at').values(
-            'id',
-            'usage_date',
-            'place',
-            'distance_km',
-            'usage_target',
-            'purpose',
-            'note',
-            'is_exported',
-        )[:10]
-    )
-
     for item in recent_expenses:
         item['amount'] = decimal_to_number(item['amount'])
-    for item in recent_income_sources:
-        item['amount'] = decimal_to_number(item['amount'])
-    for item in recent_vehicle_usages:
-        item['distance_km'] = decimal_to_number(item['distance_km'])
+
+    sees_others = policy.has('accounting.expense_view_all')
+    if sees_others and expenses.exclude(owner_id=policy.user_id).exists():
+        record(module='accounting', action='expense_view_all', request=request,
+               via_permission='accounting.expense_view_all', extra={'view': 'accounting_dashboard'})
+
+    def optional_number(value):
+        return None if value is None else decimal_to_number(value)
 
     return Response({
         'monthly_expense_total': decimal_to_number(monthly_expense_total),
-        'monthly_income_source_total': decimal_to_number(monthly_income_source_total),
-        'monthly_vehicle_km_total': decimal_to_number(monthly_vehicle_km_total),
+        'monthly_income_source_total': optional_number(monthly_income_source_total),
+        'monthly_vehicle_km_total': optional_number(monthly_vehicle_km_total),
         'monthly_unreimbursed_total': decimal_to_number(monthly_unreimbursed_total),
         'total_expense_amount': decimal_to_number(total_expense_amount),
-        'total_income_source_amount': decimal_to_number(total_income_source_amount),
-        'current_balance': decimal_to_number(current_balance),
-        'expense_target_chart': build_expense_chart('expense_target'),
-        'expense_category_chart': build_expense_chart('category'),
+        'total_income_source_amount': optional_number(total_income_source_amount),
+        'current_balance': optional_number(current_balance),
+        'balance_visible': show_balance,
+        'income_visible': show_income,
+        'vehicle_visible': show_vehicle,
+        'expense_scope': 'all' if sees_others else 'own',
+        'expense_target_chart': build_expense_chart(expenses, 'expense_target'),
+        'expense_category_chart': build_expense_chart(expenses, 'category'),
         'recent_expenses': recent_expenses,
         'recent_income_sources': recent_income_sources,
         'recent_vehicle_usages': recent_vehicle_usages,

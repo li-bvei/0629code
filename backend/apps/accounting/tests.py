@@ -12,6 +12,7 @@ from .excel import ACCOUNTING_NUMBER_FORMAT, build_expenses_excel, build_project
 from .models import AccountingVoucher, Expense, IncomeSource, VisaReturnApplication
 from .pdf import build_invoice_summary_rows
 from .voucher_calculations import calculate_voucher_amounts
+from apps.authentication.testing import grant_full_business_access
 
 
 class ExpenseSummaryApiTests(TestCase):
@@ -21,6 +22,7 @@ class ExpenseSummaryApiTests(TestCase):
             username='accounting-summary-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
 
     def test_expense_summary_returns_zero_without_rows(self):
@@ -37,6 +39,8 @@ class ExpenseSummaryApiTests(TestCase):
             'period_expense_total': 0,
             'filtered_expense_total': 0,
             'filtered_net': 0,
+            'balance_visible': True,
+            'expense_scope': 'all',
         })
 
     def test_expense_summary_uses_database_totals_and_balance(self):
@@ -135,6 +139,7 @@ class VisaReturnBulkCreateApiTests(TestCase):
             username='visa-bulk-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
 
     def test_bulk_create_creates_multiple_applications_with_shared_guarantor(self):
@@ -186,6 +191,7 @@ class AccountingVoucherTaxCalculationTests(TestCase):
             username='voucher-tax-test',
             password='password',
         )
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
 
     def test_mixed_tax_categories_are_calculated_per_line(self):

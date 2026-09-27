@@ -101,7 +101,12 @@ class BusinessScopedViewSetMixin(BusinessAccessMixin):
     """
 
     def get_scope_action(self):
-        return self.get_access_action()
+        # 対象の検索は「見える範囲」で行う（範囲外は 404）。見えるが書けない対象は
+        # has_object_permission の判定で 403 になる。出力（export）だけは出力範囲で絞る。
+        action = self.get_access_action()
+        if action in ('change', 'download', 'create'):
+            return 'view'
+        return action
 
     def get_queryset(self):
         queryset = super().get_queryset()

@@ -7,12 +7,14 @@ from apps.customers.models import Customer
 from apps.timelines.models import Timeline
 
 from .models import ReceptionIdempotencyRecord
+from apps.authentication.testing import grant_full_business_access
 
 
 class CustomerMatchApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.user = get_user_model().objects.create_user(username='match-test', password='pw')
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
 
     def test_name_and_birthdate_is_strong_match(self):
@@ -90,6 +92,7 @@ class ReceptionApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.user = get_user_model().objects.create_user(username='reception-test', password='pw')
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.case_type, _ = CaseTypeMaster.objects.update_or_create(
             code='eng', defaults={'name': '技人国テスト', 'number_abbreviation': '技人国', 'sort_order': 1},
@@ -187,6 +190,7 @@ class ReceptionIdempotencyApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.user = get_user_model().objects.create_user(username='reception-idempotency-test', password='pw')
+        grant_full_business_access(self.user, employee_name='テスト担当者')
         self.client.force_authenticate(self.user)
         self.case_type, _ = CaseTypeMaster.objects.update_or_create(
             code='idem-eng', defaults={'name': '冪等テスト種別', 'number_abbreviation': '冪等', 'sort_order': 1},

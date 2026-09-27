@@ -316,9 +316,12 @@ def build_expenses_excel(
     generated_at=None,
     opening_balance=None,
     period_expense_total=None,
+    show_balance=True,
 ):
+    """show_balance=False のときは収入・期首残高・残高を出さず、支出合計だけを出す
+    （全体の会計権限を持たない利用者向け。個人の支出合計を会社の残高と誤認させない）。"""
     expenses = list(expenses)
-    incomes = list(incomes)
+    incomes = list(incomes) if show_balance else []
     filters = filters or []
     opening_balance = opening_balance if opening_balance is not None else Decimal('0')
     period_expense_total = period_expense_total if period_expense_total is not None else Decimal('0')
@@ -334,32 +337,37 @@ def build_expenses_excel(
         ws['A2'] = f'出力日時：{generated_at:%Y-%m-%d %H:%M}'
         ws['A2'].font = Font(size=10, color='52616F')
 
-    _style_summary_box(ws, 1, '期間収入', decimal_to_excel_number(period_income_total), ACCOUNTING_NUMBER_FORMAT)
-    _style_summary_box(ws, 3, '期首残高', decimal_to_excel_number(opening_balance), ACCOUNTING_NUMBER_FORMAT)
-    _style_summary_box(ws, 5, '残高', decimal_to_excel_number(closing_balance), ACCOUNTING_NUMBER_FORMAT)
-    if closing_balance < 0:
-        ws['E5'].font = Font(size=15, bold=True, color='C45656')
+    if show_balance:
+        _style_summary_box(ws, 1, '期間収入', decimal_to_excel_number(period_income_total), ACCOUNTING_NUMBER_FORMAT)
+        _style_summary_box(ws, 3, '期首残高', decimal_to_excel_number(opening_balance), ACCOUNTING_NUMBER_FORMAT)
+        _style_summary_box(ws, 5, '残高', decimal_to_excel_number(closing_balance), ACCOUNTING_NUMBER_FORMAT)
+        if closing_balance < 0:
+            ws['E5'].font = Font(size=15, bold=True, color='C45656')
+    else:
+        _style_summary_box(ws, 1, '支出合計（出力対象）', decimal_to_excel_number(_sum_amount(expenses)), ACCOUNTING_NUMBER_FORMAT)
 
     table_start_row = _write_filter_summary(ws, 7, filters)
     table_start_row = max(table_start_row, 10)
 
-    income_rows = [
-        [
-            income.source_date,
-            income.source_target or '',
-            decimal_to_excel_number(income.amount),
-            income.note or '',
+    next_row = table_start_row
+    if show_balance:
+        income_rows = [
+            [
+                income.source_date,
+                income.source_target or '',
+                decimal_to_excel_number(income.amount),
+                income.note or '',
+            ]
+            for income in incomes
         ]
-        for income in incomes
-    ]
-    next_row = _write_table(
-        ws,
-        table_start_row,
-        '収入明細',
-        ['日付', '対象', '金額', '備考'],
-        income_rows,
-        {3},
-    )
+        next_row = _write_table(
+            ws,
+            table_start_row,
+            '収入明細',
+            ['日付', '対象', '金額', '備考'],
+            income_rows,
+            {3},
+        )
 
     expense_table_start_row = next_row
     expense_rows = [
@@ -434,6 +442,7 @@ def expenses_excel_response(
     generated_at=None,
     opening_balance=None,
     period_expense_total=None,
+    show_balance=True,
 ):
     content = build_expenses_excel(
         expenses,
@@ -442,6 +451,7 @@ def expenses_excel_response(
         generated_at=generated_at,
         opening_balance=opening_balance,
         period_expense_total=period_expense_total,
+        show_balance=show_balance,
     )
     filename = f'支出記録_{generated_at:%Y%m%d}.xlsx' if generated_at else '支出記録.xlsx'
     response = HttpResponse(
