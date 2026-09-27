@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -124,6 +125,7 @@ const goToStep2 = () => {
 }
 
 // ---- STEP 2: 業務情報 ----
+const auth = useAuthStore()
 const form = ref<ReceptionPayload>({
   customer: {
     name: '', name_kana: '', birth_date: '', gender: '', nationality: '',
@@ -424,6 +426,9 @@ onMounted(async () => {
             </el-form-item>
             <el-form-item label="担当者">
               <RemoteStaffSelect v-model="form.case.responsible_employee" class="form-control" />
+              <div v-if="!form.case.responsible_employee" class="field-hint">
+                {{ auth.user?.employee_id ? '未選択の場合は自分（ログイン中の担当者）が担当になります。' : '担当者を選択してください（アカウントが担当者に関連付いていません）。' }}
+              </div>
             </el-form-item>
             <el-form-item label="受任日">
               <el-date-picker

@@ -556,6 +556,22 @@ onMounted(() => {
 <template>
   <section class="page">
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
+    <el-alert
+      v-if="customer?.access_level === 'basic'"
+      title="案件が未作成の顧客のため、基本情報のみ表示しています（連絡先・証件などは担当者と管理者のみ）。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="page-alert"
+    />
+    <el-alert
+      v-else-if="customer?.access_level === 'masked'"
+      title="担当外の顧客のため、在留カード番号・旅券番号は伏せ字で表示しています。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="page-alert"
+    />
     <div v-loading="loading" class="customer-record">
       <el-card v-if="customer" shadow="never" class="profile-header-card">
         <div class="profile-header-main">

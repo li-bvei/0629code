@@ -275,7 +275,13 @@ const confirmDeleteCustomer = async (customer: Customer) => {
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column label="氏名" min-width="200">
           <template #default="{ row }">
-            <router-link class="text-link" :to="`/customers/${row.id}`">{{ row.name }}</router-link>
+            <router-link v-if="row.access_level !== 'minimal'" class="text-link" :to="`/customers/${row.id}`">{{ row.name }}</router-link>
+            <template v-else>
+              <span>{{ row.name }}</span>
+              <el-tag size="small" type="info" class="dependent-tag">
+                担当外{{ row.responsible_employee_names?.length ? `（担当：${row.responsible_employee_names.join('・')}）` : '' }}
+              </el-tag>
+            </template>
             <el-tag v-if="row.is_dependent && row.primary_applicant" size="small" type="info" class="dependent-tag">
               {{ row.primary_applicant.name }}の{{ row.primary_applicant.relationship_display }}
             </el-tag>

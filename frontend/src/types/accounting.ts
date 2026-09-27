@@ -52,6 +52,10 @@ export interface Expense {
   note: string
   is_reimbursed: boolean
   is_exported: boolean
+  // 所有者（後端が設定。フロントからは送らない）
+  owner?: number | null
+  owner_username?: string
+  owner_name?: string
   created_at?: string
   updated_at?: string
 }
@@ -70,14 +74,17 @@ export interface ExpensePayload {
 
 export interface ExpenseSummary {
   target_count: number
-  total_income: number | string
+  // 全体の会計権限が無い場合、収入・残高系は null（会社の残高として表示しない）
+  total_income: number | string | null
   total_expense: number | string
-  balance: number | string
-  opening_balance?: number | string
-  period_income_total?: number | string
-  period_expense_total?: number | string
+  balance: number | string | null
+  opening_balance?: number | string | null
+  period_income_total?: number | string | null
+  period_expense_total?: number | string | null
   filtered_expense_total?: number | string
-  filtered_net?: number | string
+  filtered_net?: number | string | null
+  balance_visible?: boolean
+  expense_scope?: 'own' | 'all'
 }
 
 export interface ExpenseTargetChartItem {
@@ -150,12 +157,16 @@ export interface VehicleUsagePayload {
 
 export interface AccountingDashboard {
   monthly_expense_total: number | string
-  monthly_income_source_total: number | string
-  monthly_vehicle_km_total: number | string
+  monthly_income_source_total: number | string | null
+  monthly_vehicle_km_total: number | string | null
   monthly_unreimbursed_total: number | string
   total_expense_amount: number | string
-  total_income_source_amount: number | string
-  current_balance: number | string
+  total_income_source_amount: number | string | null
+  current_balance: number | string | null
+  balance_visible?: boolean
+  income_visible?: boolean
+  vehicle_visible?: boolean
+  expense_scope?: 'own' | 'all'
   expense_target_chart: ExpenseTargetChartItem[]
   expense_category_chart: ExpenseTargetChartItem[]
   recent_expenses: Expense[]

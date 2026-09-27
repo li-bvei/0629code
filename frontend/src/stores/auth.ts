@@ -12,6 +12,12 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null)
   const loading = ref(false)
   const isAuthenticated = computed(() => Boolean(user.value))
+  const businessPermissions = computed(() => new Set(user.value?.business_permissions ?? []))
+  // 画面の表示・非表示にのみ使う。権限の実際の判定は後端で行われる。
+  const can = (code: string) => businessPermissions.value.has(code)
+  const canAny = (...codes: string[]) => codes.some((code) => businessPermissions.value.has(code))
+  const devToolsEnabled = computed(() => Boolean(user.value?.dev_tools_enabled))
+  const canManageUsers = computed(() => Boolean(user.value?.is_superuser) && can('authentication.manage_users'))
 
   const fetchMe = async () => {
     loading.value = true
@@ -55,6 +61,10 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     loading,
     isAuthenticated,
+    can,
+    canAny,
+    devToolsEnabled,
+    canManageUsers,
     fetchMe,
     login,
     logout,

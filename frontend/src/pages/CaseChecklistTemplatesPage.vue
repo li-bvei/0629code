@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAuthStore } from '../stores/auth'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -55,6 +56,8 @@ import type {
 } from '../types/api'
 import { formatDateTime } from '../utils/date'
 
+// seed 系ボタンは開発環境（dev_tools_enabled）でのみ表示。本番は後端でも 404。
+const auth = useAuthStore()
 const router = useRouter()
 const loading = ref(false)
 const templates = ref<CaseChecklistTemplate[]>([])
@@ -1295,7 +1298,7 @@ onMounted(() => {
               </el-tooltip>
             </span>
             <div class="header-actions">
-              <el-button :loading="seedingChecklistItemPresets" @click="seedChecklistItemPresets">標準項目取込</el-button>
+              <el-button v-if="auth.devToolsEnabled" :loading="seedingChecklistItemPresets" @click="seedChecklistItemPresets">標準項目取込</el-button>
               <el-button type="primary" @click="openCreateChecklistItemPresetDialog">新規追加</el-button>
             </div>
           </div>
@@ -1331,7 +1334,7 @@ onMounted(() => {
               </el-tooltip>
             </span>
             <div class="header-actions">
-              <el-button :loading="seedingResidenceStatuses" @click="seedResidenceStatuses">標準項目取込</el-button>
+              <el-button v-if="auth.devToolsEnabled" :loading="seedingResidenceStatuses" @click="seedResidenceStatuses">標準項目取込</el-button>
               <el-button type="primary" @click="openCreateResidenceStatusDialog">新規追加</el-button>
             </div>
           </div>
@@ -1360,7 +1363,7 @@ onMounted(() => {
         </el-tooltip>
       </h2>
       <div class="header-actions">
-        <el-button :loading="demoSeedSubmitting" @click="generateDemoData">標準テンプレート取込</el-button>
+        <el-button v-if="auth.devToolsEnabled" :loading="demoSeedSubmitting" @click="generateDemoData">標準テンプレート取込</el-button>
         <el-button type="primary" @click="openCreateTemplateDialog">新規テンプレート追加</el-button>
       </div>
     </div>

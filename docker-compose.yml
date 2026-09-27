@@ -54,7 +54,8 @@ services:
       - backend
     volumes:
       - static_volume:/usr/share/nginx/html/static:ro
-      - media_volume:/usr/share/nginx/html/media:ro
+      # 案件ファイルは Web ルート外にマウントし、X-Accel-Redirect の internal location からのみ送る。
+      - media_volume:/var/protected_media:ro
 
 volumes:
   mysql_data:

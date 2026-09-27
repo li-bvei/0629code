@@ -669,3 +669,12 @@ button {
     flex: 1;
   }
 }
+
+/* フォーム項目の補足説明（権限・既定値の案内など） */
+.field-hint {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}

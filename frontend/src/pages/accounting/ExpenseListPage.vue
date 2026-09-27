@@ -76,6 +76,9 @@ const summary = ref({
   balance: 0,
   periodExpenseTotal: 0,
   filteredNet: 0,
+  // 後端が残高を返した場合（全体の会計権限あり）だけ残高・収支を表示する
+  balanceVisible: false,
+  expenseScope: 'own' as 'own' | 'all',
 })
 
 const paymentMethodOptions = ['现金', '信用卡', '银行转账', 'PayPay', 'ICOCA', '公司账户', '个人垫付', '其他']
@@ -150,6 +153,8 @@ const refreshExpenseSummary = async () => {
       balance: Number(data.balance || 0),
       periodExpenseTotal: Number(data.period_expense_total ?? data.total_expense ?? 0),
       filteredNet: Number(data.filtered_net ?? 0),
+      balanceVisible: Boolean(data.balance_visible),
+      expenseScope: data.expense_scope === 'all' ? 'all' : 'own',
     }
     summaryLoaded.value = true
   } catch {
@@ -419,18 +424,18 @@ onMounted(() => {
           <strong>{{ summaryLoaded || !summaryLoading ? `${summary.count.toLocaleString()}件` : '読込中' }}</strong>
         </div>
         <div class="accounting-summary-pill">
-          <span>絞り込み結果 支出</span>
+          <span>{{ summary.balanceVisible ? '絞り込み結果 支出' : (summary.expenseScope === 'all' ? '全員の支出合計（絞り込み）' : '私の支出合計') }}</span>
           <strong class="accounting-number">
             {{ summaryLoaded || !summaryLoading ? formatAccountingNumber(summary.totalExpense) : '読込中' }}
           </strong>
         </div>
-        <div class="accounting-summary-pill">
+        <div v-if="summary.balanceVisible" class="accounting-summary-pill">
           <span>絞り込み結果 収支</span>
           <strong class="accounting-number">
             {{ summaryLoaded || !summaryLoading ? formatAccountingNumber(summary.filteredNet) : '読込中' }}
           </strong>
         </div>
-        <div class="accounting-summary-pill">
+        <div v-if="summary.balanceVisible" class="accounting-summary-pill">
           <span>期間実際残高</span>
           <strong class="accounting-number">
             {{ summaryLoaded || !summaryLoading ? formatAccountingNumber(summary.balance) : '読込中' }}
@@ -451,6 +456,9 @@ onMounted(() => {
         <el-table-column prop="payment_method" label="支払方法" min-width="130" />
         <el-table-column prop="expense_target" label="費用対象" min-width="160" />
         <el-table-column prop="note" label="備考" min-width="220" show-overflow-tooltip />
+        <el-table-column v-if="summary.expenseScope === 'all'" label="所有者" min-width="110">
+          <template #default="{ row }">{{ row.owner_name || row.owner_username || '未設定' }}</template>
+        </el-table-column>
         <el-table-column label="精算済み" width="110">
           <template #default="{ row }">{{ formatBoolean(row.is_reimbursed) }}</template>
         </el-table-column>

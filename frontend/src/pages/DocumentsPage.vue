@@ -3,6 +3,12 @@ import { onMounted, ref } from 'vue'
 import { listDocuments } from '../api/documents'
 import type { Document } from '../types/api'
 import { formatDateTime } from '../utils/date'
+import http from '../services/http'
+
+// 受保護エンドポイント（権限確認・監査つき）。同一オリジンのためセッション Cookie で認証される。
+const apiBase = (http.defaults.baseURL || '/api/').replace(/\/$/, '')
+const downloadUrl = (doc: Document) => `${apiBase}/documents/${doc.id}/download/`
+const previewUrl = (doc: Document) => `${apiBase}/documents/${doc.id}/preview/`
 
 const loading = ref(false)
 const errorMessage = ref('')
@@ -49,6 +55,16 @@ onMounted(() => {
         <el-table-column prop="is_visible_to_client" label="顧客表示" width="110" />
         <el-table-column label="更新日時" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
+        </el-table-column>
+        <el-table-column label="ファイル" width="170">
+          <template #default="{ row }">
+            <template v-if="row.file_url">
+              <el-link :href="previewUrl(row)" target="_blank" rel="noopener" type="primary">プレビュー</el-link>
+              <el-divider direction="vertical" />
+              <el-link :href="downloadUrl(row)" type="primary">ダウンロード</el-link>
+            </template>
+            <span v-else>-</span>
+          </template>
         </el-table-column>
       </el-table>
       <div class="table-footer">

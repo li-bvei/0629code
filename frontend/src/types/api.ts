@@ -38,7 +38,14 @@ export interface ResidenceStatusMasterPayload {
   is_active?: boolean
 }
 
+// 顧客・会社の表現レベル（後端 BusinessAccessPolicy が決める）
+//   full: 全項目 / masked: 証件番号・口座を伏せ字 / basic: 案件なし顧客の基本情報のみ / minimal: 重複防止用の最小情報
+export type PartyAccessLevel = 'full' | 'masked' | 'basic' | 'minimal'
+
 export interface Customer {
+  access_level?: PartyAccessLevel
+  has_active_case?: boolean
+  responsible_employee_names?: string[]
   id: number
   name: string
   name_kana: string
@@ -859,7 +866,9 @@ export interface Document {
   case_number: string
   title: string
   file: string | null
+  // 受保護ダウンロード API の URL（公開 /media/ URL ではない）
   file_url: string
+  preview_url?: string
   file_name: string
   file_path: string
   file_size: number | null

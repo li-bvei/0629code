@@ -34,6 +34,7 @@ import TaxRenewalVouchersPage from '../pages/TaxRenewalVouchersPage.vue'
 import TimelinesPage from '../pages/TimelinesPage.vue'
 import VisaReturnApplicationsPage from '../pages/VisaReturnApplicationsPage.vue'
 import VoucherPlaceholderPage from '../pages/VoucherPlaceholderPage.vue'
+import { landingPath, requiredPermissionFor } from '../utils/access'
 import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
@@ -293,6 +294,13 @@ router.beforeEach(async (to) => {
       path: '/login',
       query: { redirect: to.fullPath },
     }
+  }
+
+  // 業務権限の無い画面へは入れない（表示上の制御。API 側でも必ず拒否される）。
+  const required = requiredPermissionFor(to.path)
+  if (required && !auth.can(required)) {
+    const landing = landingPath(auth.can)
+    return landing === to.path ? true : { path: landing }
   }
 
   return true

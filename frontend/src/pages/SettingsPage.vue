@@ -16,7 +16,8 @@ import type { SystemUser, SystemUserCreatePayload } from '../types/api'
 import { formatDateTime } from '../utils/date'
 
 const auth = useAuthStore()
-const isSuperUser = computed(() => Boolean(auth.user?.is_superuser))
+// アカウント管理は superuser かつ authentication.manage_users の明示付与が必要（後端でも同じ判定）。
+const isSuperUser = computed(() => auth.canManageUsers)
 
 // --- パスワードを変更（本人） ---
 const passwordFormRef = ref<FormInstance>()

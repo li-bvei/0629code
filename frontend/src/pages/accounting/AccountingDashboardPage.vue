@@ -54,20 +54,35 @@ const getChartBackground = (items: ExpenseTargetChartItem[]) => {
   return `conic-gradient(${segments.join(', ')})`
 }
 
-const summaryCards = computed<SummaryCard[]>(() => [
-  { label: '本月支出合計', value: formatCurrency(dashboard.value.monthly_expense_total) },
-  { label: '本月収入来源合計', value: formatCurrency(dashboard.value.monthly_income_source_total) },
-  { label: '本月用車公里数', value: formatDistance(dashboard.value.monthly_vehicle_km_total) },
-  { label: '本月未精算金額', value: formatCurrency(dashboard.value.monthly_unreimbursed_total) },
-  {
-    label: '账面剩余金额',
-    value: formatCurrency(dashboard.value.current_balance),
-    accent: true,
-    danger: balanceValue.value < 0,
-  },
-  { label: '全部支出合計', value: formatCurrency(dashboard.value.total_expense_amount) },
-  { label: '全部収入来源合計', value: formatCurrency(dashboard.value.total_income_source_amount) },
-])
+// 残高・収入・車両は後端が権限に応じて返したときだけ表示する。
+// 個人の支出合計を会社の残高のように見せない。
+const expenseScopeLabel = computed(() => (dashboard.value.expense_scope === 'all' ? '全員の' : '私の'))
+const summaryCards = computed<SummaryCard[]>(() => {
+  const d = dashboard.value
+  const cards: SummaryCard[] = [
+    { label: `本月${expenseScopeLabel.value}支出合計`, value: formatCurrency(d.monthly_expense_total) },
+  ]
+  if (d.income_visible) {
+    cards.push({ label: '本月収入来源合計', value: formatCurrency(d.monthly_income_source_total ?? 0) })
+  }
+  if (d.vehicle_visible) {
+    cards.push({ label: '本月用車公里数', value: formatDistance(d.monthly_vehicle_km_total ?? 0) })
+  }
+  cards.push({ label: '本月未精算金額', value: formatCurrency(d.monthly_unreimbursed_total) })
+  if (d.balance_visible) {
+    cards.push({
+      label: '账面剩余金额',
+      value: formatCurrency(d.current_balance ?? 0),
+      accent: true,
+      danger: balanceValue.value < 0,
+    })
+  }
+  cards.push({ label: `${expenseScopeLabel.value}支出合計（全期間）`, value: formatCurrency(d.total_expense_amount) })
+  if (d.income_visible) {
+    cards.push({ label: '全部収入来源合計', value: formatCurrency(d.total_income_source_amount ?? 0) })
+  }
+  return cards
+})
 
 const chartPercent = (item: ExpenseTargetChartItem, items: ExpenseTargetChartItem[]) => {
   const total = getChartTotal(items)
@@ -167,7 +182,7 @@ onMounted(() => {
           <p v-else class="empty-text">データがありません</p>
         </el-card>
 
-        <el-card shadow="never" class="accounting-card">
+        <el-card v-if="dashboard.income_visible" shadow="never" class="accounting-card">
           <template #header>最近収入来源</template>
           <el-table v-if="dashboard.recent_income_sources.length" :data="dashboard.recent_income_sources" stripe>
             <el-table-column label="日付" width="110">
@@ -181,7 +196,7 @@ onMounted(() => {
           <p v-else class="empty-text">データがありません</p>
         </el-card>
 
-        <el-card shadow="never" class="accounting-card">
+        <el-card v-if="dashboard.vehicle_visible" shadow="never" class="accounting-card">
           <template #header>最近用車記録</template>
           <el-table v-if="dashboard.recent_vehicle_usages.length" :data="dashboard.recent_vehicle_usages" stripe>
             <el-table-column label="日付" width="110">

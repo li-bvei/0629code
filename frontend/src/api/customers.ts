@@ -19,7 +19,21 @@ export const listCustomers = async (params?: ListParams) => {
 
 export const getCustomer = async (id: number) => {
   const response = await http.get<CustomerDetail>(`/customers/${id}/`)
-  return response.data
+  // 基本情報レベル（案件の無い顧客など）では関連データが返らないため既定値で補う。
+  const data = response.data
+  return {
+    ...data,
+    related_cases: data.related_cases ?? [],
+    related_companies: data.related_companies ?? [],
+    recent_activities: data.recent_activities ?? [],
+    summary: data.summary ?? {
+      active_cases_count: 0,
+      historical_cases_count: 0,
+      family_count: 0,
+      company_count: 0,
+      primary_case: null,
+    },
+  } as CustomerDetail
 }
 
 export const matchCustomers = async (payload: CustomerMatchPayload) => {
