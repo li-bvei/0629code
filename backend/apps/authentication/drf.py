@@ -9,6 +9,7 @@ from django.http import Http404
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied
 from rest_framework.permissions import SAFE_METHODS, BasePermission
+from rest_framework.routers import APIRootView, DefaultRouter
 
 from .access_policy import ALLOW, NOT_FOUND, BusinessAccessPolicy
 
@@ -153,6 +154,12 @@ def business_api_view(methods, resource, action=None):
                 _audit_denied(request, resource, access_action, reason='module')
                 raise PermissionDenied()
             request.business_policy = policy
+            if resource == 'diagnostics':
+                from apps.audit.services import record
+
+                record(module='system', action='diagnostic_run', request=request,
+                       via_permission='authentication.use_diagnostics',
+                       extra={'view': func.__name__, 'method': request.method})
             return func(request, *args, **kwargs)
 
         view = api_view(methods)(inner)
@@ -173,3 +180,13 @@ def exempt_api_view(methods, reason):
         return view
 
     return decorator
+
+
+class ExemptAPIRootView(APIRootView):
+    access_exempt = 'DRF の API ルート一覧（エンドポイント名のみで業務データを返さない）'
+
+
+class BusinessRouter(DefaultRouter):
+    """API ルート一覧に access_exempt を明示した DefaultRouter。"""
+
+    APIRootView = ExemptAPIRootView

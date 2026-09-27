@@ -10,6 +10,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from apps.authentication.drf import business_api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -210,14 +211,12 @@ def seifu_notice_pdf_response(items, title='添加文字'):
     return response
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'seifu')
 def seifu_notice_template(request):
     return Response(template_payload())
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'seifu')
 def seifu_notice_preview(request):
     try:
         page_number = int(request.query_params.get('page', '1'))
@@ -239,8 +238,7 @@ def seifu_notice_preview(request):
         doc.close()
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['POST'], 'seifu')
 def seifu_notice_generate(request):
     try:
         return seifu_notice_pdf_response(request.data.get('items'), title='添加文字')

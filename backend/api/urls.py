@@ -1,5 +1,6 @@
-from rest_framework.routers import DefaultRouter
+from django.conf import settings
 from django.urls import include, path
+from apps.authentication.drf import BusinessRouter
 
 from apps.cases.views import (
     AcquisitionPlacePresetViewSet,
@@ -25,7 +26,7 @@ from apps.tasks.views import TaskViewSet
 from apps.timelines.views import TimelineViewSet
 from .views import DashboardDeadlinesView, DashboardSummaryView, ReceptionCreateView
 
-router = DefaultRouter()
+router = BusinessRouter()
 router.register('users', SystemUserViewSet, basename='system-user')
 router.register('residence-status-masters', ResidenceStatusMasterViewSet, basename='residence-status-master')
 router.register('customers', CustomerViewSet, basename='customer')
@@ -54,8 +55,13 @@ urlpatterns = [
     *router.urls,
     path('accounting/', include('apps.accounting.urls')),
     path('case-checklist-deletion-history/', case_checklist_deletion_history, name='case-checklist-deletion-history'),
-    path('case-checklist-demo/seed/', seed_case_checklist_demo_view, name='case-checklist-demo-seed'),
     path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard-summary'),
     path('dashboard/deadlines/', DashboardDeadlinesView.as_view(), name='dashboard-deadlines'),
     path('receptions/', ReceptionCreateView.as_view(), name='reception-create'),
 ]
+
+# 開発用（デモデータ生成）。本番（ENABLE_DEV_TOOLS=False）では URL 自体を登録しない。
+if settings.ENABLE_DEV_TOOLS:
+    urlpatterns.append(
+        path('case-checklist-demo/seed/', seed_case_checklist_demo_view, name='case-checklist-demo-seed'),
+    )

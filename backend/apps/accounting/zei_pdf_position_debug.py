@@ -10,6 +10,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from apps.authentication.drf import business_api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -190,8 +191,7 @@ def get_template_or_error(template_key):
     return template
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'diagnostics')
 def zei_pdf_position_templates(request):
     rows = []
     for template in get_tax_renewal_templates():
@@ -219,8 +219,7 @@ def zei_pdf_position_templates(request):
     return Response(rows)
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'diagnostics')
 def zei_pdf_position_records(request):
     """位置調整ツールの「実データ」選択肢一覧。既存の一覧 API と同じデータだが、
     このツール専用に軽量なフィールドだけ返す。"""
@@ -241,8 +240,7 @@ def zei_pdf_position_records(request):
     return Response(rows)
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'diagnostics')
 def zei_pdf_position_record_data(request):
     """指定したレコードを実際の PDF 生成と同じロジック（build_record_data）で解決し、
     位置調整ツールのプレビューに使えるフィールド値一式を返す。"""
@@ -264,8 +262,7 @@ def zei_pdf_position_record_data(request):
     })
 
 
-@api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET', 'POST'], 'diagnostics')
 def zei_pdf_position_mapping(request):
     if request.method == 'GET':
         template_key = request.query_params.get('template_key')
@@ -292,8 +289,7 @@ def zei_pdf_position_mapping(request):
     return Response({'detail': 'saved', 'backup': backup_name, 'mapping': normalized})
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'diagnostics')
 def zei_pdf_position_preview(request):
     template_key = request.query_params.get('template_key')
     try:
@@ -315,8 +311,7 @@ def zei_pdf_position_preview(request):
         doc.close()
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['POST'], 'diagnostics')
 def zei_pdf_position_test_pdf(request):
     template_key = request.data.get('template_key')
     try:

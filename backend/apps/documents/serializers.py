@@ -6,6 +6,7 @@ from .models import Document
 class DocumentSerializer(serializers.ModelSerializer):
     case_number = serializers.CharField(source='case.case_number', read_only=True)
     file_url = serializers.SerializerMethodField()
+    preview_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -16,6 +17,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             'title',
             'file',
             'file_url',
+            'preview_url',
             'file_name',
             'file_path',
             'file_size',
@@ -29,6 +31,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             'id',
             'case_number',
             'file_url',
+            'preview_url',
             'file_name',
             'file_path',
             'file_size',
@@ -38,12 +41,28 @@ class DocumentSerializer(serializers.ModelSerializer):
         ]
 
     def get_file_url(self, obj):
+        """受保護ダウンロード API の URL。公開の /media/ URL は返さない。"""
         if not obj.file:
             return ''
+        return self._api_url(obj, 'download')
+
+    def get_preview_url(self, obj):
+        if not obj.file:
+            return ''
+        return self._api_url(obj, 'preview')
+
+    def _api_url(self, obj, kind):
+        from django.urls import reverse
+
+        path = reverse(f'document-{kind}', kwargs={'pk': obj.pk})
         request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(obj.file.url)
-        return obj.file.url
+        return request.build_absolute_uri(path) if request else path
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # FileField の既定表現（/media/... の公開 URL）を返さない。
+        data['file'] = data.get('file_url') or ''
+        return data
 
     def set_file_metadata(self, data, uploaded_file):
         data['file_name'] = uploaded_file.name

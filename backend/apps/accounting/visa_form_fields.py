@@ -7,6 +7,7 @@ import fitz
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
+from apps.authentication.drf import business_api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -208,8 +209,7 @@ def inspect_form_fields():
     return result
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'diagnostics')
 def visa_form_fields(request):
     payload = inspect_form_fields()
     payload['mapping'] = load_form_field_mapping()
@@ -218,8 +218,7 @@ def visa_form_fields(request):
     return Response(payload)
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'diagnostics')
 def visa_form_fields_preview(request):
     page_number = request.query_params.get('page', '1')
     if page_number not in ('1', '2'):
@@ -240,8 +239,7 @@ def visa_form_fields_preview(request):
         doc.close()
 
 
-@api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET', 'POST'], 'diagnostics')
 def visa_form_field_mapping(request):
     if request.method == 'GET':
         return Response(load_form_field_mapping())

@@ -5,6 +5,7 @@ import fitz
 from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view
+from apps.authentication.drf import business_api_view
 from rest_framework.response import Response
 
 from .tax_renewal_templates import get_tax_renewal_templates
@@ -133,12 +134,12 @@ def numbered_sample_pdf(template_key):
         doc.close()
 
 
-@api_view(['GET'])
+@business_api_view(['GET'], 'diagnostics')
 def tax_renewal_pdf_diagnostics(request):
     return Response(diagnostics_payload())
 
 
-@api_view(['POST'])
+@business_api_view(['POST'], 'diagnostics')
 def tax_renewal_pdf_numbered_sample(request):
     template_key = request.data.get('template_key')
     try:

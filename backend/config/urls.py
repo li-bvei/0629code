@@ -1,6 +1,4 @@
 from django.contrib import admin
-from django.conf import settings
-from django.conf.urls.static import static
 from django.urls import include, path
 
 admin.site.site_header = 'Gyoseishoshi ERP Admin'
@@ -16,4 +14,5 @@ urlpatterns = [
     path('sun/api/', include('api.urls')),
 ]
 
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# MEDIA_URL（/media/）は公開しない。案件ファイルは /api/documents/{id}/download|preview/ の
+# 受保護エンドポイントからのみ取得できる（docs/SYSTEM_ARCHITECTURE.md §8）。

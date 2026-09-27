@@ -1,5 +1,6 @@
+from django.conf import settings
 from django.urls import path
-from rest_framework.routers import DefaultRouter
+from apps.authentication.drf import BusinessRouter
 
 from .visa_form_fields import visa_form_field_mapping, visa_form_fields, visa_form_fields_preview
 from .visa_position_debug import visa_position_config, visa_position_preview
@@ -32,7 +33,7 @@ from .views import (
     tax_renewal_templates,
 )
 
-router = DefaultRouter()
+router = BusinessRouter()
 router.register('expenses', ExpenseViewSet, basename='accounting-expense')
 router.register('expense-categories', ExpenseCategoryViewSet, basename='accounting-expense-category')
 router.register('income-sources', IncomeSourceViewSet, basename='accounting-income-source')
@@ -50,26 +51,32 @@ router.register('tax-renewal-agent-templates', TaxRenewalAgentTemplateViewSet, b
 
 urlpatterns = [
     path('dashboard/', dashboard, name='accounting-dashboard'),
-    path('visa-form-fields/', visa_form_fields, name='visa-form-fields'),
-    path('visa-form-fields/preview/', visa_form_fields_preview, name='visa-form-fields-preview'),
-    path('visa-form-field-mapping/', visa_form_field_mapping, name='visa-form-field-mapping'),
-    path('visa-position-debug/config/', visa_position_config, name='visa-position-debug-config'),
-    path('visa-position-debug/preview/', visa_position_preview, name='visa-position-debug-preview'),
     path('seifu-notice-pdf/template/', seifu_notice_template, name='seifu-notice-template'),
     path('seifu-notice-pdf/preview/', seifu_notice_preview, name='seifu-notice-preview'),
     path('seifu-notice-pdf/generate/', seifu_notice_generate, name='seifu-notice-generate'),
     path('tax-renewal-templates/', tax_renewal_templates, name='tax-renewal-templates'),
     path('tax-renewal-pdf-diagnostics/', tax_renewal_pdf_diagnostics, name='tax-renewal-pdf-diagnostics'),
-    path(
-        'tax-renewal-pdf-diagnostics/numbered_sample/',
-        tax_renewal_pdf_numbered_sample,
-        name='tax-renewal-pdf-numbered-sample',
-    ),
-    path('zei-pdf-position-debug/templates/', zei_pdf_position_templates, name='zei-pdf-position-debug-templates'),
-    path('zei-pdf-position-debug/mapping/', zei_pdf_position_mapping, name='zei-pdf-position-debug-mapping'),
-    path('zei-pdf-position-debug/preview/', zei_pdf_position_preview, name='zei-pdf-position-debug-preview'),
-    path('zei-pdf-position-debug/test-pdf/', zei_pdf_position_test_pdf, name='zei-pdf-position-debug-test-pdf'),
-    path('zei-pdf-position-debug/records/', zei_pdf_position_records, name='zei-pdf-position-debug-records'),
-    path('zei-pdf-position-debug/record-data/', zei_pdf_position_record_data, name='zei-pdf-position-debug-record-data'),
     *router.urls,
 ]
+
+# 開発用の PDF 座標・フォーム項目デバッグ。本番（ENABLE_DEV_TOOLS=False）では URL 自体を登録しない。
+# 開発環境でも superuser かつ authentication.use_diagnostics が必要。
+if settings.ENABLE_DEV_TOOLS:
+    urlpatterns += [
+        path('visa-form-fields/', visa_form_fields, name='visa-form-fields'),
+        path('visa-form-fields/preview/', visa_form_fields_preview, name='visa-form-fields-preview'),
+        path('visa-form-field-mapping/', visa_form_field_mapping, name='visa-form-field-mapping'),
+        path('visa-position-debug/config/', visa_position_config, name='visa-position-debug-config'),
+        path('visa-position-debug/preview/', visa_position_preview, name='visa-position-debug-preview'),
+        path('zei-pdf-position-debug/templates/', zei_pdf_position_templates, name='zei-pdf-position-debug-templates'),
+        path('zei-pdf-position-debug/mapping/', zei_pdf_position_mapping, name='zei-pdf-position-debug-mapping'),
+        path('zei-pdf-position-debug/preview/', zei_pdf_position_preview, name='zei-pdf-position-debug-preview'),
+        path('zei-pdf-position-debug/test-pdf/', zei_pdf_position_test_pdf, name='zei-pdf-position-debug-test-pdf'),
+        path('zei-pdf-position-debug/records/', zei_pdf_position_records, name='zei-pdf-position-debug-records'),
+        path('zei-pdf-position-debug/record-data/', zei_pdf_position_record_data, name='zei-pdf-position-debug-record-data'),
+        path(
+            'tax-renewal-pdf-diagnostics/numbered_sample/',
+            tax_renewal_pdf_numbered_sample,
+            name='tax-renewal-pdf-numbered-sample',
+        ),
+    ]

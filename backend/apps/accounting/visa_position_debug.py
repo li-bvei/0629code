@@ -5,6 +5,7 @@ from datetime import datetime
 import fitz
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
+from apps.authentication.drf import business_api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -33,8 +34,7 @@ def get_page_size(template_path):
     return size
 
 
-@api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET', 'POST'], 'diagnostics')
 def visa_position_config(request):
     if request.method == 'GET':
         return Response({
@@ -60,8 +60,7 @@ def visa_position_config(request):
     return Response({'detail': 'saved', 'backup': backup_path.name})
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@business_api_view(['GET'], 'diagnostics')
 def visa_position_preview(request):
     page_name = request.query_params.get('page', 'visa_1')
     template_path = TEMPLATE_PATHS.get(page_name)
