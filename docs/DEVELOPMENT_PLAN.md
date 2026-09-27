@@ -1,22 +1,24 @@
 # SUNRISE 开发计划（当前有效版本）
 
-更新时间：2026-09-16
-状态：进行中。与 `docs/AI_HANDOFF.md` 配套使用——本文件回答"接下来按什么顺序改、每一项具体改哪些文件"，`AI_HANDOFF.md` 回答"项目现在是什么状态"。两者冲突时，先看代码/测试/migration 的实际状态，再更新这两份文档。
+更新时间：2026-09-27
+状态：进行中。与 `docs/AI_HANDOFF.md`、`docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md` 配套使用——本文件回答“接下来按什么顺序实施”，需求文档回答“必须实现什么、边界是什么”，交接文档回答“项目现在是什么状态”。三者冲突时，先核对代码/测试/migration，并报告冲突后同步文档。
 
 ---
 
-## 0. 现状确认（2026-09-16）
+## 0. 现状确认（2026-09-27）
 
-- 本地 `main` 与 `origin/main` 的**已提交历史完全一致**（均指向 `bd09084`）。当前差异全部来自本地未提交的工作区改动，尚未推送，不存在"远端更新未同步"的情况。
-- 工作区改动 = 上一轮 intake/workspace 批次（详见 `docs/CHANGELOG_2026-09-06_intake_workspace.md`）+ 本次会话新完成的 P0 修复（见下文与 `docs/CHANGELOG_2026-09-16_p0_followup.md`）。
-- 尚未提交（commit）。是否现在提交、分几次提交，等本轮任务告一段落后再决定。
-- 验证状态（本次会话内，MySQL 可连接环境下实测）：
+- 本地 `main` 与 `origin/main` 提交同步，均为 `de95411ea87cc981b3874237047722e54544c0ef`，ahead/behind 为 `0/0`。
+- 工作区存在 2026-09-26/27 的**未提交文档变更**（`docs/` 下多份 Markdown）；尚未修改应用代码、migration 或数据，是否提交等用户确认。
+- 2026-09-27 只读核对发现：生产 `nginx/default.conf` 直接公开 `/media/`、`/sun/media/`，`case_documents/` 文件可绕过登录访问 → 新增 P0-A8。
+- 最近一次应用验证仍是 2026-09-16 的记录，本轮未重新运行测试：
 
 ```
-python manage.py test                    → Ran 86 tests — OK（全通过）
+python manage.py test                    → Ran 95 tests — OK（全通过，最后记录）
 python manage.py makemigrations --check  → No changes detected
 npm run build                            → 成功（vue-tsc -b && vite build）
 ```
+
+- 2026-09-26 新需求及 2026-09-27 修正已写入 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md`。其中多人权限、个人数据隔离、会计调整、现有系统文件管理、Visa 文件导入和不动产模块是计划项，尚未实施。
 
 ---
 
@@ -24,15 +26,18 @@ npm run build                            → 成功（vue-tsc -b && vite build�
 
 标记说明：✅ 已完成并有测试　🚧 进行中/部分完成　⬜ 未开始
 
-### P0 — 恢复可交付性（阻断继续扩展新功能）
+### P0 — 恢复可交付性并建立权限基础（阻断继续扩展新功能）
 
 | # | 任务 | 状态 | 备注 |
 |---|---|---|---|
 | P0-A1 | 修复"既存会社"绑定 | ✅ | 见 §2.1 |
 | P0-A2 | 收紧顾客候选匹配 strong 规则 + 电话规范化 | ✅ | 见 §2.2 |
 | P0-A3 | 新规受付服务端幂等保护 | ✅ | 见 §2.3 |
-| P0-A4 | Timeline / Case API 的对象访问范围确认与测试 | ⬜ | 见 §2.4 |
+| P0-A4 | User–Employee 关系、模块动作权限与数据范围 | 🚧 | 方案第 2 版已写（`P0_ACCESS_CONTROL_DESIGN.md`，BusinessAccessPolicy），原则已通过；代码未开始 |
 | P0-A5 | Dashboard 指标口径固化为文档 + 测试 | 🚧 | 口径已在 `AI_HANDOFF.md` §7 写明，缺显式回归测试 |
+| P0-A6 | 独立 AuditLog 与敏感操作审计 | 🚧 | 方案第 2 版 §7（独立 `apps/audit`；下载记录 denied/authorized/started），代码未开始 |
+| P0-A7 | 会计及私有记录 owner 归属与历史数据迁移方案 | 🚧 | 方案第 2 版 §9；第一批只做 Expense，回填目标 `zbry6947@gmail.com`，生产按 8 步流程并单独批准 |
+| P0-A8 | `/media/` 未鉴权公开风险：改为 Django 受保护下载 | 🚧 | 方案第 2 版 §8：先满足最低权限条件和引用核对，再切换 nginx；不采用“登录即可下载”过渡方案；代码和 nginx 未改 |
 
 ### P1 — 案件工作台闭环
 
@@ -56,8 +61,23 @@ npm run build                            → 成功（vue-tsc -b && vite build�
 | P2-C4 | 全局搜索 `/api/search/?q=` | ⬜ |
 | P2-C5 | 关联案件创建、公司详情扩展 | ⬜ |
 | P2-C6 | 前端路由级 lazy loading | ⬜ |
+| P2-C7 | 支出分类手动输入、规范化与本人历史推荐 | ⬜ |
+| P2-C8 | 个人报销按 owner 隔离并保持简单登记 | ⬜ | 不新增审核、支付或入账流程 |
+| P2-C9 | Checklist/Document 现有系统文件管理 | ⬜ | 不连接或迁移 Google Drive；第一阶段不做完整版本管理 |
+| P2-C10 | Visa CSV/XLSX 导入、校验与批量 PDF | ⬜ |
+| P2-C11 | 报价/契约/请求/领收帐票分别完善 | ⬜ |
 
-暂缓（等业务决策，不在本计划范围内推进）：客户 Portal、税务证明剩余 6 份 PDF 字段映射、年金 PDF 被扶养人数据结构、真实数据 Customer 合并、Checklist 模板内容审阅、清風合格通知書业务化、通知/邮件/日历/电子签名。
+### P3 — 不动产业务模块
+
+| # | 任务 | 状态 | 备注 |
+|---|---|---|---|
+| P3-D1 | 确认租赁/买卖范围、法定台账字段和金额字段含义 | ⬜ | 只确认主表三个金额列；忽略 `强哥` 表 |
+| P3-D2 | 新建独立 `real_estate` 模块、列表、详情和简易新规输入 | ⬜ | 不并入 Case/Accounting |
+| P3-D3 | 保存期限、年度关闭、锁定、更正、权限和审计 | ⬜ | 上线前再次核对有效法令 |
+| P3-D4 | `LIST.xlsx` dry-run、人工确认、正式迁移和对账 | ⬜ | 保留原文件，可重复执行、可回滚 |
+| P3-D5 | 独立内部利润分配功能 | ⬜ | 不读取 `强哥` 表，不进入法定台账 |
+
+暂缓（等业务决策，不在本计划范围内推进）：客户 Portal、税务证明剩余 6 份 PDF 字段映射、年金 PDF 被扶养人数据结构、真实数据 Customer 合并、清風合格通知書业务化、通知/邮件/日历/电子签名。Checklist 模板内容审阅已纳入 P2-C9，不再属于完全暂缓项。
 
 ---
 
@@ -106,14 +126,43 @@ npm run build                            → 成功（vue-tsc -b && vite build�
 
 **范围控制**：这个幂等机制目前只服务于 `/api/receptions/`，没有推广到其它写接口。如果后续其它接口也出现重复提交问题，按同样模式单独评估，不要直接复用同一张表存放不同语义的幂等记录。
 
-### 2.4 P0-A4：对象访问范围确认 —— ⬜
+### 2.4 P0-A4：User–Employee、模块权限与数据范围 —— ⬜
 
-**背景**：`docs/PROJECT.md` §5 明确"MVP 阶段不设计复杂权限矩阵"，所以这一项**不是新增权限系统**，而是：
-1. 确认现状：任何登录用户（`IsAuthenticated`）能否读写任意 Case 的 Timeline / Checklist / 状态变更——预期现状就是"能"，这是当前 MVP 阶段的既定设计，不是 bug。
-2. 把这个现状**明确写进文档**（`docs/AI_HANDOFF.md` 或 `docs/CODING_RULES.md`），避免后续 AI 或开发者误以为存在对象级权限而依赖它。
-3. 补一条测试，锁定这个已知行为（防止未来无意中引入部分权限检查导致行为不一致、半吊子权限的情况）。
+**需求变化**：2026-09-26 用户明确要求系统未来由多人同时使用，普通用户只能处理自己的内容，管理员按模块授予查看/修改能力。因此旧版“只确认所有登录用户均可访问、不新增权限系统”的计划已经失效。
 
-**不要做**：不要在此任务里顺手引入 per-case 权限、角色系统——这属于未来独立评估的范围（`ROADMAP.md` "Out of Scope"）。
+**实施前先提交小方案确认**：
+
+1. 盘点现有 `User`、`Employee`、认证 API、各模块 queryset 和对象写接口，建立一对一映射及历史账号处理表。
+2. 定义最小权限模型：模块动作（查看/新建/修改/归档/导出/设置）+ 数据范围（`own`/`assigned`/`all`）。仅有真实审批业务的其他模块再单独扩展审批权限；个人报销不引入审批。暂不引入多租户或复杂组织树。
+3. 明确各模型的 owner/assignee/created_by/updated_by 来源；Customer/Company 的基础搜索与敏感字段权限分开设计。
+4. 权限必须覆盖列表、详情、PATCH/DELETE、专用 action、批量操作、导出和文件下载；不能只做菜单隐藏。
+5. 增加 A 用户、B 用户、会计管理员、系统管理员和未登录用户的矩阵测试，确保直接请求 ID 也无法越权。
+6. 与 P0-A6 AuditLog、P0-A7 历史数据归属一起设计，避免先加权限再重复迁移。
+
+**范围控制**：保留现有 app 边界，优先扩展 authentication/employees 和可复用 permission/filter 基础；不得把所有领域数据搬入认证模块，也不为每个用户建立独立数据库。
+
+**2026-09-27 已确认的方案依据**：
+
+- 账号（2026-09-27 用户确认最终映射；生产按 username 匹配）：`zbry6947@gmail.com` 李 ↔ Employee「李」，唯一系统超级管理员、唯一初始 accounting_admin、受保护账号，会计三项全体权限；`jiao` 焦 ↔ 新建 Employee「焦」，业务管理员，初始 `expense_view_all`（无 change_all/export_all，无其他会计模块）；`zywwind@gmail.com` 周 ↔ Employee「周」，同焦；Employee 3 NAING 无账号；User 4 localdev 为本地开发账号，不关联、不授权。现在不修改任何 `is_superuser`；焦、周降级必须在关联、角色、回归测试、李权限确认、回滚方案都完成后单独批次执行。
+- Customer/Company：具有案件业务权限的员工可搜索最小识别信息；详情、敏感字段、文件、修改按 `own`/`assigned`/`all`。
+- 会计：`expense_view_all`/`change_all`/`export_all` 初期全部授予李；焦、周只有 `expense_view_all`（可跨用户只读查看 Expense，不能修改或导出他人记录，不开放其他会计模块）；superuser 不自动获得任何业务权限。
+- 第一批：只对 Expense 加 `owner`/`created_by`/`updated_by` 并隔离；Income、VehicleUsage、AccountingProject 等只盘点。
+- Case：按 `responsible_employee`（assigned）控制，不用 owner；`all` 才可跨担当。
+- Document：继承关联 Case 权限；无 Case 时由上传人或明确授权控制。
+
+**P0 方案**：`docs/P0_ACCESS_CONTROL_DESIGN.md` 第 2.1 版（2026-09-27，原则已通过，尚未实施）。Q1～Q11 已由用户决定并写入方案 §4.6、§5、§8.2 等。实施按方案 §11 的批次 1～9 进行：
+
+1. 生产只读核对 + User–Employee 关联 + localdev 部署检查
+2. AuditLog + ProtectedAccount + 账号管理保护 + 权限快照；阶段 A 注册李并验证（不强制），阶段 B 单独开启 protected-admin enforcement
+3. BusinessAccessPolicy + 角色 + Expense 隔离与余额口径 + 会计其他模块的模块级限制 + 生产禁用调试端点
+4. Expense 回填
+5. Case/Customer/Company/Document 数据范围 + 受付默认担当
+6. 受保护下载（最低权限条件全部满足）
+7. 引用核对 + nginx 关闭公开 `/media/`
+8. 全矩阵回归 + 李恢复验证 + 回滚演练
+9. 焦、周降级（`is_superuser=False`、`is_staff=False`）
+
+每项数据操作（方案 §12 D1～D12）都要用户单独批准。
 
 ### 2.5 P1-B1：Case Workspace Action Bar
 
@@ -153,18 +202,48 @@ npm run build                            → 成功（vue-tsc -b && vite build�
 
 ### 2.8 P2 各项
 
-暂不展开到文件级别；等 P0/P1 收尾后再细化，避免计划文档本身过期。
+- P2-C1/C2：先补 Accounting 与 Customer/Company/Case 的可选关系，再从各记录工作台展示只读摘要和跳转；不把会计明细复制进 Case。
+- P2-C7：分类输入改为可搜索历史分类、可手输、同义词规范化建议、可按本人历史推荐，优先本地规则；推荐必须由用户确认。第一阶段保留 `Expense.category` 自由文本，不改外键、不批量清洗；保留原始输入，不自动重写历史 Expense。
+- P2-C8：每条个人报销具有 owner，普通用户仅限本人；现有 Expense 全部归当前用户。保持当前简单登记，不新增提交、审核、批准、支付、入账或退回状态。会计管理员的 `view_all`、`change_all`、`export_all` 分别控制。
+- P2-C9：扩展现有 Checklist/Document，完成系统内上传、下载、分类、案件/清单关联、文件元数据（原始名/存储名/MIME/大小/哈希/上传人/上传时间）、替换/归档/删除审计、后端权限和备份恢复规则；不建设 Google Drive 集成，也不迁移现有 Drive 文件。第一阶段不做版本树、版本比较、版本恢复。
+- P2-C10：Visa 采用 CSV/XLSX 上传、工作表选择、列映射、预览、逐行校验、幂等生成、ZIP 与错误报告；保留现有模块位置。
+- P2-C11：报价、契约、请求、领收分别维护状态和编号，但可共用帐票基础设施及统一导航入口。
+
+具体业务边界和验收以 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md` 为准；进入每一项前再补文件级设计，避免提前写死过期方案。
+
+### 2.9 P3 不动产模块
+
+- 新建独立 `real_estate` 领域，不并入 Case 或 Accounting。
+- 首屏只录入客户/当事人、物件、房间、管理公司、担当、交易类型和阶段；法定字段按流程逐步强制。
+- 先核对宅建业法台账字段、电子显示/打印、保存期限、锁定和更正规则，再确定模型与 migration。
+- `LIST.xlsx` 主表迁移必须先 dry-run。保留原值和来源行，不猜测缺失日期、担当或三个相近金额列。`强哥` 工作表已确认无用，不分析、不映射、不迁移。
+- 内部利润分配作为 P3-D5 新功能独立设计，可关联不动产交易，但不复用 `强哥` 表数据，也不写入法定宅建台账。
+- 数据模型、权限方案、迁移脚本和对账报告必须分开评审，不在一个大提交中同时完成。
+
+### 2.10 P0-A8：`/media/` 受保护下载 —— ⬜（只写方案，未经确认不改 nginx）
+
+**现状**：`nginx/default.conf` 的 `location ^~ /sun/media/`、`location ^~ /media/` 直接 `alias` 到媒体目录；`backend/config/urls.py` 另有 `static(settings.MEDIA_URL, ...)`（仅 DEBUG 生效）。结果是已知路径即可不登录下载 `case_documents/` 文件。
+
+**方案必须覆盖**（已写入 `P0_ACCESS_CONTROL_DESIGN.md` §8，推荐 X-Accel-Redirect + nginx `internal`）：
+
+- 禁止 nginx 直接公开 `/media/`、`/sun/media/` 的方式（如改为 `internal` + `X-Accel-Redirect`，或完全由 Django 流式返回），以及对比取舍；
+- Django 受保护下载/预览接口：登录校验 + Document→Case 权限继承 + 无 Case 文件的上传人/授权范围；
+- 既有文件 URL（数据库中的 `file`/`file_path`、前端硬编码链接、已生成 PDF 链接）的兼容或迁移办法；
+- 下载、预览、导出写入 AuditLog；
+- Range 请求、大文件、`Content-Disposition` 的 RFC 5987 文件名编码；
+- nginx、Django、前端、生产部署各自的回滚方案；
+- 未登录、用户 A、用户 B、担当者、管理员的下载测试。
 
 ---
 
 ## 3. 执行顺序建议
 
 1. ✅ P0-A1、P0-A2、P0-A3（已完成）
-2. P0-A4（访问范围确认+文档+测试）—— 纯确认性质，成本低，建议下一步做
-3. P0-A5（Dashboard 口径回归测试补齐）
-4. 与用户确认 P1-B2/B3 的技术方案（Next Action / Waiting 字段设计）后再动手，因为涉及新字段和跨模块统一，风险高于 A1-A5
-5. P1-B1（Action Bar）在 B3 部分落地后跟进
-6. P2 留到 P1 主线走通之后
+2. P0-A4/A6/A7/A8：先完成权限、审计、历史数据归属和 `/media/` 受保护下载的设计确认，再实施最小基础
+3. P0-A5：补 Dashboard 口径回归测试
+4. 继续现有 P1 案件工作台主线；Next Action / Waiting 字段设计仍需先确认
+5. 在权限基础可用后，按 P2-C7 → C8 → C9 → C10 → C11 的顺序逐项增强现有模块
+6. 最后进入 P3：先确认法定字段和 Excel 含义，再开发不动产模块和执行数据迁移
 
 ---
 

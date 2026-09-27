@@ -1,6 +1,6 @@
 # SUNRISE AI 交接总文档
 
-更新时间：2026-09-16
+更新时间：2026-09-27
 项目：SUNRISE 日本行政书士事务所内部业务管理系统  
 仓库：`/Users/tatsuya/Documents/Projects/0629code`
 
@@ -9,11 +9,15 @@
 ## 0. 给下一位 AI 的阅读顺序
 
 1. 先读本文件。
-2. 再读 `docs/DEVELOPMENT_PLAN.md`，确认当前任务清单和每项任务的具体修改计划。
-3. 查看 `git status` 和当前任务涉及的代码、测试、migration。
-4. 需要深入历史背景时，再读 `AI_CONTEXT.md` 和 `AI_TASK.md` 的对应章节。
-5. 需要确认产品原则、数据库或部署规则时，读取 `docs/PROJECT.md`、`docs/DATABASE.md`、`docs/CODING_RULES.md`、`docs/DEPLOY.md`。
-6. 变更细节见 `docs/CHANGELOG_2026-09-06_intake_workspace.md` 和 `docs/CHANGELOG_2026-09-16_p0_followup.md`（按日期排列，最新的在最后）；旧版审查结论见 `docs/PROJECT_AUDIT_2026-09.md`。
+2. 读 `docs/SYSTEM_ARCHITECTURE.md`：全项目唯一的架构约束，不可违反。
+3. 再读 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md`，确认最新业务要求、模块边界、权限原则和未决问题。
+4. 再读 `docs/DEVELOPMENT_PLAN.md`，确认当前任务清单和实施顺序。
+5. 查看 `git status` 和当前任务涉及的代码、测试、migration。
+6. 需要深入历史背景时，再读 `AI_CONTEXT.md` 和 `AI_TASK.md` 的对应章节。
+7. 需要确认产品原则、数据库或部署规则时，读取 `docs/PROJECT.md`、`docs/DATABASE.md`、`docs/CODING_RULES.md`、`docs/DEPLOY.md`。
+8. 变更细节见 `docs/CHANGELOG_2026-09-06_intake_workspace.md`、`docs/CHANGELOG_2026-09-16_p0_followup.md` 和后续按日期排列的记录；旧版审查结论见 `docs/PROJECT_AUDIT_2026-09.md`。
+
+文档优先级固定为：AI_HANDOFF.md（当前状态与入口）> SYSTEM_ARCHITECTURE.md（架构约束）> DEVELOPMENT_REQUIREMENTS_2026-09-26.md（业务需求）> DEVELOPMENT_PLAN.md（实施顺序）> DATABASE.md（数据结构）> CHANGELOG（历史）。
 
 代码是“已经实现了什么”的最终依据；本文件和产品文档是“应该如何继续”的依据。若代码、测试、文档冲突，先报告冲突，不要直接删除历史实现。
 
@@ -32,7 +36,7 @@
 
 - Case 是业务主线，Customer、Company、Checklist、Timeline、Document、Accounting 围绕 Case 组织。
 - Customer 是自然人的唯一身份来源；FamilyMember、CompanyStaff 尽量通过关系关联既有 Customer。
-- 当前优先保证事务所内部日常作业闭环，不扩展多租户、复杂权限、客户账号和外部集成。
+- 当前优先保证事务所内部日常作业闭环，不扩展多租户 SaaS 或客户账号；但 2026-09-26 已确认需要内部多用户权限、数据所有权和审计，这项新要求覆盖早期“暂不设计复杂权限矩阵”的结论。
 - 后端已有但前端隐藏的旧模块不要擅自删除：Task、Reminder、Document、Portal 等仍可能被后续恢复或扩展。
 
 ## 2. 技术栈与运行环境
@@ -73,13 +77,16 @@ docs/                          当前文档与历史记录
 
 ## 3. 当前工作区与验证状态
 
-本次审计时的本地提交为：
+2026-09-27 确认：
 
 ```text
-bd09084 顾客列表的家族显示整理与 Dashboard 期限提醒非表示
+local main  = de95411ea87cc981b3874237047722e54544c0ef
+origin/main = de95411ea87cc981b3874237047722e54544c0ef
+ahead/behind = 0/0
+worktree = 本地与 origin/main 提交同步，但存在未提交的文档变更（docs/ 下 2026-09-26/27 的需求、计划、交接和 CHANGELOG）
 ```
 
-GitHub 刷新结果（2026-09-16）：`origin/main` 已到 `d3a4ef5`，本地 `main` 落后 2 个提交（`b9112bc` 签证申请批量录入页面 + `d3a4ef5` 合并提交），不是同步状态。工作区也不是干净状态：共有 50 个路径变化（37 个已跟踪文件修改、13 个未跟踪路径），包含本轮 intake/workspace 功能的后端、前端、测试、migration 和文档。远端变更与本地改动同时触及 `backend/apps/accounting/tests.py`、`backend/apps/accounting/views.py`；补丁预检确认 `tests.py` 不能直接套用，必须人工合并，当前不要直接 `git pull`。
+最新提交：`de95411 fix: backend Dockerfile の apt ミラーをAliyunから既定のDebianソースに戻す`。未提交内容只有 Markdown，没有应用代码、migration 或数据变更；是否提交等用户确认。本文后续 2026-09-16 章节中关于“本地落后、存在大量未提交修改”的描述是当时的历史记录，不再代表当前状态。
 
 下一位 AI 必须先执行：
 
@@ -90,7 +97,7 @@ git diff --stat
 
 不要使用 `git reset --hard`、`git checkout --` 或批量删除来“清理”工作区。
 
-当前验证记录（2026-09-16，MySQL 可连接环境下实测）：
+最近一次完整验证记录仍为 2026-09-16；2026-09-26/27 只整理需求文档，没有修改或重新验证应用代码：
 
 | 检查 | 结果 | 说明 |
 |---|---|---|
@@ -98,9 +105,9 @@ git diff --stat
 | `python manage.py makemigrations --check --dry-run` | 无 migration 差异 | |
 | `git diff --check` | 通过 | 没有空白错误 |
 | `npm run build` | 通过 | `vue-tsc -b && vite build` 成功 |
-| 后端全量测试 | **通过** | `python manage.py test` → Ran 91 tests — OK（81 → +10：P0-A1/A2/A3 相关用例）。之前记录"沙盒因 MySQL 连接权限未能独立确认"，本次在可连接 MySQL 的环境下已实测通过，以此为准 |
-| GitHub `origin/main` 隔离构建 | 前端通过、后端测试失败 | 在临时目录展开远端代码验证：前端构建通过；后端 68 项测试中 2 failure + 2 error，仍是会计 Excel 参数、PDF 摘要与期间余额口径的旧失败。远端本身当前不是绿色基线 |
-| Markdown 结构检查 | 通过（有事实漂移） | 本地 14 份项目 Markdown 的相对链接均存在，无合并冲突标记；但 `docs/DEVELOPMENT_PLAN.md` 的“已与远端同步 / 86 tests”以及旧审查报告中的同步结论已过期，以本文件本节为准 |
+| 后端全量测试 | **通过** | `python manage.py test` → Ran 95 tests — OK。之前记录“沙盒因 MySQL 连接权限未能独立确认”，后来已在可连接 MySQL 的环境下实测通过 |
+| 2026-09-16 当时的 `origin/main` 隔离构建 | 前端通过、后端测试失败 | 当时远端代码的后端 68 项测试中有 2 failure + 2 error；此项只保留历史背景，不能用于判断 2026-09-26 当前 `origin/main`，后续应以新一轮实际验证为准 |
+| Markdown 结构检查 | 通过（2026-09-16 记录） | 后续新增文档应继续检查相对链接和冲突标记；当前 Git 状态以本节 2026-09-26 记录为准 |
 
 前端构建仍提示单个约 1.9MB 的 JS chunk，暂不阻断功能验收，但后续应做路由级拆包（`docs/DEVELOPMENT_PLAN.md` P2-C6）。
 
@@ -263,10 +270,36 @@ Case
 1. ~~修复既存公司绑定或移除误导性 UI~~ —— 已完成（2026-09-16）
 2. ~~收紧顾客匹配 strong 规则，修复电话规范化~~ —— 已完成（2026-09-16）
 3. ~~为新规受付加入幂等保护~~ —— 已完成（2026-09-16，`docs/DEVELOPMENT_PLAN.md` P0-A3）
-4. 对现有 API 和 Timeline 做权限/对象范围确认与文档化（P0-A4；注意 MVP 阶段本来就不设计复杂权限矩阵，这项是"确认现状并写清楚"而不是"新增权限系统"）—— 下一步
-5. ~~在可连接 MySQL 的环境执行全量测试~~ —— 已完成（2026-09-16，91 tests 全通过）
+4. 建立 User–Employee 关系、模块动作权限和 `own`/`assigned`/`all` 数据范围，并覆盖 API、导出和文件访问（P0-A4；2026-09-26 新要求已覆盖旧版“仅确认现状、不新增权限”的方案）—— 方案第 2 版已写（`docs/P0_ACCESS_CONTROL_DESIGN.md`，原则已通过），代码未开始；下一步等待用户批准开始批次 1
+5. 建立独立 AuditLog，以及会计/私有记录的 owner 历史数据归属方案（P0-A6/A7；第一批只做 Expense）—— 未开始
+6. ~~在可连接 MySQL 的环境执行全量测试~~ —— 已完成（2026-09-16，最后记录 95 tests 全通过）
+7. `/media/` 未鉴权公开风险：生产 nginx 直接公开 `/media/`、`/sun/media/`，改为 Django 受保护下载（P0-A8，2026-09-27 新增安全项）—— 只写方案，未经确认不改 nginx
 
-验收标准：重复受付不会静默创建重复数据（已达成）；选中的公司、顾客、担当者全部准确落到 Case（已达成）；候选匹配不会把明显的部分姓名判成 strong（已达成）；全量测试真正执行并通过（已达成）。P0 阶段只剩 A4、A5 两项确认/补测性质的任务。
+验收标准：重复受付不会静默创建重复数据（已达成）；选中的公司、顾客、担当者全部准确落到 Case（已达成）；候选匹配不会把明显的部分姓名判成 strong（已达成）；全量测试真正执行并通过（最后记录已达成）。P0 当前还包括 A4 权限、A5 指标补测、A6 审计、A7 历史数据归属、A8 文件受保护下载，不能再按旧版“两项确认任务”理解。
+
+2026-09-27 P0 方案依据（详见 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md` §9.5 与 `docs/DEVELOPMENT_PLAN.md` §2.4）：会计 `expense_change_all`/`expense_export_all` 初期只授予李，`expense_view_all` 授予李、焦、周，superuser 不自动获得任何业务权限；Case 按担当 Employee 控制；Document 继承 Case 权限。
+
+**P0 访问控制方案**：`docs/P0_ACCESS_CONTROL_DESIGN.md`（2026-09-27 第 2.1 版；原则已通过，**尚未实施**）。已确认的账号映射（生产按 username 匹配，不按本地 ID）：
+
+| username | Employee | 目标身份 | 初始业务权限要点 |
+|---|---|---|---|
+| `zbry6947@gmail.com`（李） | 「李」 | 唯一系统超级管理员、唯一初始 accounting_admin、受保护账号 | 全部明确业务权限；expense view/change/export_all；manage_users |
+| `jiao`（焦） | 待新建「焦」 | 业务管理员（降级前仍为 superuser/staff） | expense_view_all 有；change_all/export_all 无；其他会计模块无；案件可跨担当查看，只能修改本人担当 |
+| `zywwind@gmail.com`（周） | 「周」 | 业务管理员（同上） | 同焦 |
+| — | 「NAING」 | 无账号 | 不处理 |
+| `localdev` | 不关联 | 本地开发账号 | 生产存在并启用时部署检查失败；现在不修改 |
+
+方案核心：
+
+- **BusinessAccessPolicy**：只读取 `Permission` 表中通过 Group 和直接授权得到的显式权限，完全不读取 `is_superuser`；禁止在业务判定中使用 `has_perm`/`get_all_permissions`/`DjangoModelPermissions`（Django 对 active superuser 自动放行或返回全部权限）。所有 ViewSet、专用 action、导出、下载、Dashboard、图表共用同一策略和规则注册表，并由覆盖测试强制接入。Admin 和服务器维护仍用 `is_superuser`/`is_staff`。
+- **受保护账号**：李通过专用表 `authentication_protected_accounts`（FK，由服务器命令管理）标识，不靠姓名，也不硬编码 ID；它的 username 不能经 Web 修改。
+- **硬性顺序**：批次 1～8（关联、审计与受保护账号、策略与 Expense 隔离、回填、数据范围、受保护下载、nginx 切换、全矩阵和恢复演练）全部通过后，才在批次 9 单独把焦、周改为 `is_superuser=False`、`is_staff=False`。任何时候都必须保证李能登录并恢复其他账号。
+- **/media/**：不采用“任何登录用户可下载”的过渡方案；下载接口必须先完成对象范围、担当或 `document_download_all`、路径安全、审计和四类账号测试，才能切换 nginx。审计动作为 `download_denied`/`download_authorized`/`download_started`，不记录 completed。
+- **ProtectedAccount 两阶段启用**（方案 §3.3）：阶段 A 建表和命令，Admin 保护暂不强制，注册李并验证登录、Admin 和恢复命令；阶段 B 显式开启 `PROTECTED_ADMIN_ENFORCEMENT`，Admin 只允许 ProtectedAccount。阶段 B 后保护表为空时，生产部署检查失败，Admin 不退回“允许所有 superuser”，服务器命令仍能注册和恢复李。
+- **localdev**：生产发现时先只读报告，批准后只能停用，不自动删除；部署检查先 warning，确认停用后改为 enforce。
+- **策略白名单**：受控模型只允许在策略内部、migration、management command、测试和 Admin 中直接查询；ViewSet、Dashboard、导出、图表、余额、copy-expenses 一律经过策略。
+- **需用户单独批准的数据操作**：D1～D12，见方案 §12（D4 为阶段 A 注册李，D5 为阶段 B 开启 enforcement，D12 为 localdev 停用）。
+- 以上全部属于“已确认但尚未实现”；当前代码和数据库中不存在这些结构。
 
 ### P1：完成案件工作台
 
@@ -278,14 +311,25 @@ Case
 6. Checklist 与文件/资料受领联动。
 7. RemoteSelect 请求竞态、错误状态和初始值的测试。
 
-### P2：数据和财务闭环
+### P2：数据和财务闭环（编号与 `docs/DEVELOPMENT_PLAN.md` 一致）
 
-1. Income/Expense 与 Customer、Company、Case 的可选 FK。
-2. 从 Case 查看账务，从账务回到 Case。
-3. 归档完善：`archived_by`、理由、恢复、审计和删除限制。
-4. 全局搜索、关联案件、公司详情扩展。
-5. 客户 Portal 和文件权限。
-6. 前端路由级 lazy loading，降低 bundle 大小。
+- P2-C1/C2：Income/Expense 与 Customer、Company、Case 的可选 FK；从 Case 查看账务，从账务回到 Case。
+- P2-C3：归档完善：`archived_by`、理由、恢复、审计和删除限制。
+- P2-C4/C5：全局搜索、关联案件、公司详情扩展。
+- P2-C6：前端路由级 lazy loading，降低 bundle 大小。
+- P2-C7：支出分类搜索历史、手动输入、同义词规范化建议、本人历史推荐，保存前用户确认；保留 `Expense.category` 自由文本和原始输入，不改外键、不批量清洗。
+- P2-C8：个人报销按 owner 隔离，保持简单登记，不新增审核、支付或入账流程。
+- P2-C9：完善现有 Checklist/Document 文件管理（上传、下载、分类、关联、元数据、替换/归档/删除审计、后端鉴权、备份恢复）；不连接或迁移 Google Drive；第一阶段不做完整版本管理。Checklist 模板内容去重与业务审阅也并入此项。
+- P2-C10：Visa CSV/XLSX 导入、校验与批量 PDF。
+- P2-C11：报价、契约、请求、领收帐票分别完善。
+
+### P3：不动产业务模块
+
+- P3-D1：确认租赁/买卖范围、法定台账字段和 `LIST.xlsx` 主表三个金额列含义（忽略 `强哥` 表）。
+- P3-D2：新建独立 `real_estate` 模块、列表、详情和简易新规输入。
+- P3-D3：保存期限、年度关闭、锁定、更正、权限和审计。
+- P3-D4：`LIST.xlsx` 主表 dry-run、人工确认、正式迁移和对账。
+- P3-D5：独立内部利润分配功能，不读取 `强哥` 表，不进入法定台账。
 
 ### 明确暂缓或等待业务决策
 
@@ -293,9 +337,9 @@ Case
 - 年金 PDF 的被扶养人详细信息数据结构。
 - 真实生产数据的 family link 回填和重复 Customer 合并。
 - 8/9 件案件被归入“その他”的业务分类确认。
-- Checklist 模板内容去重和业务审阅。
 - 清風合格通知书后续业务化。
 - 客户 Portal、通知、邮件、日历、电子签名。
+- Google Drive 迁移、索引或集成（本阶段明确不做）。
 
 ## 9. 推荐测试矩阵
 
@@ -398,6 +442,8 @@ backend/api/migrations/0001_initial.py   # api 首次注册为正式 app，含 R
 | 文档 | 用途 | 使用方式 |
 |---|---|---|
 | `docs/AI_HANDOFF.md` | 当前唯一 AI 交接入口 | 每次任务先读 |
+| `docs/SYSTEM_ARCHITECTURE.md` | 全项目唯一的架构约束（不可改变的约束、模块边界、数据所有权、策略、禁止模式） | 第二个读；任何实现不得违反 |
+| `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md` | 2026-09-26 已确认的完整业务要求、模块边界、权限和验收原则 | 读完交接文档后立即阅读；实施不得与其冲突 |
 | `docs/DEVELOPMENT_PLAN.md` | 当前开发计划：任务清单 + 每项的文件级修改计划 + 执行顺序 | 决定"接下来改什么、怎么改"时读 |
 | `AI_CONTEXT.md` | 产品、帐票、历史实现细节 | 需要深入背景时查对应章节 |
 | `AI_TASK.md` | 历史任务日志和旧规格 | 只读相关历史，不把 Legacy 当现行需求 |
@@ -408,6 +454,13 @@ backend/api/migrations/0001_initial.py   # api 首次注册为正式 app，含 R
 | `docs/DEPLOY.md` | 生产部署和 migration 说明 | 上线前阅读 |
 | `docs/CHANGELOG_2026-09-06_intake_workspace.md` | 2026-09-06 批次详细变更列表 | 核对该批次代码 |
 | `docs/CHANGELOG_2026-09-16_p0_followup.md` | 2026-09-16 批次详细变更列表 | 核对该批次代码 |
+| `docs/CHANGELOG_2026-09-26_requirements.md` | 2026-09-26 需求与交接文档整理记录 | 核对本次文档变更 |
+| `docs/CHANGELOG_2026-09-27_requirements_clarification.md` | 2026-09-27 报销、文件管理和利润分配范围修正 | 以此确认最新范围 |
+| `docs/CHANGELOG_2026-09-27_p0_decisions_docs.md` | 2026-09-27 P0 方案依据确认与文档冲突修正 | 核对 P0 前提和 `/media/` 安全项 |
+| `docs/P0_ACCESS_CONTROL_DESIGN.md` | P0 访问控制设计方案（账号映射、BusinessAccessPolicy、Expense 隔离、AuditLog、受保护下载、批次与回滚、需批准的数据操作） | 实施 P0-A4/A6/A7/A8 前必读；第 2 版，原则已通过，尚未实施 |
+| `docs/CHANGELOG_2026-09-27_p0_access_design.md` | 2026-09-27 P0 方案编写记录（第 1 版） | 核对本次文档变更 |
+| `docs/CHANGELOG_2026-09-27_p0_access_design_v2.md` | 2026-09-27 P0 方案第 2 版修订记录 | 核对 Q1～Q11 决定与技术修正 |
+| `docs/CHANGELOG_2026-09-27_p0_docs_sync.md` | 2026-09-27 需求/DATABASE/README 同步与 ProtectedAccount 两阶段启用 | 核对本次文档变更 |
 | `docs/PROJECT_AUDIT_2026-09.md` | 2026-09 审查报告 | 查看数据与风险背景 |
 
 ## 13. AI 修改规则
@@ -421,7 +474,9 @@ backend/api/migrations/0001_initial.py   # api 首次注册为正式 app，含 R
 - 完成代码变更后至少运行相关测试、`manage.py check`、`makemigrations --check --dry-run` 和 `npm run build`；若环境阻塞，明确记录阻塞原因。
 - 不要把“构建成功”写成“端到端验证通过”。
 
-## 14. 顾客页面 CRM 化改造方案与首轮实现（2026-09-16）
+## 14. 顾客页面 CRM 化改造方案与首轮实现（2026-09-16，历史记录）
+
+> 本章为 2026-09-16 的历史记录，保留作为设计背景。其中关于 Git 状态（落后远端、大量未提交修改）、Phase 0 合并步骤和测试数字的描述只代表当时状态；当前状态以 §3 和 §8 为准。
 
 ### 14.1 本次审计边界与结论
 
@@ -673,3 +728,37 @@ Smart Summary
 - 当前仍保留后端既有 `FamilyMember.family_customer -> Customer` 数据结构，以避免在数据类型方案尚未讨论清楚前进行 migration 或破坏既有案件/关系数据。
 
 后续讨论重点应放在“人物主档”和“业务客户身份”是否需要拆分：例如独立 Person 主档、Customer/Applicant 角色、FamilyRelationship 关系表，以及 CompanyStaff/Representative 如何复用同一 Person。用户确认数据类型方案之前，不主动进行模型拆分或迁移。
+
+## 15. 2026-09-26 新开发要求与 2026-09-27 修正摘要
+
+详细、具有约束力的需求见 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md`。本节只保留接手时必须知道的摘要，不能代替完整文档。
+
+### 15.1 已确认原则
+
+- 尽可能保持当前大结构；各业务模块独立保留，通过关系、摘要和跳转协作，不合并成一个万能模块。
+- Case 继续是行政书士案件主线；保留 13 个状态、受付、Checklist、Timeline、Document、Task、Reminder 和 Portal 方向。
+- 会计模块独立保留，只做内部细微调整；不得把“精算不常用”理解成删除会计。
+- 新增内部多用户权限、记录所有权和 AuditLog。普通用户 A 默认不得查看或修改用户 B 的私有业务数据；跨用户查看、修改和导出分别授权。个人报销不设审批流程。
+- 建立 User–Employee 明确关系。前端隐藏不能代替后端 queryset、对象、导出和文件权限。
+- 支出分类支持搜索、手动输入和基于本人历史的本地推荐；推荐结果必须由用户确认。
+- 个人报销按人员隔离；现有 Expense 已确认全部属于当前用户本人。报销只做简单登记，保持现状，不新增提交、审核、批准、支付或入账流程。授权会计管理员才能跨人员查看/筛选，且 `view_all`、`change_all`、`export_all` 分开。
+- 材料管理优先扩展现有 Case Checklist + Document，只完善本系统自己的上传、下载、关联、归档、权限和审计。本阶段不迁移、不索引、不连接 Google Drive；第一阶段不做完整版本管理（版本树/比较/恢复）。
+- Visa 返签表保留当前模块位置，主流程改为上传 CSV/XLSX、列映射、预览校验、批量生成 PDF、ZIP 和错误报告。
+- 报价书、契约书、请求书、领收书各自保留独立状态和编号，可在统一帐票入口及案件摘要中查看。
+- 新增独立 `real_estate` 领域；采用列表总览、单笔工作台和简易新规输入，并满足宅建业法台账、保存期限、锁定和更正审计要求。
+- `/Users/tatsuya/Downloads/LIST.xlsx` 的主表作为待迁移源数据；三个相近金额字段含义未确认前不得自动合并。`强哥` 工作表已确认无用，完全忽略。内部利润分配作为新功能独立设计，不复用该表数据，也不写入法定台账。
+
+### 15.2 计划与当前实现的边界
+
+- 以上为已确认需求，尚未实施，不能在界面说明或交接中写成已完成功能。
+- 2026-09-26 至 2026-09-27 只更新 Markdown 文档，没有修改模型、API、页面、nginx 或 migration，也没有重新运行应用测试。2026-09-27 仅对本地数据库执行了只读查询（User/Employee 清单、is_staff、Group/个别权限数量、Expense 条数和日期范围；不含认证秘密），未写入任何数据，也未修改任何账号。
+- 早期文档中“暂不设计复杂权限矩阵”“任何登录用户可访问全部对象”的规划已被本次需求覆盖；实现前仍需设计最小可扩展的权限和历史数据迁移方案。
+- 清理残留代码必须先做引用、数据和 Git 历史核对；不得删除整个旧模块或任何 migration。
+
+### 15.3 接手后的第一步
+
+1. 先确认 `git status` 和当前分支，避免覆盖用户修改。
+2. 阅读本文件、完整需求文档和开发计划。
+3. 开始写代码前，先把本次任务对应的权限、数据所有权、migration、测试和回滚范围写成小方案。
+4. 若任务涉及需求文档 §13 的未决问题，必须先向用户确认，不得自行猜测。
+5. 每个开发批次结束必须更新本文件；交接文档未更新，不视为完成。

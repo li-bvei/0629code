@@ -6,7 +6,9 @@
 
 数据模型以 Case 为中心设计。数据库以 Case 为核心设计，业务数据优先围绕 Case 组织。
 
-MVP 阶段保持表结构清晰，不提前设计复杂审计、权限或多租户结构。
+表结构保持清晰，不设计多租户结构，也不给普通业务表滥加审计字段。
+
+2026-09-26/27 已确认（**计划中，尚未实现**）：内部多用户所需的 User–Employee 一对一关系、私有记录统一 `owner`/`created_by`/`updated_by` 字段、模块动作权限 + `own`/`assigned`/`all` 数据范围，以及独立的系统 AuditLog 表。详见 §11 和 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md`。
 
 ## 2. Naming Rules
 
@@ -52,7 +54,7 @@ MVP 阶段不默认给所有表添加软删除。只有明确需要恢复或隐�
 
 - `employees`：业务担当者
 
-`employees.Employee` 用于案件负责人等业务关联；它与 Django `auth.User` 登录账号目前没有外键或一对一关联。登录账号由前端 `/settings` 的账号管理功能维护。
+`employees.Employee` 用于案件负责人（`cases.responsible_employee`）等业务关联；它与 Django `auth.User` 登录账号目前没有外键或一对一关联（User–Employee 一对一关系为计划中，尚未实现）。登录账号由前端 `/settings` 的账号管理功能维护。
 
 
 
@@ -104,7 +106,11 @@ MVP 阶段暂不设计复杂多对多参与人结构。如后续案件需要多�
 - 客户上传
 - 系统生成
 
-MVP 阶段只保存文件元数据和存储路径，不设计复杂版本管理。
+当前 `case_documents` 已有字段：`case_id`（必填，`on_delete=CASCADE`）、`title`、`file`（`upload_to='case_documents/'`）、`file_name`、`file_path`、`file_size`、`content_type`、`source`、`is_visible_to_client`、`created_at`、`updated_at`。
+
+第一阶段（P2-C9，计划中）只补齐：文件分类、关联 Checklist、原始文件名/存储名/MIME/大小/哈希、上传人与上传时间、归档状态，以及替换/归档/删除写入 AuditLog。**第一阶段不建设完整版本管理**（版本树、版本比较、版本恢复以后再评估）；“替换”只需保留审计记录。
+
+> 安全风险（2026-09-27 发现，P0-A8）：生产 `nginx/default.conf` 目前把 `/media/`、`/sun/media/` 作为静态目录直接公开，`case_documents/` 下的文件可绕过登录访问。修复方案见 `docs/DEVELOPMENT_PLAN.md` §2.10。
 
 ## 8. Portal
 
@@ -129,13 +135,12 @@ Portal 相关数据应支持：
 未来可按需要扩展：
 
 - 多客户或多公司参与同一案件
-- 文件版本管理
-- 操作日志
-- 细粒度权限
+- 完整文件版本管理（版本树、比较、恢复）
+- 部门级数据范围等更细的权限
 - 通知发送记录
-- 外部系统同步记录
+- 外部系统同步记录（Google Drive 本阶段明确不做）
 
-这些能力不进入 MVP，除非有明确业务需求。
+这些能力不进入当前计划，除非有明确业务需求。操作日志（AuditLog）和模块权限/数据范围已从本列表移出，属于 2026-09-26 已确认的 P0 要求，见 §11。
 
 ## 10. 近期字段变更（2026-08）
 
@@ -146,3 +151,51 @@ Portal 相关数据应支持：
 - `companies.establishment_symbol` / `establishment_number`（均为可选自由文本）：厚生年金/社会保険相关的「事業所整理記号」「事業所番号」，公司级编号，不是每个案件各自的。
 - `tax_renewal_voucher_records.case_id`（可选外键，指向 `cases`，`on_delete=SET_NULL`）：税务证明记录关联到具体案件，用于自动带出该案件的顧客/会社/担当者，减少重复选择。**这不是"一个案件对应一份税务证明"的强约束**——`case` 可以为空，一个案件下也可以有多份不同用途的税务证明记录。
 - `customers.family_members`（`FamilyMember`）：配偶/兄弟姐妹（对称关系）新增了服务层的自动反向链接行为——给 A 添加"配偶 B"且 B 已是独立顧客时，会自动在 B 名下也生成一条"配偶 A"的 `FamilyMember`，避免两边各录一次。这不是数据库约束层面的变化（没有新增表/字段），是 `backend/apps/customers/utils.py` 里的应用层同步逻辑，在 `FamilyMemberSerializer` 保存后触发。
+
+## 11. 2026-09 已实现的横切字段/表，与计划中的权限/审计结构
+
+### 11.1 已实现（有 migration 和测试）
+
+- `case_timelines` 新增字段（`apps/timelines/migrations/0003_...`）：
+  - `event_type`（CharField，可空字符串）：自动事件类型，如状态变更、Checklist 完了；手动记录可为空。
+  - `actor_id`（FK → `auth.User`，`on_delete=SET_NULL`，可空）：记录者/操作者。
+  - `metadata`（JSONField，默认 `{}`）：事件附加信息（变更前后状态等）。
+  - Timeline 仍是业务进展记录，只追加不修改；它**不是** AuditLog。
+- `reception_idempotency_records`（`api.ReceptionIdempotencyRecord`，`api/migrations/0001_initial.py`）：
+  - `request_id`（unique）、`response`（JSONField，可空；`NULL` 表示处理中）、`created_at`、`updated_at`。
+  - 只服务于 `POST /api/receptions/` 的重复提交保护，不复用于其它语义。
+- 会计模块中已有 `created_by`（FK → `auth.User`）的表：`AccountingVoucher`、`VisaReturnApplication`、`SeifuNoticePdfRecord`、`TaxRenewalVoucherRecord`。`accounting_expenses`（Expense）**尚无** owner/created_by/updated_by。
+- `accounting_expenses.category` 是自由文本 CharField，不是 `ExpenseCategory` 外键。P2-C7 第一阶段保持自由文本，不强制改外键，不批量清洗历史数据。
+
+### 11.2 已确认但尚未实现（P0 计划）
+
+> **以上属于 P0 计划，当前数据库尚未实现。** 下列表、字段、Group 和权限在当前代码与数据库中都不存在；详细设计见 `docs/P0_ACCESS_CONTROL_DESIGN.md`（第 2 版，原则已通过）。建表按该方案批次执行；表中数据的写入属于“等待批准的数据操作”（方案 §12 D1～D12），不写进 migration。
+
+#### 计划表与字段
+
+| 对象 | 计划结构 | 计划批次 | 说明 |
+|---|---|---|---|
+| `employees.user_id`（Employee.user） | OneToOne → `auth.User`，`null=True`，`on_delete=SET_NULL`，`related_name='employee'` | 1 | 放在 Employee 一侧，不改内置 User；Employee 可以没有账号（如 NAING）；关联由管理命令按 username 执行，需批准（D2/D3） |
+| `authentication_protected_accounts`（ProtectedAccount） | `user_id` OneToOne → `auth.User`（`PROTECT`）、`reason`、`created_at` | 2 | 以 FK 这种稳定账号关系标识受保护账号，**不按本地或生产数据库 ID 在代码里固定李**；只能由服务器命令增删，API 和 Admin 只读；注册李需批准（D4）；两阶段启用见方案 §3.3 |
+| `accounting_expenses.owner_id` / `created_by_id` / `updated_by_id` | 均为 FK → `auth.User`；owner 用 `PROTECT`，其余用 `SET_NULL`；先全部 `null=True` | 3 | 只加列不写数据；回填由管理命令执行（D8）；NOT NULL 以后另行评估；新增记录的 owner 由后端强制填写 |
+| `audit_logs`（AuditLog，新 app `apps/audit`） | 用户、username 快照、Employee、IP、User-Agent、request_id、module、action、object、result、changes、reason、via_permission、extra | 2 | 没有公开的写入、修改、删除 API；Admin 只读，初期只有李可见；下载只记录 denied/authorized/started |
+
+#### 计划 Group 与初始成员（成员分配需批准，D6/D7）
+
+| Group | 初期成员 | 主要权限（自定义 Permission codename） |
+|---|---|---|
+| `system_admin` | 李 | `manage_users`、`view_auditlog`、`use_diagnostics`、`case_change_all`、`view_sensitive_identity`、`document_download_all` |
+| `accounting_admin` | 李 | `use_expense`、`expense_view_all`、`expense_change_all`、`expense_export_all`，以及全部会计、帐票、Visa、税务模块的 `use_*` |
+| `business_admin` | 李、焦、周 | `use_cases`、`case_view_all`、`customer_view_all`（不含敏感字段）、`document_view_all`（只看元数据） |
+| `expense_viewer` | 焦、周 | `use_expense`、`expense_view_all` |
+| `staff` | 以后的普通员工 | `use_cases`、`use_expense` |
+
+- 数据范围用 Permission codename 表达，不新建权限或范围表。
+- 业务判定由 BusinessAccessPolicy 执行，只读取显式授权，不看 `is_superuser`。
+- Case 按 `responsible_employee` 判定 assigned，不加 owner；Document 继承 Case。
+- Income、VehicleUsage、AccountingProject 等 P0 不加 owner。
+
+#### 当前实际状态（已核对，本地库）
+
+- 4 个 User（李、焦、周、localdev）全部 `is_superuser=True`、`is_staff=True`；没有任何 Group，也没有个别权限；3 个 Employee 与 User 无关联。
+- 生产库状态未核对，要等批准后才执行只读核对（D1）。
