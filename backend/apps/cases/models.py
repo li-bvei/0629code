@@ -201,6 +201,12 @@ class Case(models.Model):
 
     class Meta:
         db_table = 'cases'
+        permissions = [
+            ('use_cases', '案件業務の利用'),
+            ('case_view_all', '担当外を含む全案件の閲覧'),
+            ('case_change_all', '担当外・未割当を含む全案件の変更'),
+            ('manage_case_settings', '案件種別・テンプレート・担当者などの設定管理'),
+        ]
         ordering = ['-created_at']
 
     def __str__(self):

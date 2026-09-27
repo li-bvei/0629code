@@ -69,11 +69,13 @@ INSTALLED_APPS = [
     'apps.timelines',
     'apps.documents',
     'apps.accounting',
+    'apps.audit',
     'api',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'apps.audit.middleware.RequestIdMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -95,6 +97,21 @@ AXES_COOLOFF_TIME = 1  # hours
 AXES_RESET_ON_SUCCESS = True
 
 ROOT_URLCONF = 'config.urls'
+
+# --- 環境・アクセス制御（docs/SYSTEM_ARCHITECTURE.md / docs/P0_ACCESS_CONTROL_DESIGN.md） ---
+# APP_ENV: development / staging / production。本番では DJANGO_APP_ENV=production を必ず設定する。
+APP_ENV = os.getenv('DJANGO_APP_ENV', 'development' if DEBUG else 'production')
+IS_PRODUCTION = APP_ENV == 'production'
+# デモデータ生成・seed・PDF座標デバッグ等の開発用エンドポイント。本番では常に無効。
+ENABLE_DEV_TOOLS = (os.getenv('DJANGO_ENABLE_DEV_TOOLS', 'True' if DEBUG else 'False') == 'True') and not IS_PRODUCTION
+# 段階B：Django Admin を保護アカウント（ProtectedAccount）に限定する。段階Aでは False。
+PROTECTED_ADMIN_ENFORCEMENT = os.getenv('DJANGO_PROTECTED_ADMIN_ENFORCEMENT', 'False') == 'True'
+# localdev アカウント検査：warn（初期）/ enforce（本番で停止を確認後）。
+LOCALDEV_CHECK_MODE = os.getenv('DJANGO_LOCALDEV_CHECK_MODE', 'warn')
+LOCALDEV_USERNAMES = env_list('DJANGO_LOCALDEV_USERNAMES', 'localdev')
+# 受保護ダウンロード：True なら nginx の X-Accel-Redirect で送信（本番）、False なら FileResponse（開発）。
+PROTECTED_MEDIA_X_ACCEL = os.getenv('DJANGO_PROTECTED_MEDIA_X_ACCEL', 'False' if DEBUG else 'True') == 'True'
+PROTECTED_MEDIA_X_ACCEL_PREFIX = '/_protected_media/'
 
 TEMPLATES = [
     {

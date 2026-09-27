@@ -36,6 +36,29 @@ class SystemUserUpdateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError('最後の管理者の権限は解除できません。')
         return value
 
+    def validate(self, attrs):
+        # 保護アカウントは Web からは停止・降格・改名できない（本人であっても改名は不可）。
+        from .access_policy import is_protected_account
+
+        instance = self.instance
+        if instance is not None and is_protected_account(instance):
+            request = self.context.get('request')
+            actor = getattr(request, 'user', None)
+            errors = {}
+            if 'username' in attrs and attrs['username'] != instance.username:
+                errors['username'] = ['保護アカウントの username は画面から変更できません（サーバーの rename_protected_account を使用）。']
+            if actor is None or actor.pk != instance.pk:
+                for field in ('is_active', 'is_superuser'):
+                    if field in attrs and attrs[field] != getattr(instance, field):
+                        errors[field] = ['保護アカウントの状態は本人以外変更できません。']
+            else:
+                for field in ('is_active', 'is_superuser'):
+                    if field in attrs and attrs[field] is False:
+                        errors[field] = ['保護アカウントを自分で停止・降格することはできません。']
+            if errors:
+                raise serializers.ValidationError(errors)
+        return attrs
+
 
 class SystemUserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)

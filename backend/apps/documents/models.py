@@ -34,6 +34,10 @@ class Document(models.Model):
 
     class Meta:
         db_table = 'case_documents'
+        permissions = [
+            ('document_view_all', '担当外を含む全ファイルのメタデータ閲覧'),
+            ('document_download_all', '担当外のファイルのダウンロード・プレビュー'),
+        ]
         ordering = ['-created_at']
 
     def __str__(self):

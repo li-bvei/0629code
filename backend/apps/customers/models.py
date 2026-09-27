@@ -63,6 +63,10 @@ class Customer(models.Model):
 
     class Meta:
         db_table = 'customers'
+        permissions = [
+            ('customer_view_all', '担当外を含む顧客・会社の詳細閲覧（機微項目を除く）'),
+            ('view_sensitive_identity', '担当外の在留カード番号・旅券番号・口座情報の閲覧'),
+        ]
         ordering = ['name']
 
     def __str__(self):

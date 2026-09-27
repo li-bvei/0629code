@@ -18,6 +18,9 @@ class ExpenseCategory(models.Model):
 
     class Meta:
         db_table = 'accounting_expense_categories'
+        permissions = [
+            ('manage_expense_category', '支出カテゴリの登録・変更（業務権限）'),
+        ]
         verbose_name = '支出カテゴリ'
         verbose_name_plural = '支出カテゴリ'
         ordering = ['sort_order', 'id']
@@ -36,11 +39,44 @@ class Expense(models.Model):
     note = models.TextField('備考', blank=True)
     is_reimbursed = models.BooleanField('精算済み', default=False)
     is_exported = models.BooleanField('出力済み', default=False)
+    # データの所有者（報銷の本人）。業務データの分離はこの値で判定する。新規作成時は
+    # 後端が必ずリクエストユーザーを設定し、フロントからの指定は受け付けない。
+    # 既存データは管理コマンド backfill_expense_owner（既定 dry-run）で後から設定する。
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name='所有者',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='owned_expenses',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name='作成者',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_expenses',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name='最終更新者',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_expenses',
+    )
     created_at = models.DateTimeField('作成日時', auto_now_add=True)
     updated_at = models.DateTimeField('更新日時', auto_now=True)
 
     class Meta:
         db_table = 'accounting_expenses'
+        permissions = [
+            ('use_expense', '支出記録（本人分）の利用'),
+            ('expense_view_all', '他人の支出記録の閲覧（読み取り専用）'),
+            ('expense_change_all', '他人の支出記録の変更・削除'),
+            ('expense_export_all', '他人の支出記録を含むExcel出力'),
+        ]
         verbose_name = '支出記録'
         verbose_name_plural = '支出記録'
         ordering = ['-expense_date', '-created_at']
@@ -60,6 +96,9 @@ class IncomeSource(models.Model):
 
     class Meta:
         db_table = 'accounting_income_sources'
+        permissions = [
+            ('use_income', '収入元の利用'),
+        ]
         verbose_name = '収入来源'
         verbose_name_plural = '収入来源'
         ordering = ['-source_date', '-created_at']
@@ -81,6 +120,9 @@ class VehicleUsage(models.Model):
 
     class Meta:
         db_table = 'accounting_vehicle_usages'
+        permissions = [
+            ('use_vehicle', '車両使用記録の利用'),
+        ]
         verbose_name = '用車記録'
         verbose_name_plural = '用車記録'
         ordering = ['-usage_date', '-created_at']
@@ -101,6 +143,9 @@ class AccountingProject(models.Model):
 
     class Meta:
         db_table = 'accounting_projects'
+        permissions = [
+            ('use_project', 'プロジェクト収支の利用'),
+        ]
         verbose_name = '项目收支表'
         verbose_name_plural = '项目收支表'
         ordering = ['-created_at']
@@ -246,6 +291,9 @@ class AccountingVoucher(models.Model):
 
     class Meta:
         db_table = 'accounting_vouchers'
+        permissions = [
+            ('use_voucher', '請求書・領収書の利用'),
+        ]
         verbose_name = '帳票'
         verbose_name_plural = '帳票'
         ordering = ['-issue_date', '-id']
@@ -354,6 +402,9 @@ class VisaReturnApplication(models.Model):
 
     class Meta:
         db_table = 'accounting_visa_return_applications'
+        permissions = [
+            ('use_visa', '返签visa表の利用'),
+        ]
         verbose_name = '返签visa表'
         verbose_name_plural = '返签visa表'
         ordering = ['-created_at']
@@ -416,6 +467,9 @@ class SeifuNoticePdfRecord(models.Model):
 
     class Meta:
         db_table = 'accounting_seifu_notice_pdf_records'
+        permissions = [
+            ('use_seifu', '清風合格通知書の利用'),
+        ]
         verbose_name = '清風合格通知書记录'
         verbose_name_plural = '清風合格通知書记录'
         ordering = ['-updated_at', '-id']
@@ -494,6 +548,9 @@ class TaxRenewalVoucherRecord(models.Model):
 
     class Meta:
         db_table = 'accounting_tax_renewal_voucher_records'
+        permissions = [
+            ('use_tax_renewal', '税務証明更新用の利用'),
+        ]
         verbose_name = '税务证明更新用记录'
         verbose_name_plural = '税务证明更新用记录'
         ordering = ['-updated_at', '-id']
