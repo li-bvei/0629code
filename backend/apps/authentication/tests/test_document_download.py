@@ -16,7 +16,7 @@ from apps.documents.models import Document
 from apps.employees.models import Employee
 
 
-class DocumentDownloadTests(TestCase):
+class DocumentFixtureMixin:
     def setUp(self):
         self.media = tempfile.mkdtemp()
         self.override = override_settings(MEDIA_ROOT=self.media, PROTECTED_MEDIA_X_ACCEL=False)
@@ -53,6 +53,8 @@ class DocumentDownloadTests(TestCase):
     def body(self, response):
         return b''.join(response.streaming_content) if response.streaming else response.content
 
+
+class DocumentDownloadTests(DocumentFixtureMixin, TestCase):
     def test_anonymous_rejected(self):
         self.assertIn(self.fetch(None, self.pdf).status_code, (401, 403))
 
@@ -147,3 +149,24 @@ class DocumentDownloadTests(TestCase):
         self.assertTrue(AuditLog.objects.filter(action='document_upload', object_id=str(doc_id)).exists())
         self.assertEqual(self.client.delete(f'/api/documents/{doc_id}/').status_code, 204)
         self.assertTrue(AuditLog.objects.filter(action='document_delete', object_id=str(doc_id)).exists())
+
+
+class MediaInventoryCommandTests(DocumentFixtureMixin, TestCase):
+    def test_inventory_reports_without_changing_anything(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from apps.timelines.models import Timeline
+
+        orphan = os.path.join(self.media, 'case_documents', 'orphan.bin')
+        with open(orphan, 'wb') as fh:
+            fh.write(b'x')
+        Timeline.objects.create(case=self.case_a, title='旧リンク', content='https://example.com/media/case_documents/a.pdf')
+        out = StringIO()
+        call_command('inventory_media_references', stdout=out)
+        text = out.getvalue()
+        self.assertIn('実ファイル数: 3', text)
+        self.assertIn('Document に紐付かないファイル（削除しない・報告のみ）: 1 件', text)
+        self.assertIn('timelines.Timeline.content: 1 件', text)
+        self.assertTrue(os.path.exists(orphan))

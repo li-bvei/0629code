@@ -126,6 +126,9 @@ class CustomerViewSet(BusinessScopedViewSetMixin, ModelViewSet):
                     'family_members', filter=Q(family_members__family_customer__isnull=False), distinct=True,
                 ),
             )
+        if not queryset.ordered:
+            # 集計 annotate 付きでは Meta.ordering が効かないため、ページングを安定させる。
+            queryset = queryset.order_by('name', 'id')
         return queryset
 
     def retrieve(self, request, *args, **kwargs):
