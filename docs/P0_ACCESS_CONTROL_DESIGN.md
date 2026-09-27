@@ -1,7 +1,7 @@
 # P0 访问控制设计方案（User–Employee / BusinessAccessPolicy / Expense 隔离 / AuditLog / 受保护文件下载）
 
 更新时间：2026-09-27（第 2.1 版：在第 2 版基础上增加 ProtectedAccount 两阶段启用、localdev 两阶段检查、策略白名单、全文状态标记）
-状态：**方案原则已通过；本版为修订稿，尚未实施**
+状态：**原则已通过；2026-09-28 已在分支 `codex/p0-access-control` 本地实现（批次 1～8 的代码部分）；生产尚未部署，D1～D12 均未执行**。实现与设计的差异见 §14。
 对应任务：`docs/DEVELOPMENT_PLAN.md` P0-A4、P0-A6、P0-A7、P0-A8
 上位需求：`docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md` §4.4、§5.3、§9、§10
 
@@ -578,3 +578,48 @@ IncomeSource、VehicleUsage、AccountingProject、帐票、Visa、税务证明�
 - 不实现临时代理、部门范围、多租户。
 - 不连接、不索引、不迁移 Google Drive；不移动 `media_volume` 中的文件，不删除孤儿文件。
 - 本方案阶段不修改代码、nginx、数据库或账号。
+
+
+---
+
+## 14. 本地实现记录（2026-09-28）
+
+### 14.1 已实现（代码、migration、测试）
+
+| 设计章节 | 实现位置 |
+|---|---|
+| §3 ProtectedAccount + 两阶段启用 | `apps/authentication/models.py`、`admin_guard.py`、`serializers.py`（受保护账号规则）、`permissions.CanManageUsers` |
+| §4 BusinessAccessPolicy | `apps/authentication/access_policy.py`、`access_rules.py`、`drf.py`（`BusinessScopedViewSetMixin`、`BusinessAccessPermission`、`business_api_view`、`BusinessRouter`） |
+| §4.4 防遗漏 | `apps/authentication/tests/test_policy_guards.py`（覆盖测试、静态约束、superuser 无业务权限） |
+| §4.6 调试端点 | `api/urls.py`、`apps/accounting/urls.py`（`ENABLE_DEV_TOOLS=False` 时不注册）；`seed-standard` 返回 404；保留的诊断功能 `tax-renewal-pdf-diagnostics` 需要 superuser + `use_diagnostics`，并写 `diagnostic_run` |
+| §5 数据范围 | Expense / Case 及子资源 / Customer / Company / FamilyMember / CompanyStaff / Document 的各个 ViewSet、`api/views.py`（Dashboard、受付）、`apps/customers/access_representation.py` |
+| §6 User–Employee | `apps/employees/models.py`、`link_user_employee` |
+| §7 AuditLog | `apps/audit/`（模型、`services.record`、`RequestIdMiddleware`、只读 Admin） |
+| §8 受保护下载 | `apps/documents/protected_download.py`、`views.py`；`config/urls.py` 删除 `static(MEDIA_URL)`；`nginx/default.conf`；`docker-compose.yml` |
+| §9 Expense owner 与回填 | `apps/accounting/models.py`、`accounting/0015`、`backfill_expense_owner` |
+| §9.5/§3.2 快照与恢复 | `apps/authentication/snapshot.py`、`export_access_snapshot`、`restore_access_snapshot` |
+| D9 只读盘点 | `apps/documents/management/commands/inventory_media_references.py` |
+| 部署检查 | `check_access_config`（开发工具、DEBUG、受保护账号、manage_users、localdev 的 warn/enforce 模式） |
+
+### 14.2 与设计的差异和补充决定（请审查）
+
+1. **新增两个权限**：`cases.manage_case_settings`（案件种别、模板、担当者、在留资格等设置的写入，归 `system_admin`），以及 `accounting.manage_expense_category`（支出分类的写入，归 `accounting_admin`）。设置类资源的读取只需要 `use_cases` 或 `use_expense`。
+2. **不能以他人为担当新建案件**：没有 `case_change_all` 的用户新建案件（包括新规受付）时，只能把自己设为担当，指定他人返回 403。当前担当可以把案件改派给别人（写 `case_reassign` 审计）。
+3. **未立案顾客**：`basic` 级别的字段暂定为 id、姓名、フリガナ、生年月日、性别、国籍、在留资格、案件数和家族标签、更新时间，不含证件号、联系方式、地址、备注。这类顾客只有李（`case_change_all`）可以修改。**字段清单待用户确认**（Q7）。
+4. **公司的表现级别**：`minimal` = id、名称、カナ、法人番号；`basic`（无案件的公司）再加代表者、地址、決算月；`masked` 会把 `bank_account_number` 遮罩为末 4 位。
+5. **防重复匹配接口** `customers/match/`：对范围外的候选去掉电话和邮箱，改为返回最小识别字段。按案件编号搜索顾客时，只在自己能看到的案件范围内检索。
+6. **期限列表** `dashboard/deadlines/`：只包含能看详情的顾客/公司（本人担当或持有 `customer_view_all`），显示的案件编号也限定在本人可见范围内。
+7. **修复一个现有漏洞**：`CompanyStaffSerializer` 原本会返回关联人物的 My Number 明文，现改为只返回 `has_my_number`。
+8. **docker-compose 挂载变更**：frontend 的 `media_volume` 从 `/usr/share/nginx/html/media` 改挂到 `/var/protected_media`。原因是旧挂载点位于 Web 根目录下，即使删除 `/media/` 的 location 块，`location /` 的 `try_files` 仍能把文件直接发出去。
+9. **保留的诊断功能**：目前只保留 `tax-renewal-pdf-diagnostics`（读取模板字段），其余 PDF 坐标调试、表单项调试和编号样本全部改为只在开发环境注册。清風 PDF（`seifu-notice-pdf/*`）是暂停中的业务功能，按 `use_seifu` 控制，不算诊断功能。**保留清单待用户确认**（Q10）。
+10. **`me` 接口**：`permissions` 字段不再返回 Django 的 `get_all_permissions()`（superuser 会得到全部权限），改为与 `business_permissions` 相同的显式业务权限。
+
+### 14.3 验证
+
+- 后端 `python manage.py test`：170 项全部通过（原有 97 项，保留全部原断言，只给测试用户补了显式角色；新增 73 项访问控制测试）。
+- `makemigrations --check`：No changes；`manage.py check`：0 issues；前端 `npm run build`：通过（大 chunk 警告与之前相同）。
+- 预览库 `gyoseishoshi_erp_p0_preview` + 4 个测试账号：用 Django 测试客户端调用真实端点做冒烟，结果与权限矩阵一致。
+- **未完成**：
+  - 浏览器实测：预览工具启动的进程无法读取 `backend/.venv`（macOS 权限限制），所以没有登录后的截图验证；
+  - `nginx -t`：本机 Docker 守护进程未运行，没做语法检查（已写入部署清单第 8 步）；
+  - 生产核对：D1～D12 均未执行。

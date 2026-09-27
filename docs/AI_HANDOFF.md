@@ -1,6 +1,6 @@
 # SUNRISE AI 交接总文档
 
-更新时间：2026-09-27
+更新时间：2026-09-28
 项目：SUNRISE 日本行政书士事务所内部业务管理系统  
 仓库：`/Users/tatsuya/Documents/Projects/0629code`
 
@@ -77,37 +77,38 @@ docs/                          当前文档与历史记录
 
 ## 3. 当前工作区与验证状态
 
-2026-09-27 确认：
+2026-09-28 状态：
 
 ```text
-local main  = de95411ea87cc981b3874237047722e54544c0ef
-origin/main = de95411ea87cc981b3874237047722e54544c0ef
-ahead/behind = 0/0
-worktree = 本地与 origin/main 提交同步，但存在未提交的文档变更（docs/ 下 2026-09-26/27 的需求、计划、交接和 CHANGELOG）
+branch      = codex/p0-access-control（基于 main = de95411，未推送）
+commits     = 文档基线 + P0 访问控制 7 个实现切片 + 文档收尾（见 docs/CHANGELOG_2026-09-28_p0_access_control.md）
+main / origin/main = de95411（未变）
+production  = 未部署；D1～D12 均未执行
 ```
-
-最新提交：`de95411 fix: backend Dockerfile の apt ミラーをAliyunから既定のDebianソースに戻す`。未提交内容只有 Markdown，没有应用代码、migration 或数据变更；是否提交等用户确认。本文后续 2026-09-16 章节中关于“本地落后、存在大量未提交修改”的描述是当时的历史记录，不再代表当前状态。
 
 下一位 AI 必须先执行：
 
 ```bash
-git status --short
-git diff --stat
+git status --short --branch
+git log --oneline main..HEAD
 ```
 
 不要使用 `git reset --hard`、`git checkout --` 或批量删除来“清理”工作区。
 
-最近一次完整验证记录仍为 2026-09-16；2026-09-26/27 只整理需求文档，没有修改或重新验证应用代码：
+2026-09-28 验证（分支 `codex/p0-access-control`）：
 
 | 检查 | 结果 | 说明 |
 |---|---|---|
-| `python manage.py check` | 通过 | 0 个 system check issue |
-| `python manage.py makemigrations --check --dry-run` | 无 migration 差异 | |
-| `git diff --check` | 通过 | 没有空白错误 |
-| `npm run build` | 通过 | `vue-tsc -b && vite build` 成功 |
-| 后端全量测试 | **通过** | `python manage.py test` → Ran 95 tests — OK。之前记录“沙盒因 MySQL 连接权限未能独立确认”，后来已在可连接 MySQL 的环境下实测通过 |
-| 2026-09-16 当时的 `origin/main` 隔离构建 | 前端通过、后端测试失败 | 当时远端代码的后端 68 项测试中有 2 failure + 2 error；此项只保留历史背景，不能用于判断 2026-09-26 当前 `origin/main`，后续应以新一轮实际验证为准 |
-| Markdown 结构检查 | 通过（2026-09-16 记录） | 后续新增文档应继续检查相对链接和冲突标记；当前 Git 状态以本节 2026-09-26 记录为准 |
+| `python manage.py test` | **通过** | Ran 170 tests — OK（原有 97 项全部保留断言，仅给测试用户补显式角色；新增 73 项访问控制测试） |
+| `python manage.py makemigrations --check --dry-run` | 无差异 | |
+| `python manage.py check` | 0 issues | |
+| `npm run build` | 通过 | `vue-tsc -b && vite build` |
+| `git diff --check` | 通过 | |
+| 预览库冒烟 | 通过 | 独立库 `gyoseishoshi_erp_p0_preview` + 4 个测试账号，用 Django 测试客户端调用真实端点，结果与权限矩阵一致 |
+| 浏览器实测 | **未完成** | 预览工具进程无法读取 `backend/.venv`（macOS 权限），未能启动后端预览 |
+| `nginx -t` | **未完成** | 本机 Docker 守护进程未运行；已写入 `DEPLOY.md` 上线第 8 步 |
+
+本地开发库 `gyoseishoshi_erp` 未应用新 migration（避免改动现有数据）。在该库上运行新代码前需先 `migrate`。
 
 前端构建仍提示单个约 1.9MB 的 JS chunk，暂不阻断功能验收，但后续应做路由级拆包（`docs/DEVELOPMENT_PLAN.md` P2-C6）。
 
@@ -197,6 +198,11 @@ Case
 | `POST /api/cases/{id}/apply-checklist-template/` | `merge` / `replace` 模式，返回 created 数量 |
 | `POST /api/cases/{id}/change-status/` | 案件状态专用变更入口 |
 | `POST /api/cases/{id}/change-registration-status/` | 登记状态专用变更入口 |
+| `GET /api/documents/{id}/download/`、`/preview/` | 2026-09-28 新增（本地）：受保护下载/预览。父 Case 担当或 `document_download_all`；审计 denied/authorized/started；生产用 X-Accel-Redirect |
+| `GET /api/auth/me/` | 2026-09-28 修订：`permissions`/`business_permissions` 只返回显式业务权限（不再是 superuser 的全部权限），新增 `employee_id`、`employee_name`、`is_protected`、`dev_tools_enabled` |
+| 所有业务 API | 2026-09-28：统一经 BusinessAccessPolicy 限定范围。范围外 404、可见但不可写 403；顾客/公司列表与搜索对范围外只返回最小识别字段（`access_level`）；Expense summary/dashboard 无全体会计权限时余额为 `null`（`balance_visible`、`expense_scope`） |
+| `POST /api/receptions/`、`POST /api/cases/` | 2026-09-28：未指定担当则设为本人；账号未关联 Employee 返回 400；无 `case_change_all` 不能以他人为担当 |
+| 开发用端点（demo seed、seed-standard、PDF 坐标/表单调试、numbered_sample） | 2026-09-28：`ENABLE_DEV_TOOLS=False`（生产）时不注册或返回 404 |
 
 ### 6.2 会计与帳票
 
@@ -270,16 +276,16 @@ Case
 1. ~~修复既存公司绑定或移除误导性 UI~~ —— 已完成（2026-09-16）
 2. ~~收紧顾客匹配 strong 规则，修复电话规范化~~ —— 已完成（2026-09-16）
 3. ~~为新规受付加入幂等保护~~ —— 已完成（2026-09-16，`docs/DEVELOPMENT_PLAN.md` P0-A3）
-4. 建立 User–Employee 关系、模块动作权限和 `own`/`assigned`/`all` 数据范围，并覆盖 API、导出和文件访问（P0-A4；2026-09-26 新要求已覆盖旧版“仅确认现状、不新增权限”的方案）—— 方案第 2 版已写（`docs/P0_ACCESS_CONTROL_DESIGN.md`，原则已通过），代码未开始；下一步等待用户批准开始批次 1
-5. 建立独立 AuditLog，以及会计/私有记录的 owner 历史数据归属方案（P0-A6/A7；第一批只做 Expense）—— 未开始
+4. 建立 User–Employee 关系、模块动作权限和 `own`/`assigned`/`all` 数据范围，并覆盖 API、导出和文件访问（P0-A4）—— **2026-09-28 本地已实现**（分支 `codex/p0-access-control`），生产待 D1～D7
+5. 建立独立 AuditLog，以及会计/私有记录的 owner 历史数据归属方案（P0-A6/A7；第一批只做 Expense）—— **本地已实现**，生产回填待 D8
 6. ~~在可连接 MySQL 的环境执行全量测试~~ —— 已完成（2026-09-16，最后记录 95 tests 全通过）
-7. `/media/` 未鉴权公开风险：生产 nginx 直接公开 `/media/`、`/sun/media/`，改为 Django 受保护下载（P0-A8，2026-09-27 新增安全项）—— 只写方案，未经确认不改 nginx
+7. `/media/` 未鉴权公开风险（P0-A8）—— **本地已修复**（受保护下载 + 仓库内 nginx internal/X-Accel + media 卷移出 Web 根），生产仍公开，待 D9/D10
 
 验收标准：重复受付不会静默创建重复数据（已达成）；选中的公司、顾客、担当者全部准确落到 Case（已达成）；候选匹配不会把明显的部分姓名判成 strong（已达成）；全量测试真正执行并通过（最后记录已达成）。P0 当前还包括 A4 权限、A5 指标补测、A6 审计、A7 历史数据归属、A8 文件受保护下载，不能再按旧版“两项确认任务”理解。
 
 2026-09-27 P0 方案依据（详见 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md` §9.5 与 `docs/DEVELOPMENT_PLAN.md` §2.4）：会计 `expense_change_all`/`expense_export_all` 初期只授予李，`expense_view_all` 授予李、焦、周，superuser 不自动获得任何业务权限；Case 按担当 Employee 控制；Document 继承 Case 权限。
 
-**P0 访问控制方案**：`docs/P0_ACCESS_CONTROL_DESIGN.md`（2026-09-27 第 2.1 版；原则已通过，**尚未实施**）。已确认的账号映射（生产按 username 匹配，不按本地 ID）：
+**P0 访问控制方案**：`docs/P0_ACCESS_CONTROL_DESIGN.md`（第 2.1 版；**2026-09-28 本地已实现，生产未部署**；实现差异见其 §14，生产执行见 `docs/DEPLOY.md`）。已确认的账号映射（生产按 username 匹配，不按本地 ID）：
 
 | username | Employee | 目标身份 | 初始业务权限要点 |
 |---|---|---|---|
@@ -299,7 +305,7 @@ Case
 - **localdev**：生产发现时先只读报告，批准后只能停用，不自动删除；部署检查先 warning，确认停用后改为 enforce。
 - **策略白名单**：受控模型只允许在策略内部、migration、management command、测试和 Admin 中直接查询；ViewSet、Dashboard、导出、图表、余额、copy-expenses 一律经过策略。
 - **需用户单独批准的数据操作**：D1～D12，见方案 §12（D4 为阶段 A 注册李，D5 为阶段 B 开启 enforcement，D12 为 localdev 停用）。
-- 以上全部属于“已确认但尚未实现”；当前代码和数据库中不存在这些结构。
+- 以上结构已在分支 `codex/p0-access-control` 本地实现并有测试；生产数据库尚未应用，账号关联/角色/回填/nginx 切换均未执行。
 
 ### P1：完成案件工作台
 
@@ -431,6 +437,14 @@ npm run build
 ```text
 backend/apps/timelines/migrations/0003_timeline_actor_timeline_event_type_timeline_metadata.py
 backend/api/migrations/0001_initial.py   # api 首次注册为正式 app，含 ReceptionIdempotencyRecord
+# 2026-09-28 P0（加法，不写业务数据；详见 docs/DEPLOY.md）
+backend/apps/employees/migrations/0002_employee_user.py
+backend/apps/authentication/migrations/0001_initial.py      # ProtectedAccount + manage_users/use_diagnostics
+backend/apps/audit/migrations/0001_initial.py               # AuditLog
+backend/apps/accounting/migrations/0015_expense_owner_and_business_permissions.py
+backend/apps/cases/migrations/0017_alter_case_options.py    # 仅 Permission
+backend/apps/customers/migrations/0009_alter_customer_options.py
+backend/apps/documents/migrations/0003_alter_document_options.py
 ```
 
 `api` 是本轮（2026-09-16）第一次被加入 `INSTALLED_APPS`。此前它只是路由/序列化器/视图的集合，没有 models、没有 migrations 目录。如果后续要在其它非领域归属的横切功能里加表，可以继续放在这里，但不要把领域数据（Customer/Case 等业务实体）也塞进 `api` app。
@@ -461,6 +475,7 @@ backend/api/migrations/0001_initial.py   # api 首次注册为正式 app，含 R
 | `docs/CHANGELOG_2026-09-27_p0_access_design.md` | 2026-09-27 P0 方案编写记录（第 1 版） | 核对本次文档变更 |
 | `docs/CHANGELOG_2026-09-27_p0_access_design_v2.md` | 2026-09-27 P0 方案第 2 版修订记录 | 核对 Q1～Q11 决定与技术修正 |
 | `docs/CHANGELOG_2026-09-27_p0_docs_sync.md` | 2026-09-27 需求/DATABASE/README 同步与 ProtectedAccount 两阶段启用 | 核对本次文档变更 |
+| `docs/CHANGELOG_2026-09-28_p0_access_control.md` | P0 访问控制本地实现（唯一最终 CHANGELOG） | 审查 P0 实现、migration、测试、部署与回滚 |
 | `docs/PROJECT_AUDIT_2026-09.md` | 2026-09 审查报告 | 查看数据与风险背景 |
 
 ## 13. AI 修改规则
@@ -751,7 +766,7 @@ Smart Summary
 ### 15.2 计划与当前实现的边界
 
 - 以上为已确认需求，尚未实施，不能在界面说明或交接中写成已完成功能。
-- 2026-09-26 至 2026-09-27 只更新 Markdown 文档，没有修改模型、API、页面、nginx 或 migration，也没有重新运行应用测试。2026-09-27 仅对本地数据库执行了只读查询（User/Employee 清单、is_staff、Group/个别权限数量、Expense 条数和日期范围；不含认证秘密），未写入任何数据，也未修改任何账号。
+- 2026-09-26 至 2026-09-27 只更新文档；2026-09-28 在分支 `codex/p0-access-control` 实现了 P0（模型、API、前端、仓库内 nginx/compose、migration、测试），未部署生产。2026-09-27 仅对本地数据库执行了只读查询（User/Employee 清单、is_staff、Group/个别权限数量、Expense 条数和日期范围；不含认证秘密），未写入任何数据，也未修改任何账号。
 - 早期文档中“暂不设计复杂权限矩阵”“任何登录用户可访问全部对象”的规划已被本次需求覆盖；实现前仍需设计最小可扩展的权限和历史数据迁移方案。
 - 清理残留代码必须先做引用、数据和 Git 历史核对；不得删除整个旧模块或任何 migration。
 

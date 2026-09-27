@@ -16,7 +16,7 @@
 ## 开发计划
 
 - [当前开发计划（任务清单 + 内容修改计划）](DEVELOPMENT_PLAN.md)：接手任务前先看这份，按里面的顺序推进。
-- [P0 访问控制设计方案](P0_ACCESS_CONTROL_DESIGN.md)：账号映射、BusinessAccessPolicy、Expense 隔离、ProtectedAccount 两阶段启用、AuditLog、受保护文件下载、批次与回滚、需批准的数据操作（第 2.1 版，原则已通过，**尚未实施**）。**AI 开始任何权限、账号、审计、Expense 隔离或文件下载相关开发前，必须先完整阅读本方案。**
+- [P0 访问控制设计方案](P0_ACCESS_CONTROL_DESIGN.md)：账号映射、BusinessAccessPolicy、Expense 隔离、ProtectedAccount 两阶段启用、AuditLog、受保护文件下载、批次与回滚、需批准的数据操作（第 2.1 版；2026-09-28 本地已实现，生产未部署）。**AI 开始任何权限、账号、审计、Expense 隔离或文件下载相关开发前，必须先完整阅读本方案。**
 
 ## 运维与变更记录
 
@@ -29,6 +29,7 @@
 - [2026-09-27 P0 访问控制方案编写记录](CHANGELOG_2026-09-27_p0_access_design.md)
 - [2026-09-27 P0 访问控制方案第 2 版修订记录](CHANGELOG_2026-09-27_p0_access_design_v2.md)
 - [2026-09-27 P0 文档同步与受保护账号两阶段启用](CHANGELOG_2026-09-27_p0_docs_sync.md)
+- [2026-09-28 P0 访问控制本地实现（最终）](CHANGELOG_2026-09-28_p0_access_control.md)
 - [2026-09 项目审查报告](PROJECT_AUDIT_2026-09.md)
 
 ## 历史上下文

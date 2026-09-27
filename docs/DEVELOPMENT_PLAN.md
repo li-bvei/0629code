@@ -1,24 +1,16 @@
 # SUNRISE 开发计划（当前有效版本）
 
-更新时间：2026-09-27
+更新时间：2026-09-28
 状态：进行中。与 `docs/AI_HANDOFF.md`、`docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md` 配套使用——本文件回答“接下来按什么顺序实施”，需求文档回答“必须实现什么、边界是什么”，交接文档回答“项目现在是什么状态”。三者冲突时，先核对代码/测试/migration，并报告冲突后同步文档。
 
 ---
 
-## 0. 现状确认（2026-09-27）
+## 0. 现状确认（2026-09-28）
 
-- 本地 `main` 与 `origin/main` 提交同步，均为 `de95411ea87cc981b3874237047722e54544c0ef`，ahead/behind 为 `0/0`。
-- 工作区存在 2026-09-26/27 的**未提交文档变更**（`docs/` 下多份 Markdown）；尚未修改应用代码、migration 或数据，是否提交等用户确认。
-- 2026-09-27 只读核对发现：生产 `nginx/default.conf` 直接公开 `/media/`、`/sun/media/`，`case_documents/` 文件可绕过登录访问 → 新增 P0-A8。
-- 最近一次应用验证仍是 2026-09-16 的记录，本轮未重新运行测试：
-
-```
-python manage.py test                    → Ran 95 tests — OK（全通过，最后记录）
-python manage.py makemigrations --check  → No changes detected
-npm run build                            → 成功（vue-tsc -b && vite build）
-```
-
-- 2026-09-26 新需求及 2026-09-27 修正已写入 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md`。其中多人权限、个人数据隔离、会计调整、现有系统文件管理、Visa 文件导入和不动产模块是计划项，尚未实施。
+- 分支 `codex/p0-access-control`（基于 `main` = `de95411`）上已在本地完成 P0-A4/A6/A7/A8 的代码实现，并按切片提交；**未推送、未部署生产，D1～D12 均未执行**。
+- 验证：后端 170 项测试全部通过（原有 97 项 + 新增 73 项访问控制测试）；`makemigrations --check` 无差异；`manage.py check` 0 issues；`npm run build` 通过。
+- 本地开发库 `gyoseishoshi_erp` 未应用新 migration；验证使用测试库和独立预览库 `gyoseishoshi_erp_p0_preview`。
+- 生产执行清单与回滚：`docs/DEPLOY.md`「2026-09 P0 访问控制上线」。
 
 ---
 
@@ -33,11 +25,11 @@ npm run build                            → 成功（vue-tsc -b && vite build�
 | P0-A1 | 修复"既存会社"绑定 | ✅ | 见 §2.1 |
 | P0-A2 | 收紧顾客候选匹配 strong 规则 + 电话规范化 | ✅ | 见 §2.2 |
 | P0-A3 | 新规受付服务端幂等保护 | ✅ | 见 §2.3 |
-| P0-A4 | User–Employee 关系、模块动作权限与数据范围 | 🚧 | 方案第 2 版已写（`P0_ACCESS_CONTROL_DESIGN.md`，BusinessAccessPolicy），原则已通过；代码未开始 |
+| P0-A4 | User–Employee 关系、模块动作权限与数据范围 | ✅（本地） | BusinessAccessPolicy + Group/Permission；Expense/Case/Customer/Company/Document 全路径接入；生产待 D1～D7 |
 | P0-A5 | Dashboard 指标口径固化为文档 + 测试 | 🚧 | 口径已在 `AI_HANDOFF.md` §7 写明，缺显式回归测试 |
-| P0-A6 | 独立 AuditLog 与敏感操作审计 | 🚧 | 方案第 2 版 §7（独立 `apps/audit`；下载记录 denied/authorized/started），代码未开始 |
-| P0-A7 | 会计及私有记录 owner 归属与历史数据迁移方案 | 🚧 | 方案第 2 版 §9；第一批只做 Expense，回填目标 `zbry6947@gmail.com`，生产按 8 步流程并单独批准 |
-| P0-A8 | `/media/` 未鉴权公开风险：改为 Django 受保护下载 | 🚧 | 方案第 2 版 §8：先满足最低权限条件和引用核对，再切换 nginx；不采用“登录即可下载”过渡方案；代码和 nginx 未改 |
+| P0-A6 | 独立 AuditLog 与敏感操作审计 | ✅（本地） | `apps/audit`；登录、账号、跨人员查看、导出、下载、拒绝、诊断均记录 |
+| P0-A7 | 会计及私有记录 owner 归属与历史数据迁移方案 | ✅（本地） | Expense owner 三列 + `backfill_expense_owner`（dry-run/expect-count/CSV/回滚）；生产回填待 D8 |
+| P0-A8 | `/media/` 未鉴权公开风险：改为 Django 受保护下载 | ✅（本地） | 受保护 download/preview + nginx internal + X-Accel；media 卷移出 Web 根；生产切换待 D9/D10 |
 
 ### P1 — 案件工作台闭环
 
@@ -239,7 +231,7 @@ npm run build                            → 成功（vue-tsc -b && vite build�
 ## 3. 执行顺序建议
 
 1. ✅ P0-A1、P0-A2、P0-A3（已完成）
-2. P0-A4/A6/A7/A8：先完成权限、审计、历史数据归属和 `/media/` 受保护下载的设计确认，再实施最小基础
+2. P0-A4/A6/A7/A8：✅ 本地已实现（2026-09-28）；下一步由用户审查分支，然后按 `DEPLOY.md` 逐项批准 D1～D12
 3. P0-A5：补 Dashboard 口径回归测试
 4. 继续现有 P1 案件工作台主线；Next Action / Waiting 字段设计仍需先确认
 5. 在权限基础可用后，按 P2-C7 → C8 → C9 → C10 → C11 的顺序逐项增强现有模块

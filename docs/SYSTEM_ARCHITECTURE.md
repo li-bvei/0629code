@@ -1,6 +1,6 @@
 # SUNRISE 系统架构约束
 
-更新时间：2026-09-27
+更新时间：2026-09-28
 地位：**全项目唯一的架构约束文档**。任何实现、重构、新模块都不得违反本文件；与本文件冲突的代码或方案必须先报告，不得直接实施。
 
 ## 0. 文档优先级（固定）
@@ -45,16 +45,16 @@
 
 | app | 职责 | 状态 |
 |---|---|---|
-| `apps/authentication` | 登录、账号管理、ProtectedAccount、BusinessAccessPolicy、权限快照 | 已有；P0 扩展 |
-| `apps/employees` | 业务担当者（Employee），与 User 一对一 | 已有；P0 增加 `user` |
+| `apps/authentication` | 登录、账号管理、ProtectedAccount、BusinessAccessPolicy（`access_policy.py` + `access_rules.py` + `drf.py`）、业务角色、权限快照与管理命令 | 已有；P0 扩展（本地已实现） |
+| `apps/employees` | 业务担当者（Employee），与 User 一对一 | 已有；P0 增加 `user`（本地已实现） |
 | `apps/customers` | 自然人主档、家族关系、身份匹配 | 已有 |
 | `apps/companies` | 法人主档、公司职员 | 已有 |
 | `apps/cases` | 案件、状态机、Checklist 及其模板 | 已有 |
 | `apps/timelines` | 案件业务进展记录（只追加） | 已有 |
-| `apps/documents` | 系统内案件文件、受保护下载 | 已有；P0 增加受保护下载 |
+| `apps/documents` | 系统内案件文件、受保护下载（`protected_download.py`） | 已有；P0 增加受保护下载（本地已实现） |
 | `apps/tasks`、`apps/reminders` | 历史任务、提醒（前端部分隐藏，保留） | 已有 |
 | `apps/accounting` | 支出（Expense）、收入、车辆、项目收支、帐票、Visa、税务证明、清風 | 已有 |
-| `apps/audit` | 系统 AuditLog | P0 新增 |
+| `apps/audit` | 系统 AuditLog、request-id 中间件 | P0 新增（本地已实现） |
 | `api` | 路由聚合、Dashboard、Reception 等横切接口，以及横切表（幂等记录） | 已有 |
 | `api/portal` | 客户 Portal API（未实现，保留） | 占位 |
 | `real_estate` | 不动产交易、法定台账、内部利润分配（受限） | P3 新增 |
@@ -101,7 +101,9 @@ api                         → 聚合各模块，不被领域模块依赖
 - 所有业务入口都经过同一个策略：DRF ViewSet（通过 Mixin）、专用 action、函数视图、导出、下载、Dashboard、图表、余额计算、跨资源引用。
 - 先缩小 queryset，再做对象检查：范围外返回 404，范围内但缺少动作权限返回 403。
 - Django Admin 和服务器维护使用 `is_superuser`/`is_staff`；开启 `PROTECTED_ADMIN_ENFORCEMENT` 后，Admin 还要求是 ProtectedAccount。
-- 防遗漏：覆盖测试（每个 ViewSet 都必须声明 `access_resource` 或 `access_exempt`）+ 静态约束测试（禁止绕过策略；白名单只包括策略内部、migration、management command、测试、Admin、模型定义）。
+- 防遗漏：覆盖测试（每个 API 都必须声明 `access_resource` 或 `access_exempt`，见 `apps/authentication/tests/test_policy_guards.py`）+ 静态约束测试（业务视图中禁止使用 `has_perm` 等；受控模型不得直接 `.objects` 读取，只能用 `policy.queryset()`/`policy.scope()`）。
+- 静态约束的例外：ViewSet 的类属性 `queryset = Model.objects...`（Mixin 一定会叠加范围限制）；以及在已授权动作内部做写入、唯一性检查或 ID 计算的行，这些行必须在同一行写 `# access-reviewed: 理由`。策略内部、migration、management command、测试、Admin、模型定义不在扫描范围内。
+- 新增 API 时：在 `access_rules.RULES` 登记资源规则 → 在 ViewSet 上声明 `access_resource`（函数视图用 `business_api_view`）→ 在权限矩阵测试中加入用例。
 
 ## 7. Timeline 与 AuditLog
 
@@ -166,7 +168,7 @@ api                         → 聚合各模块，不被领域模块依赖
 
 ## 12. P0～P3 实施顺序
 
-- **P0**：权限和数据归属基础。包括 User–Employee、ProtectedAccount、BusinessAccessPolicy、AuditLog、Expense 隔离、Case/Customer/Company/Document 数据范围、受保护下载、禁用危险端点、快照和恢复、权限矩阵测试。详见 `P0_ACCESS_CONTROL_DESIGN.md`。
+- **P0**：权限和数据归属基础。包括 User–Employee、ProtectedAccount、BusinessAccessPolicy、AuditLog、Expense 隔离、Case/Customer/Company/Document 数据范围、受保护下载、禁用危险端点、快照和恢复、权限矩阵测试。详见 `P0_ACCESS_CONTROL_DESIGN.md`。**2026-09-28 本地已实现（分支 `codex/p0-access-control`），生产尚未部署**；生产执行清单见 `DEPLOY.md`。
 - **P1**：案件工作台（Action Bar、Next Action、Waiting、今日作业台、Timeline 自动化、Checklist/Document 联动、RemoteSelect 测试）。
 - **P2**：现有模块增强（会计与案件关联、归档、全局搜索、lazy loading、分类推荐、报销保持简单登记、Document 文件管理、Visa CSV/XLSX、报价/契约/请求/领收）。
 - **P3**：不动产 `real_estate`（法定台账、保存期限、`LIST.xlsx` 主表迁移、内部利润分配）。
