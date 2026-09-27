@@ -8,10 +8,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.authentication.drf import BusinessAccessMixin
 from apps.cases.models import Case
-from apps.companies.models import Company, CompanyStaff
-from apps.customers.models import Customer, FamilyMember
-from apps.reminders.models import DismissedDeadline
 
 from .models import ReceptionIdempotencyRecord
 from .serializers import ReceptionSerializer
@@ -59,7 +57,7 @@ TERMINAL_CASE_STATUSES = {
 }
 
 
-class ReceptionCreateView(APIView):
+class ReceptionCreateView(BusinessAccessMixin, APIView):
     """新規受付の確定 API。
 
     フロントは1回の確定操作につき固定の request_id を送る（ボタン二重クリックや
@@ -69,8 +67,26 @@ class ReceptionCreateView(APIView):
     - 未指定 → 従来どおり毎回作成する（後方互換）。
     """
 
+    access_resource = 'case'
+
+    def get_access_action(self):
+        return 'create'
+
+    def _resolve_case_responsible(self, request):
+        """案件を作る受付では担当者を必ず決める（未指定なら本人、他人指定は case_change_all のみ）。"""
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        case_data = data.get('case')
+        if isinstance(case_data, dict) and case_data.get('case_type_master') and case_data.get('application_category'):
+            case_data = dict(case_data)
+            case_data['responsible_employee'] = self.access_rule.resolve_create_responsible_id(
+                self.business_policy, case_data.get('responsible_employee'),
+            )
+            data['case'] = case_data
+        return data
+
     def post(self, request):
         request_id = (request.data.get('request_id') or '').strip()
+        payload = self._resolve_case_responsible(request)
 
         if request_id:
             existing = ReceptionIdempotencyRecord.objects.filter(request_id=request_id).first()
@@ -90,7 +106,7 @@ class ReceptionCreateView(APIView):
                 )
 
         try:
-            serializer = ReceptionSerializer(data=request.data, context={'request': request})
+            serializer = ReceptionSerializer(data=payload, context={'request': request})
             serializer.is_valid(raise_exception=True)
             result = serializer.save()
         except Exception:
@@ -104,7 +120,7 @@ class ReceptionCreateView(APIView):
         return Response(result, status=status.HTTP_201_CREATED)
 
 
-def build_dashboard_deadlines(today, include_dismissed=False):
+def build_dashboard_deadlines(today, include_dismissed=False, *, policy):
     """ダッシュボードの期限提醒一覧を計算する。
 
     include_dismissed=True のときは、非表示（DismissedDeadline）・案件終了による
@@ -112,24 +128,32 @@ def build_dashboard_deadlines(today, include_dismissed=False):
     （一括非表示アクションが「今まさに表示されている過期項目」を漏れなく拾うために使う）。
     """
     items = []
+    # 期限は利用者が詳細を見られる顧客・会社だけを対象にする（BusinessAccessPolicy）。
+    cases = policy.queryset('case', 'list')
+    customers = policy.queryset('customer', 'detail')
+    companies = policy.queryset('company', 'detail')
+    family_members = policy.queryset('family_member', 'list')
+    company_staff = policy.queryset('company_staff', 'list')
 
     dismissed_map = {}
     if not include_dismissed:
         dismissed_map = {
             (row['source_type'], row['source_id'], row['deadline_type'], row['deadline_date']): row['created_at']
-            for row in DismissedDeadline.objects.values('source_type', 'source_id', 'deadline_type', 'deadline_date', 'created_at')
+            for row in policy.queryset('dismissed_deadline', 'list').values(
+                'source_type', 'source_id', 'deadline_type', 'deadline_date', 'created_at',
+            )
         }
 
     # 非表示にした後で「その人物／会社について新しい案件が作られた」場合は、
     # 非表示の効力を失わせて再度表示する（"直到我新建关于他的新项目"）。
     customer_latest_case_at = dict(
-        Case.objects.values('customer_id').annotate(latest=Max('created_at')).values_list('customer_id', 'latest')
+        cases.order_by().values('customer_id').annotate(latest=Max('created_at')).values_list('customer_id', 'latest')
     )
     company_latest_case_at = dict(
-        Case.objects.exclude(company__isnull=True)
+        cases.exclude(company__isnull=True).order_by()
         .values('company_id').annotate(latest=Max('created_at')).values_list('company_id', 'latest')
     )
-    family_member_head_customer_id = dict(FamilyMember.objects.values_list('id', 'customer_id'))
+    family_member_head_customer_id = dict(family_members.values_list('id', 'customer_id'))
 
     def dismissal_is_stale(target_type, target_id, dismissed_at):
         if target_type == 'customer':
@@ -144,7 +168,11 @@ def build_dashboard_deadlines(today, include_dismissed=False):
         return latest is not None and latest > dismissed_at
 
     def latest_case(queryset):
-        return queryset.select_related('customer', 'company').order_by('-updated_at', '-id').first()
+        # 案件番号の表示も利用者の案件範囲に限る。
+        return (
+            queryset.filter(pk__in=cases.values('pk'))
+            .select_related('customer', 'company').order_by('-updated_at', '-id').first()
+        )
 
     def case_data(case):
         if case is None:
@@ -190,7 +218,7 @@ def build_dashboard_deadlines(today, include_dismissed=False):
     # customer_id を鍵に1人1エントリへ集約し、案件番号は本人の案件を優先、なければ
     # 家族／会社側で見つかった案件で補完する。
     customer_entries = {}
-    for customer in Customer.objects.all():
+    for customer in customers:
         customer_entries[customer.id] = {
             'name': customer.name,
             'residence_expiry': customer.residence_expiry,
@@ -198,7 +226,7 @@ def build_dashboard_deadlines(today, include_dismissed=False):
             'case': latest_case(customer.cases),
         }
 
-    for family_member in FamilyMember.objects.select_related('customer', 'family_customer'):
+    for family_member in family_members.select_related('customer', 'family_customer'):
         person = family_member.family_customer
         if person:
             entry = customer_entries.get(person.id)
@@ -217,7 +245,7 @@ def build_dashboard_deadlines(today, include_dismissed=False):
             case,
         )
 
-    for staff_member in CompanyStaff.objects.select_related('company', 'customer'):
+    for staff_member in company_staff.select_related('company', 'customer'):
         person = staff_member.customer
         if not person:
             continue
@@ -245,7 +273,7 @@ def build_dashboard_deadlines(today, include_dismissed=False):
             entry['case'],
         )
 
-    for company in Company.objects.all():
+    for company in companies:
         fiscal_deadline = DashboardDeadlinesView.get_next_fiscal_declaration_deadline(company.fiscal_month, today)
         add_deadline(
             'fiscal_declaration',
@@ -261,17 +289,22 @@ def build_dashboard_deadlines(today, include_dismissed=False):
     return items
 
 
-class DashboardSummaryView(APIView):
+class DashboardSummaryView(BusinessAccessMixin, APIView):
     """ダッシュボードの案件統計をサーバー側の集計で返す。
 
     フロントで案件一覧の1ページ目だけを数えていた実装を置き換えるためのもの。
     件数はすべて DB 集計で計算し、ページングの影響を受けない。
     """
 
+    access_resource = 'case'
+
     def get(self, request):
         today = timezone.localdate()
 
-        base = Case.objects.filter(registration_status=Case.REGISTRATION_STATUS_ACTIVE)
+        # 統計は利用者の案件範囲（本人担当／case_view_all で全件）で計算する。
+        base = self.business_policy.queryset('case', 'list').filter(
+            registration_status=Case.REGISTRATION_STATUS_ACTIVE,
+        )
         open_cases = base.exclude(status__in=CLOSED_CASE_STATUSES)
 
         stage_counts = {
@@ -336,10 +369,12 @@ class DashboardSummaryView(APIView):
         })
 
 
-class DashboardDeadlinesView(APIView):
+class DashboardDeadlinesView(BusinessAccessMixin, APIView):
+    access_resource = 'case'
+
     def get(self, request):
         today = timezone.localdate()
-        items = build_dashboard_deadlines(today)
+        items = build_dashboard_deadlines(today, policy=self.business_policy)
         return Response(items)
 
     @staticmethod

@@ -3,11 +3,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from apps.authentication.drf import BusinessScopedViewSetMixin
+
 from .models import DismissedDeadline, Reminder
 from .serializers import DismissedDeadlineSerializer, ReminderSerializer
 
 
-class ReminderViewSet(ModelViewSet):
+class ReminderViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'reminder'
     queryset = Reminder.objects.select_related('case')
     serializer_class = ReminderSerializer
 
@@ -19,7 +22,8 @@ class ReminderViewSet(ModelViewSet):
         return queryset
 
 
-class DismissedDeadlineViewSet(ModelViewSet):
+class DismissedDeadlineViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'dismissed_deadline'
     """ダッシュボード「期限提醒」の個別「非表示」を管理する。更新は想定しないため
     list/create/retrieve/destroy のみ使う（update系はUIから呼ばない）。"""
     queryset = DismissedDeadline.objects.select_related('dismissed_by')
@@ -32,7 +36,7 @@ class DismissedDeadlineViewSet(ModelViewSet):
         from api.views import build_dashboard_deadlines
 
         today = timezone.localdate()
-        items = build_dashboard_deadlines(today)
+        items = build_dashboard_deadlines(today, policy=self.business_policy)
         overdue_items = [item for item in items if item['status'] == 'overdue']
 
         user = request.user if request.user.is_authenticated else None

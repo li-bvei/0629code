@@ -1,11 +1,14 @@
 from rest_framework.filters import SearchFilter
 from rest_framework.viewsets import ModelViewSet
 
+from apps.authentication.drf import BusinessScopedViewSetMixin
+
 from .models import Company, CompanyStaff
 from .serializers import CompanySerializer, CompanyStaffSerializer
 
 
-class CompanyViewSet(ModelViewSet):
+class CompanyViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'company'
     queryset = Company.objects.select_related('representative_customer')
     serializer_class = CompanySerializer
     filter_backends = [SearchFilter]
@@ -19,7 +22,8 @@ class CompanyViewSet(ModelViewSet):
     ]
 
 
-class CompanyStaffViewSet(ModelViewSet):
+class CompanyStaffViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'company_staff'
     queryset = CompanyStaff.objects.select_related('company', 'customer')
     serializer_class = CompanyStaffSerializer
 

@@ -12,7 +12,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from .access_policy import ALLOW, FORBIDDEN, NOT_FOUND
 
-READ_ACTIONS = {'list', 'view', 'export', 'download'}
+READ_ACTIONS = {'list', 'view', 'detail', 'export', 'download'}
 
 # 顧客・会社の表現レベル
 LEVEL_FULL = 'full'          # 担当範囲内、または機微項目閲覧権限あり：全項目
@@ -169,14 +169,33 @@ class CaseRule(Rule):
             return ALLOW
         return FORBIDDEN
 
-    def prepare_create(self, policy, data):
-        responsible = data.get('responsible_employee')
-        if responsible is None:
+    def resolve_create_responsible_id(self, policy, responsible_id):
+        """新規案件の担当者を決める。未指定なら本人（Employee 関連が無ければエラー）。
+        case_change_all が無い利用者は自分以外を担当者にできない。"""
+        if responsible_id in (None, ''):
             if policy.employee is None:
                 raise ValidationError({'responsible_employee': ['担当者を選択してください。']})
-            return {'responsible_employee': policy.employee}
-        if not policy.has(self.CHANGE_ALL) and responsible.pk != policy.employee_id:
+            return policy.employee_id
+        responsible_id = int(responsible_id)
+        if not policy.has(self.CHANGE_ALL) and responsible_id != policy.employee_id:
             raise PermissionDenied('他の担当者の案件は作成できません。')
+        return responsible_id
+
+    def prepare_create(self, policy, data):
+        responsible = data.get('responsible_employee')
+        self.resolve_create_responsible_id(policy, responsible.pk if responsible else None)
+        if responsible is None:
+            return {'responsible_employee': policy.employee}
+        return {}
+
+    def prepare_update(self, policy, instance, data):
+        if 'responsible_employee' in data:
+            new = data['responsible_employee']
+            new_id = new.pk if new is not None else None
+            if new_id != instance.responsible_employee_id and not (
+                policy.has(self.CHANGE_ALL) or self.is_assigned(policy, instance)
+            ):
+                raise PermissionDenied('担当者を変更する権限がありません。')
         return {}
 
     def via_permission(self, policy, action, obj=None):
@@ -317,8 +336,17 @@ class PartyRule(Rule):
             return LEVEL_BASIC
         return LEVEL_MINIMAL
 
+    def detail_scope(self, policy, queryset):
+        """詳細（全項目または伏せ字付き）を表示できる範囲。期限一覧などの集計に使う。"""
+        queryset = self.annotate(policy, queryset)
+        if policy.has_any(self.VIEW_ALL, self.SENSITIVE):
+            return queryset
+        return queryset.filter(_access_assigned=True)
+
     def scope(self, policy, queryset, action):
         queryset = self.annotate(policy, queryset)
+        if action == 'detail':
+            return self.detail_scope(policy, queryset)
         if action == 'list':
             return queryset  # 一覧・検索は全件（範囲外は最小識別情報で表現する）
         if action in READ_ACTIONS:

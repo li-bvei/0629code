@@ -56,6 +56,25 @@ class CustomerSerializer(serializers.ModelSerializer):
             'my_number': {'write_only': True, 'required': False},
         }
 
+    def to_representation(self, instance):
+        from apps.authentication.access_rules import CUSTOMER_RULE, LEVEL_BASIC, LEVEL_MINIMAL
+
+        from .access_representation import minimal_customer, shape_customer
+
+        policy = self.context.get('policy')
+        if policy is None:
+            data = super().to_representation(instance)
+            data.pop('my_number', None)
+            return data
+        level = CUSTOMER_RULE.level(policy, instance)
+        if level == LEVEL_MINIMAL:
+            return minimal_customer(instance)
+        if level == LEVEL_BASIC:
+            # 詳細シリアライザでも関連案件・活動は計算しない（案件の無い顧客の基本情報のみ）。
+            data = CustomerSerializer(instance, context={**self.context, 'policy': None}).data
+            return shape_customer(dict(data), level)
+        return shape_customer(super().to_representation(instance), level)
+
     def get_cases_count(self, obj):
         annotated = getattr(obj, 'cases_count_annotated', None)
         if annotated is not None:
@@ -157,8 +176,13 @@ class CustomerDetailSerializer(CustomerSerializer):
     def _related_case_queryset(self, obj):
         cache = getattr(self, '_related_cases_cache', {})
         if obj.pk not in cache:
+            cases = obj.cases.all()
+            policy = self.context.get('policy')
+            if policy is not None:
+                # 関連案件は利用者の案件範囲に限る。
+                cases = policy.scope('case', cases, 'list')
             cache[obj.pk] = list(
-                obj.cases
+                cases
                 .select_related(
                     'case_type_master',
                     'application_category',
@@ -203,7 +227,7 @@ class CustomerDetailSerializer(CustomerSerializer):
             if role.position:
                 relation['positions'].add(role.position)
 
-        for case in obj.cases.exclude(company_id__isnull=True).only(
+        for case in obj.cases.filter(pk__in=[c.pk for c in self._related_case_queryset(obj)]).exclude(company_id__isnull=True).only(
             'company_id', 'registration_status', 'status',
         ):
             relation = ensure_relation(case.company_id)
@@ -259,9 +283,10 @@ class CustomerDetailSerializer(CustomerSerializer):
     def get_recent_activities(self, obj):
         from apps.timelines.models import Timeline
 
+        visible_case_ids = [case.pk for case in self._related_case_queryset(obj)]
         rows = (
             Timeline.objects
-            .filter(case__customer=obj)
+            .filter(case__customer=obj, case_id__in=visible_case_ids)
             .select_related('case', 'actor')
             .order_by('-occurred_at', '-created_at', '-id')[:10]
         )
@@ -403,4 +428,11 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
                     continue
                 data[field] = getattr(person, field)
         data.pop('my_number', None)
+        policy = self.context.get('policy')
+        if policy is not None:
+            from apps.authentication.access_rules import CUSTOMER_RULE
+
+            from .access_representation import shape_person_child
+
+            shape_person_child(data, CUSTOMER_RULE.level(policy, instance.customer))
         return data

@@ -13,6 +13,10 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from django.conf import settings
+
+from apps.audit.services import record
+from apps.authentication.drf import BusinessScopedViewSetMixin, business_api_view
 from apps.reminders.models import Reminder
 from apps.timelines.models import Timeline
 from apps.timelines.services import record_case_event
@@ -73,7 +77,8 @@ class ActiveOrderingMixin:
         return queryset
 
 
-class CaseTypeMasterViewSet(ActiveOrderingMixin, ModelViewSet):
+class CaseTypeMasterViewSet(BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = CaseTypeMaster.objects.all()
     serializer_class = CaseTypeMasterSerializer
 
@@ -84,7 +89,8 @@ class CaseTypeMasterViewSet(ActiveOrderingMixin, ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class CaseApplicationCategoryViewSet(ActiveOrderingMixin, ModelViewSet):
+class CaseApplicationCategoryViewSet(BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = CaseApplicationCategory.objects.all()
     serializer_class = CaseApplicationCategorySerializer
 
@@ -95,7 +101,8 @@ class CaseApplicationCategoryViewSet(ActiveOrderingMixin, ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class CaseStatusSettingViewSet(ModelViewSet):
+class CaseStatusSettingViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = CaseStatusSetting.objects.all()
     serializer_class = CaseStatusSettingSerializer
 
@@ -112,12 +119,14 @@ class CaseStatusSettingViewSet(ModelViewSet):
         return queryset
 
 
-class AcquisitionPlacePresetViewSet(ActiveOrderingMixin, ModelViewSet):
+class AcquisitionPlacePresetViewSet(BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = AcquisitionPlacePreset.objects.all()
     serializer_class = AcquisitionPlacePresetSerializer
 
 
-class ResponsiblePartyPresetViewSet(ActiveOrderingMixin, ModelViewSet):
+class ResponsiblePartyPresetViewSet(BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = ResponsiblePartyPreset.objects.all()
     serializer_class = ResponsiblePartyPresetSerializer
 
@@ -128,7 +137,8 @@ class ChecklistItemPresetPagination(PageNumberPagination):
     max_page_size = 500
 
 
-class ChecklistItemPresetViewSet(ActiveOrderingMixin, ModelViewSet):
+class ChecklistItemPresetViewSet(BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = ChecklistItemPreset.objects.all()
     serializer_class = ChecklistItemPresetSerializer
     pagination_class = ChecklistItemPresetPagination
@@ -142,6 +152,8 @@ class ChecklistItemPresetViewSet(ActiveOrderingMixin, ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='seed-standard')
     def seed_standard(self, request):
+        if not settings.ENABLE_DEV_TOOLS:
+            return Response({'detail': 'この機能は本番環境では無効です（管理コマンドを使用）。'}, status=status.HTTP_404_NOT_FOUND)
         result = seed_standard_checklist_item_presets()
         return Response(result, status=status.HTTP_201_CREATED)
 
@@ -175,7 +187,11 @@ def build_auto_note(lines):
     return '\n'.join([*lines, '自動作成：true'])
 
 
-class CaseViewSet(ModelViewSet):
+class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    """案件。範囲は担当者（responsible_employee）で決まる：本人担当のみ／case_view_all で
+    全件閲覧／case_change_all で担当外・未割当の変更。専用 action はすべて「変更」扱い。"""
+
+    access_resource = 'case'
     queryset = Case.objects.select_related(
         'customer',
         'company',
@@ -210,6 +226,21 @@ class CaseViewSet(ModelViewSet):
         if company_id:
             queryset = queryset.filter(company_id=company_id)
         return self.apply_work_ordering(queryset, view)
+
+    def perform_update(self, serializer):
+        previous_responsible_id = serializer.instance.responsible_employee_id
+        super().perform_update(serializer)
+        instance = serializer.instance
+        policy = self.business_policy
+        if instance.responsible_employee_id != previous_responsible_id:
+            record(
+                module='cases', action='case_reassign', request=self.request, obj=instance,
+                changes={'responsible_employee_id': {'from': previous_responsible_id, 'to': instance.responsible_employee_id}},
+                via_permission=self.access_rule.via_permission(policy, 'change', instance),
+            )
+        elif previous_responsible_id != policy.employee_id:
+            record(module='cases', action='case_change_other', request=self.request, obj=instance,
+                   via_permission='cases.case_change_all')
 
     def apply_work_ordering(self, queryset, view):
         priority = DbCase(
@@ -309,11 +340,11 @@ class CaseViewSet(ModelViewSet):
             new_number = self._build_regenerated_case_number(case)
         except DjangoValidationError as exc:
             return Response({'detail': exc.message}, status=status.HTTP_400_BAD_REQUEST)
-        if Case.objects.exclude(pk=case.pk).filter(case_number=new_number).exists():
+        if Case.objects.exclude(pk=case.pk).filter(case_number=new_number).exists():  # access-reviewed: 案件番号の一意性確認
             return Response({'detail': '同じ案件番号が既に存在します。'}, status=status.HTTP_400_BAD_REQUEST)
         case.case_number = new_number
         case.save(update_fields=['case_number', 'updated_at'])
-        Timeline.objects.create(
+        Timeline.objects.create(  # access-reviewed: 権限確認済み案件への業務記録
             case=case,
             title='案件番号変更',
             content=f'旧番号：{old_number}\n新番号：{new_number}',
@@ -547,7 +578,7 @@ class CaseViewSet(ModelViewSet):
         skipped_count = 0
         with transaction.atomic():
             for candidate in candidates:
-                exists = Reminder.objects.filter(
+                exists = Reminder.objects.filter(  # access-reviewed: 権限確認済み案件の重複確認
                     case=case,
                     title=candidate['title'],
                     remind_at=candidate['remind_at'],
@@ -555,7 +586,7 @@ class CaseViewSet(ModelViewSet):
                 if exists:
                     skipped_count += 1
                     continue
-                reminder = Reminder.objects.create(
+                reminder = Reminder.objects.create(  # access-reviewed: 権限確認済み案件への作成
                     case=case,
                     title=candidate['title'],
                     remind_at=candidate['remind_at'],
@@ -604,7 +635,8 @@ class CaseViewSet(ModelViewSet):
         )
 
 
-class CaseChecklistTemplateViewSet(ModelViewSet):
+class CaseChecklistTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = CaseChecklistTemplate.objects.prefetch_related('items')
     serializer_class = CaseChecklistTemplateSerializer
     pagination_class = CaseChecklistPagination
@@ -664,11 +696,14 @@ class CaseChecklistTemplateViewSet(ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='seed-standard')
     def seed_standard(self, request):
+        if not settings.ENABLE_DEV_TOOLS:
+            return Response({'detail': 'この機能は本番環境では無効です（管理コマンドを使用）。'}, status=status.HTTP_404_NOT_FOUND)
         result = seed_standard_case_checklist_templates()
         return Response(result, status=status.HTTP_201_CREATED)
 
 
-class CaseChecklistTemplateItemViewSet(ModelViewSet):
+class CaseChecklistTemplateItemViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = CaseChecklistTemplateItem.objects.select_related('template')
     serializer_class = CaseChecklistTemplateItemSerializer
     pagination_class = CaseChecklistPagination
@@ -871,7 +906,8 @@ class CaseChecklistTemplateItemViewSet(ModelViewSet):
         return Response(serializer.data)
 
 
-class CaseChecklistItemViewSet(ModelViewSet):
+class CaseChecklistItemViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'case_checklist_item'
     queryset = CaseChecklistItem.objects.select_related('case', 'source_template_item', 'completed_by')
     serializer_class = CaseChecklistItemSerializer
     pagination_class = CaseChecklistPagination
@@ -911,14 +947,14 @@ class CaseChecklistItemViewSet(ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         response = super().create(request, *args, **kwargs)
-        item = CaseChecklistItem.objects.get(pk=response.data['id'])
+        item = CaseChecklistItem.objects.get(pk=response.data['id'])  # access-reviewed: 直前に作成した自分の項目
         response.data['progress_summary'] = self._progress_payload(item.case)
         return response
 
     def update(self, request, *args, **kwargs):
         was_completed = self.get_object().is_completed
         response = super().update(request, *args, **kwargs)
-        item = CaseChecklistItem.objects.select_related('case').get(pk=response.data['id'])
+        item = CaseChecklistItem.objects.select_related('case').get(pk=response.data['id'])  # access-reviewed: 直前に更新した項目
         self._record_completion_event(item, was_completed, request)
         response.data['progress_summary'] = self._progress_payload(item.case)
         return response
@@ -926,7 +962,7 @@ class CaseChecklistItemViewSet(ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         was_completed = self.get_object().is_completed
         response = super().partial_update(request, *args, **kwargs)
-        item = CaseChecklistItem.objects.select_related('case').get(pk=response.data['id'])
+        item = CaseChecklistItem.objects.select_related('case').get(pk=response.data['id'])  # access-reviewed: 直前に更新した項目
         self._record_completion_event(item, was_completed, request)
         response.data['progress_summary'] = self._progress_payload(item.case)
         return response
@@ -942,13 +978,14 @@ class CaseChecklistItemViewSet(ModelViewSet):
             )
 
 
-@api_view(['POST'])
+@business_api_view(['POST'], 'diagnostics')
 def seed_case_checklist_demo_view(request):
+    # 開発用：本番では URL 自体を登録しない（api/urls.py）。
     result = seed_case_checklist_demo_data()
     return Response(result, status=status.HTTP_201_CREATED)
 
 
-@api_view(['GET'])
+@business_api_view(['GET'], 'case_settings')
 def case_checklist_deletion_history(request):
     templates = [
         {

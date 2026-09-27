@@ -53,6 +53,18 @@ class CompanySerializer(serializers.ModelSerializer):
     def get_cases_count(self, obj):
         return obj.cases.count()
 
+    def to_representation(self, instance):
+        from apps.authentication.access_rules import COMPANY_RULE, LEVEL_MINIMAL
+        from apps.customers.access_representation import minimal_company, shape_company
+
+        policy = self.context.get('policy')
+        if policy is None:
+            return super().to_representation(instance)
+        level = COMPANY_RULE.level(policy, instance)
+        if level == LEVEL_MINIMAL:
+            return minimal_company(instance)
+        return shape_company(super().to_representation(instance), level)
+
 
 COMPANY_STAFF_PERSON_FIELDS = [
     'name',
@@ -149,5 +161,18 @@ class CompanyStaffSerializer(serializers.ModelSerializer):
         if instance.customer_id:
             person = instance.customer
             for field in COMPANY_STAFF_PERSON_FIELDS:
+                if field == 'my_number':
+                    continue
                 data[field] = getattr(person, field)
+            data['has_my_number'] = bool(person.my_number)
+        else:
+            data['has_my_number'] = bool(data.get('my_number'))
+        # My Number は明文で返さない（従来は人物の値をそのまま返していた）。
+        data.pop('my_number', None)
+        policy = self.context.get('policy')
+        if policy is not None:
+            from apps.authentication.access_rules import COMPANY_RULE
+            from apps.customers.access_representation import shape_person_child
+
+            shape_person_child(data, COMPANY_RULE.level(policy, instance.company))
         return data

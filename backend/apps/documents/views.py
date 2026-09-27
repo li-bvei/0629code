@@ -1,10 +1,13 @@
 from rest_framework.viewsets import ModelViewSet
 
+from apps.authentication.drf import BusinessScopedViewSetMixin
+
 from .models import Document
 from .serializers import DocumentSerializer
 
 
-class DocumentViewSet(ModelViewSet):
+class DocumentViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'document'
     queryset = Document.objects.select_related('case')
     serializer_class = DocumentSerializer
 

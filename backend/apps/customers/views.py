@@ -6,6 +6,10 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from django.conf import settings
+
+from apps.authentication.drf import BusinessScopedViewSetMixin
+
 from apps.cases.models import Case
 
 from .demo_data import seed_standard_residence_statuses
@@ -39,18 +43,26 @@ class ResidenceStatusMasterPagination(PageNumberPagination):
     max_page_size = 200
 
 
-class ResidenceStatusMasterViewSet(ActiveOrderingMixin, ModelViewSet):
+class ResidenceStatusMasterViewSet(BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+    access_resource = 'case_settings'
     queryset = ResidenceStatusMaster.objects.all()
     serializer_class = ResidenceStatusMasterSerializer
     pagination_class = ResidenceStatusMasterPagination
 
     @action(detail=False, methods=['post'], url_path='seed-standard')
     def seed_standard(self, request):
+        if not settings.ENABLE_DEV_TOOLS:
+            return Response({'detail': 'この機能は本番環境では無効です（管理コマンドを使用）。'}, status=status.HTTP_404_NOT_FOUND)
         result = seed_standard_residence_statuses()
         return Response(result, status=status.HTTP_201_CREATED)
 
 
-class CustomerViewSet(ModelViewSet):
+class CustomerViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    """顧客。一覧・検索は全件だが範囲外は最小識別情報のみ、詳細は担当範囲／全件閲覧権限／
+    案件の無い顧客（基本情報のみ）に限る。証件番号は担当範囲外で伏せる。"""
+
+    access_resource = 'customer'
+    access_action_map = {'match': 'list'}
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 
@@ -76,8 +88,9 @@ class CustomerViewSet(ModelViewSet):
             column_q = Q()
             for field in self.SEARCH_FIELDS:
                 column_q |= Q(**{f'{field}__icontains': search})
+            # 案件番号での検索は、利用者が見られる案件に限る。
             case_customer_ids = list(
-                Case.objects.filter(case_number__icontains=search)
+                self.business_policy.queryset('case', 'list').filter(case_number__icontains=search)
                 .values_list('customer_id', flat=True)
             )
             if case_customer_ids:
@@ -94,10 +107,10 @@ class CustomerViewSet(ModelViewSet):
             # 人物だけを「除外してよい家族」とみなす（複数の reverse relation を1つの
             # filter/exclude に混ぜると意図しないJOINになりやすいため、ID集合の差分で
             # 明示的に計算する）。
-            dependent_ids = set(FamilyMember.objects.filter(
+            dependent_ids = set(FamilyMember.objects.filter(  # access-reviewed: 一覧の除外条件用の ID 計算（出力は範囲済み queryset）
                 family_customer__isnull=False
             ).values_list('family_customer_id', flat=True))
-            independent_ids = set(Customer.objects.filter(
+            independent_ids = set(Customer.objects.filter(  # access-reviewed: 同上
                 Q(cases__isnull=False)
                 | Q(representative_companies__isnull=False)
                 | Q(company_staff_roles__isnull=False)
@@ -106,7 +119,7 @@ class CustomerViewSet(ModelViewSet):
 
         if self.action == 'list':
             queryset = queryset.prefetch_related(
-                Prefetch('family_links', queryset=FamilyMember.objects.select_related('customer')),
+                Prefetch('family_links', queryset=FamilyMember.objects.select_related('customer')),  # access-reviewed: 範囲済み一覧への prefetch
             ).annotate(
                 cases_count_annotated=Count('cases', distinct=True),
                 dependents_count_annotated=Count(
@@ -114,6 +127,18 @@ class CustomerViewSet(ModelViewSet):
                 ),
             )
         return queryset
+
+    def retrieve(self, request, *args, **kwargs):
+        from apps.audit.services import record
+        from apps.authentication.access_rules import CUSTOMER_RULE
+
+        instance = self.get_object()
+        policy = self.business_policy
+        assigned, _ = CUSTOMER_RULE._flags(policy, instance)
+        if not assigned and policy.has(CUSTOMER_RULE.SENSITIVE):
+            record(module='customers', action='sensitive_identity_view', request=request, obj=instance,
+                   via_permission=CUSTOMER_RULE.SENSITIVE)
+        return Response(self.get_serializer(instance).data)
 
     @action(detail=False, methods=['post'], url_path='match')
     def match(self, request):
@@ -137,10 +162,47 @@ class CustomerViewSet(ModelViewSet):
             residence_card_number=data.get('residence_card_number') or data.get('residence_card_no') or '',
             passport_number=data.get('passport_number') or data.get('passport_no') or '',
         )
-        return Response({'candidates': candidates})
+        return Response({'candidates': self._shape_candidates(candidates)})
+
+    def _shape_candidates(self, candidates):
+        """担当範囲外の候補からは連絡先を除き、最小識別情報に揃える（Q5）。"""
+        from apps.authentication.access_rules import CUSTOMER_RULE, DETAIL_LEVELS
+
+        from .access_representation import minimal_customer
+
+        policy = self.business_policy
+        customers = {
+            c.pk: c for c in policy.queryset('customer', 'list').filter(pk__in=[row['customer_id'] for row in candidates])
+        }
+        shaped = []
+        for row in candidates:
+            customer = customers.get(row['customer_id'])
+            if customer is None:
+                continue
+            level = CUSTOMER_RULE.level(policy, customer)
+            if level in DETAIL_LEVELS:
+                shaped.append({**row, 'access_level': level})
+                continue
+            minimal = minimal_customer(customer)
+            shaped.append({
+                'customer_id': customer.pk,
+                'name': minimal['name'],
+                'name_kana': minimal['name_kana'],
+                'birth_date': minimal['birth_date'],
+                'nationality': minimal['nationality'],
+                'has_active_case': minimal['has_active_case'],
+                'responsible_employee_names': minimal['responsible_employee_names'],
+                'case_count': row.get('case_count'),
+                'match_strength': row['match_strength'],
+                'match_score': row['match_score'],
+                'match_reason': row['match_reason'],
+                'access_level': level,
+            })
+        return shaped
 
 
-class FamilyMemberViewSet(ModelViewSet):
+class FamilyMemberViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    access_resource = 'family_member'
     queryset = FamilyMember.objects.select_related('customer', 'family_customer')
     serializer_class = FamilyMemberSerializer
 
