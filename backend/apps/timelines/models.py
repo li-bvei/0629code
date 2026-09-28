@@ -24,6 +24,8 @@ class Timeline(models.Model):
     EVENT_CASE_REOPENED = 'case_reopened'
     EVENT_DOCUMENT_REQUEST = 'document_request'
     EVENT_DOCUMENT_RECEIVED = 'document_received'
+    EVENT_DOCUMENT_ARCHIVED = 'document_archived'
+    EVENT_DOCUMENT_RESTORED = 'document_restored'
     EVENT_ACCOUNTING_LINKED = 'accounting_linked'
 
     case = models.ForeignKey(

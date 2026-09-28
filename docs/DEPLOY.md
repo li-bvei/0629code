@@ -377,3 +377,37 @@ $RUN shell -c "from django.contrib.auth.models import User; print(User.objects.f
 | 反向 migration（仅在必须删除新表/新列时） | `migrate accounting 0014`、`migrate employees 0001`、`migrate authentication zero`、`migrate audit zero`（会丢失 owner、关联、审计数据，须先备份并批准） |
 | 李无法登录 | `$RUN changepassword zbry6947@gmail.com`、`$RUN axes_reset_username zbry6947@gmail.com`、`$RUN protect_account --username zbry6947@gmail.com --apply --yes`、`$RUN restore_access_snapshot /ops/<file> --user zbry6947@gmail.com --apply --yes` |
 | 数据整体恢复 | 用第 3 步的 SQL 和媒体卷备份恢复（须批准） |
+
+
+## 案件文件的备份与恢复（P2 文件管理）
+
+文件实体保存在 Docker 卷 `media_volume`（backend 挂载为 `/app/media`，frontend nginx 只读挂载为 `/var/protected_media`），元数据保存在数据库 `case_documents` 和 `case_document_replacements` 表。**两者必须一起备份和恢复。**
+
+### 备份（建议每天，另外在上线或大量导入之前额外做一次）
+
+```bash
+cd /www/wwwroot/0629code
+STAMP=$(date +%Y%m%d_%H%M)
+docker compose --env-file .env.prod exec db sh -c 'mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --single-transaction "$MYSQL_DATABASE"' > backups/db_$STAMP.sql
+docker run --rm -v 0629code_media_volume:/m:ro -v "$PWD/backups":/b alpine tar czf /b/media_$STAMP.tgz -C /m .
+sha256sum backups/db_$STAMP.sql backups/media_$STAMP.tgz > backups/checksums_$STAMP.txt
+```
+
+- 备份文件存放到服务器之外（加密存储），定期检查能否恢复。
+- 替换前的文件也留在卷里，所以它们也会被备份。
+- 卷名以 `docker volume ls` 显示为准。
+
+### 恢复（需批准；先在测试环境演练）
+
+1. 进入维护模式，停止 backend。
+2. 用同一时间点的 SQL 恢复数据库。
+3. 恢复媒体卷：`docker run --rm -v 0629code_media_volume:/m -v "$PWD/backups":/b alpine sh -c "cd /m && tar xzf /b/media_<STAMP>.tgz"`。
+4. 执行 `python manage.py inventory_media_references`（只读），核对「有 Document 但实体文件不存在」的数量为 0；「实体文件没有对应 Document」的只报告，不删除。
+5. 抽查几个 Document，用受保护下载确认能取到文件，SHA-256 与数据库一致。
+
+### 保留与删除
+
+- 日常请用「归档」，不要删除。归档后文件仍保留，也仍可以通过受保护下载获取。
+- 删除（DELETE）会物理删除文件，只在确有必要时执行；批量删除必须先预览并获得批准。
+- 替换历史和替换前的文件不会自动删除。需要清理时，另行设计并获得批准。
+- 没有接入杀毒软件，只做扩展名白名单和文件头签名检查。如果要接入外部扫描，另行评估。

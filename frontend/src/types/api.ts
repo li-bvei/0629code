@@ -899,6 +899,18 @@ export interface Document {
   // 受保護ダウンロード API の URL（公開 /media/ URL ではない）
   file_url: string
   preview_url?: string
+  // P2：分類・メタデータ・アーカイブ・差し替え履歴・必要資料との関連
+  category?: DocumentCategory
+  category_display?: string
+  sha256?: string
+  uploaded_by?: number | null
+  uploaded_by_name?: string
+  is_archived?: boolean
+  archived_at?: string | null
+  archived_by_name?: string
+  archive_reason?: string
+  replacement_count?: number
+  checklist_items?: Array<{ id: number; name: string; received_at: string | null }>
   file_name: string
   file_path: string
   file_size: number | null
@@ -915,6 +927,34 @@ export interface DocumentPayload {
   file?: File | null
   source?: string
   is_visible_to_client?: boolean
+  category?: DocumentCategory
+  checklist_item?: number | null
+  replace_reason?: string
+}
+
+export type DocumentCategory =
+  | 'identity' | 'residence' | 'application' | 'certificate' | 'company' | 'contract' | 'correspondence' | 'other'
+
+export const DOCUMENT_CATEGORY_OPTIONS: Array<{ value: DocumentCategory; label: string }> = [
+  { value: 'identity', label: '本人確認書類' },
+  { value: 'residence', label: '在留関係' },
+  { value: 'application', label: '申請書類' },
+  { value: 'certificate', label: '証明書' },
+  { value: 'company', label: '会社書類' },
+  { value: 'contract', label: '契約・請求' },
+  { value: 'correspondence', label: '連絡・通知' },
+  { value: 'other', label: 'その他' },
+]
+
+export interface DocumentReplacement {
+  id: number
+  previous_file_name: string
+  previous_size: number | null
+  previous_sha256: string
+  previous_content_type: string
+  reason: string
+  replaced_by_name: string
+  replaced_at: string
 }
 
 export interface FamilyMember {

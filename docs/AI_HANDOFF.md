@@ -324,6 +324,10 @@ Case
 
 **P2 Visa（分支 `codex/p2-visa-import`，基于会计分支 `e86e961`）**：Visa 保留在 `accounting/vouchers` 中，新增 CSV/XLSX 一括导入：上传 → 选择工作表 → 自动/手动列映射 → 预览和逐行校验 → 两种创建方式 → 逐行结果 → 错误报告 CSV → 批量 PDF ZIP → 修正错误行后重试。重复导入用文件哈希和护照号检测，提交用 `request_id` 保证幂等；所有敏感导出都写审计（`accounting/0017`）。详见 `docs/CHANGELOG_2026-09-28_p2_visa_import.md`。
 
+**P2 文件（分支 `codex/p2-documents`，基于 P1 `dde7e4f`，独立于会计和 Visa）**：只扩展现有 Document：分类、SHA-256/上传人等元数据、上传检查（扩展名白名单、文件头签名、拒绝可执行文件、大小上限）、UUID 保存名、上传时关联必要资料、归档/恢复（写 Timeline 和审计）、替换历史（替换前文件不删除）；继续使用 P0 的受保护下载。备份和恢复见 `docs/DEPLOY.md`「案件文件的备份与恢复」。详见 `docs/CHANGELOG_2026-09-28_p2_documents.md`。
+
+**P2 集成（分支 `codex/p2-integration`，2026-09-29）**：基于 P1，合并 Visa（含会计）与文件分支；只有文档冲突，已手动合并；后端 247 项、前端单元测试、构建、migration 检查全部通过。后续 P2-C11 帐票在此分支上开发。详见 `docs/CHANGELOG_2026-09-29_p2_integration.md`。
+
 原计划清单（保留作对照）：
 
 1. Case Workspace Action Bar：対応記録、資料受領、タスク、ファイル、入金、待機、完了。

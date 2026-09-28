@@ -230,3 +230,13 @@ Portal 相关数据应支持：
 |---|---|---|---|
 | `accounting_visa_import_batches`（VisaImportBatch） | 文件名、SHA-256、工作表、字符编码、列映射、创建方式、状态、行数/成功/错误/跳过件数、`results`（逐行结果）、已处理 `request_id` | `accounting/0017_visa_import_batch`（接在会计分支 0016 之后） | 不保存行数据本身；只保存错误行的字段、原值和错误原因（供修正用） |
 | `accounting_visa_return_applications` | `import_batch_id`（可空 FK，`SET_NULL`）、`import_row_number` | 同上 | 标记由哪个导入批次、第几行创建 |
+
+### 11.6 P2 文件管理（2026-09-28 本地已实现，分支 `codex/p2-documents`；生产未部署）
+
+| 对象 | 字段 | migration | 说明 |
+|---|---|---|---|
+| `case_documents` | `category`（本人确认/在留/申请/证明/公司/合同请求/联络/其他）、`sha256`、`uploaded_by_id`、`is_archived`、`archived_at`、`archived_by_id`、`archive_reason`；`file` 的保存名改为 `case_documents/YYYY/MM/<uuid>.<扩展名>` | `documents/0004_document_metadata_archive_replacements` | 原始文件名存在 `file_name`；MIME 按扩展名推断；既有文件的保存路径不变 |
+| `case_document_replacements`（DocumentReplacement） | 替换前的保存名、原始文件名、大小、SHA-256、MIME、原因、执行人、时间 | 同上 | 只保留替换历史，不是完整版本管理；替换前的文件不删除 |
+
+- Checklist 关联沿用 P1 的 `case_checklist_items.document_id`；上传时可以指定同一案件的必要资料。
+- 已在集成分支 `codex/p2-integration` 与会计、Visa 分支合并（文档冲突已手动合并；migration 分属 `accounting/0016～0017` 与 `documents/0004`，互不依赖）。

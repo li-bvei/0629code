@@ -34,7 +34,7 @@
 
 ## 验证
 
-- 精算 UI 废止后：会计测试 29 项通过、前端构建通过（完整结果见下方集成记录）。
+- 精算 UI 废止后：会计测试 29 项通过、前端构建通过（完整结果见 `CHANGELOG_2026-09-29_p2_integration.md`）。
 - 后端 `python manage.py test`：226 项全部通过（P1 的 213 项 + 本分支 13 项）。
 - 前端 `npm run build`：通过；`npm run test:unit`：6 项通过；`makemigrations --check`：无差异。
 - 浏览器实测：未完成（与 P0/P1 同样的阻断项）。
