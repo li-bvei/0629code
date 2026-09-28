@@ -320,6 +320,8 @@ Case
 - 入金只写 Timeline（`payment_received`，metadata 中 `accounting_record_created=false`），不创建任何会计数据。
 - 后端 213 项测试、前端单元测试 6 项全部通过；前端 build 通过。**浏览器实测尚未完成**（与 P0 同样的阻断项）。
 
+**P2 文件（分支 `codex/p2-documents`，基于 P1 `dde7e4f`，独立于会计和 Visa）**：只扩展现有 Document：分类、SHA-256/上传人等元数据、上传检查（扩展名白名单、文件头签名、拒绝可执行文件、大小上限）、UUID 保存名、上传时关联必要资料、归档/恢复（写 Timeline 和审计）、替换历史（替换前文件不删除）；继续使用 P0 的受保护下载。备份和恢复见 `docs/DEPLOY.md`「案件文件的备份与恢复」。详见 `docs/CHANGELOG_2026-09-28_p2_documents.md`。
+
 原计划清单（保留作对照）：
 
 1. Case Workspace Action Bar：対応記録、資料受領、タスク、ファイル、入金、待機、完了。

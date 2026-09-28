@@ -55,7 +55,7 @@
 | P2-C6 | 前端路由级 lazy loading | ⬜ |
 | P2-C7 | 支出分类手动输入、规范化与本人历史推荐 | ⬜ |
 | P2-C8 | 个人报销按 owner 隔离并保持简单登记 | ⬜ | 不新增审核、支付或入账流程 |
-| P2-C9 | Checklist/Document 现有系统文件管理 | ⬜ | 不连接或迁移 Google Drive；第一阶段不做完整版本管理 |
+| P2-C9 | Checklist/Document 现有系统文件管理 | ✅（本地，分支 `codex/p2-documents`） | 分类、元数据、上传检查、Checklist 关联、归档/恢复、替换历史、备份恢复说明；不连接 Drive，不做版本树 |
 | P2-C10 | Visa CSV/XLSX 导入、校验与批量 PDF | ⬜ |
 | P2-C11 | 报价/契约/请求/领收帐票分别完善 | ⬜ |
 

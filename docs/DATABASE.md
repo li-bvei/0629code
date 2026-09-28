@@ -211,3 +211,14 @@ Portal 相关数据应支持：
 - 上述字段在通用序列化器中为只读，只能通过 `apps/cases/work_service.py` 修改（事务 + Timeline + AuditLog）。
 - 均为加法 migration，不写入数据；旧代码可以在新表结构上运行。
 - Timeline 新增事件常量：`document_received`、`accounting_linked`（`event_type` 是自由 CharField，不涉及 migration）。
+
+
+### 11.6 P2 文件管理（2026-09-28 本地已实现，分支 `codex/p2-documents`；生产未部署）
+
+| 对象 | 字段 | migration | 说明 |
+|---|---|---|---|
+| `case_documents` | `category`（本人确认/在留/申请/证明/公司/合同请求/联络/其他）、`sha256`、`uploaded_by_id`、`is_archived`、`archived_at`、`archived_by_id`、`archive_reason`；`file` 的保存名改为 `case_documents/YYYY/MM/<uuid>.<扩展名>` | `documents/0004_document_metadata_archive_replacements` | 原始文件名存在 `file_name`；MIME 按扩展名推断；既有文件的保存路径不变 |
+| `case_document_replacements`（DocumentReplacement） | 替换前的保存名、原始文件名、大小、SHA-256、MIME、原因、执行人、时间 | 同上 | 只保留替换历史，不是完整版本管理；替换前的文件不删除 |
+
+- Checklist 关联沿用 P1 的 `case_checklist_items.document_id`；上传时可以指定同一案件的必要资料。
+- 与会计分支、Visa 分支合并时，本文件末尾追加的段落会产生文本冲突，需要手动合并。

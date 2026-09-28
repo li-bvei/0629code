@@ -291,6 +291,11 @@ class DocumentRule(CaseChildRule):
             return ALLOW
         return FORBIDDEN
 
+    def prepare_create(self, policy, data):
+        super().prepare_create(policy, data)
+        # 登録者は後端が設定する（フロントからの指定は受け付けない）。
+        return {'uploaded_by': policy.user}
+
     def via_permission(self, policy, action, obj=None):
         if obj is not None and CASE_RULE.is_assigned(policy, obj.case):
             return 'assigned'

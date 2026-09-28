@@ -17,7 +17,8 @@ import RemoteStaffSelect from '../RemoteStaffSelect.vue'
 import http from '../../services/http'
 import { useAuthStore } from '../../stores/auth'
 import { formatDate } from '../../utils/date'
-import { CASE_WAITING_REASON_OPTIONS } from '../../types/api'
+import { CASE_WAITING_REASON_OPTIONS, DOCUMENT_CATEGORY_OPTIONS } from '../../types/api'
+import type { DocumentCategory } from '../../types/api'
 import type { Case, CaseChecklistItem, Document } from '../../types/api'
 
 const props = defineProps<{
@@ -165,7 +166,7 @@ const submitReceive = async () => {
 
 // --- ファイル ---------------------------------------------------------------
 const filesDrawerVisible = ref(false)
-const uploadForm = reactive({ title: '', file: null as File | null })
+const uploadForm = reactive({ title: '', file: null as File | null, category: 'other' as DocumentCategory, checklist_item: null as number | null })
 const uploading = ref(false)
 const apiBase = (http.defaults.baseURL || '/api/').replace(/\/$/, '')
 const downloadUrl = (doc: Document) => `${apiBase}/documents/${doc.id}/download/`
@@ -186,7 +187,10 @@ const submitUpload = async () => {
   }
   uploading.value = true
   const ok = await run(
-    () => createDocument({ case: caseId.value, title: uploadForm.title.trim(), file: uploadForm.file }),
+    () => createDocument({
+      case: caseId.value, title: uploadForm.title.trim(), file: uploadForm.file,
+      category: uploadForm.category, checklist_item: uploadForm.checklist_item,
+    }),
     'ファイルを登録しました。',
     'ファイルを登録できませんでした。',
   )
@@ -194,6 +198,7 @@ const submitUpload = async () => {
   if (ok) {
     uploadForm.title = ''
     uploadForm.file = null
+    uploadForm.checklist_item = null
     await loadDocuments()
   }
 }
@@ -336,7 +341,9 @@ const submitPayment = async () => {
   <el-drawer v-model="filesDrawerVisible" title="ファイル" size="560px">
     <el-alert v-if="documentsError" :title="documentsError" type="error" :closable="false" class="drawer-alert" />
     <el-table v-loading="documentsLoading" :data="caseDocuments" size="small" empty-text="ファイルはまだありません">
-      <el-table-column prop="title" label="タイトル" min-width="150" />
+      <el-table-column label="タイトル" min-width="150">
+        <template #default="{ row }">{{ row.title }}<div class="drawer-hint">{{ row.category_display }}</div></template>
+      </el-table-column>
       <el-table-column prop="file_name" label="ファイル名" min-width="150" show-overflow-tooltip />
       <el-table-column label="" width="170">
         <template #default="{ row }">
@@ -355,6 +362,17 @@ const submitPayment = async () => {
       </el-form-item>
       <el-form-item label="タイトル">
         <el-input v-model="uploadForm.title" />
+      </el-form-item>
+      <el-form-item label="分類">
+        <el-select v-model="uploadForm.category" style="width: 100%">
+          <el-option v-for="option in DOCUMENT_CATEGORY_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="必要資料に関連付け（任意）">
+        <el-select v-model="uploadForm.checklist_item" clearable placeholder="関連付けない" style="width: 100%">
+          <el-option v-for="item in checklistItems" :key="item.id" :label="item.name" :value="item.id" />
+        </el-select>
+        <div class="field-hint">受領日の記録は「資料受領」で行います。PDF・画像・Office 文書など（20MB まで）。</div>
       </el-form-item>
       <el-button type="primary" :loading="uploading" @click="submitUpload">登録</el-button>
     </el-form>

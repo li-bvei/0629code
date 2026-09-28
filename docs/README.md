@@ -31,6 +31,7 @@
 - [2026-09-27 P0 文档同步与受保护账号两阶段启用](CHANGELOG_2026-09-27_p0_docs_sync.md)
 - [2026-09-28 P0 访问控制本地实现（最终）](CHANGELOG_2026-09-28_p0_access_control.md)
 - [2026-09-28 P1 案件工作台本地实现](CHANGELOG_2026-09-28_p1_case_workspace.md)
+- [2026-09-28 P2 文件管理分支](CHANGELOG_2026-09-28_p2_documents.md)
 - [2026-09 项目审查报告](PROJECT_AUDIT_2026-09.md)
 
 ## 历史上下文
