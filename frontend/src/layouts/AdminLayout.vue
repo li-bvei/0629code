@@ -80,6 +80,10 @@ const handleLogout = async () => {
             <el-icon><DataAnalysis /></el-icon>
             <span>ダッシュボード</span>
           </el-menu-item>
+          <el-menu-item index="/workbench">
+            <el-icon><List /></el-icon>
+            <span>今日の作業台</span>
+          </el-menu-item>
           <el-menu-item index="/reception/new">
             <el-icon><EditPen /></el-icon>
             <span>新規受付</span>

@@ -61,6 +61,7 @@ import {
 } from '../utils/caseStatus'
 import type { CaseStageDisplay } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
+import CaseActionBar from '../components/case/CaseActionBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1311,6 +1312,13 @@ onMounted(() => {
         <span>担当 {{ displayValue(caseDetail.responsible_employee_name) }}</span>
         <span>最終更新 {{ formatDateTime(caseDetail.updated_at) }}</span>
       </div>
+      <CaseActionBar
+        :case-detail="caseDetail"
+        :checklist-items="checklistItems"
+        @refresh="fetchCaseDetail"
+        @record="openCreateTimelineDialog"
+        @change-status="openProgressUpdateDialog"
+      />
     </el-card>
 
     <el-alert v-if="caseDetail?.is_overdue" title="この案件には期限を超過した対応があります。次の対応と期限を確認してください。" type="error" show-icon :closable="false" class="case-record-alert" />

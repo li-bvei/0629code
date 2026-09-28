@@ -1,6 +1,8 @@
 import http from '../services/http'
 import type {
   Case,
+  Document,
+  TodayWorkbench,
   AcquisitionPlacePreset,
   AcquisitionPlacePresetPayload,
   CaseApplicationCategory,
@@ -321,5 +323,66 @@ export const seedStandardCaseChecklistTemplates = async () => {
 
 export const listCaseChecklistDeletionHistory = async (params?: ListParams) => {
   const response = await http.get<CaseChecklistDeletionHistoryResponse>('/case-checklist-deletion-history/', { params })
+  return response.data
+}
+
+
+// --- Next Action / 待機 / 入金の記録 / 資料受領（P1）。権限は後端で判定される。 ---
+export interface NextActionPayload {
+  next_action: string
+  next_action_due_at?: string | null
+  assignee?: number | null
+  blocked_reason?: string
+}
+
+export const setCaseNextAction = async (id: number, payload: NextActionPayload) => {
+  const response = await http.post<Case>(`/cases/${id}/next-action/`, payload)
+  return response.data
+}
+
+export const completeCaseNextAction = async (id: number, note = '') => {
+  const response = await http.post<Case>(`/cases/${id}/next-action/complete/`, { note })
+  return response.data
+}
+
+export const startCaseWaiting = async (
+  id: number,
+  payload: { waiting_reason: string; waiting_note?: string; waiting_until?: string | null },
+) => {
+  const response = await http.post<Case>(`/cases/${id}/waiting/start/`, payload)
+  return response.data
+}
+
+export const endCaseWaiting = async (id: number, note = '') => {
+  const response = await http.post<Case>(`/cases/${id}/waiting/end/`, { note })
+  return response.data
+}
+
+export const recordCasePaymentNote = async (
+  id: number,
+  payload: { amount?: string | number | null; received_on?: string | null; reference?: string; note?: string },
+) => {
+  const response = await http.post<{ timeline_id: number }>(`/cases/${id}/payment-note/`, payload)
+  return response.data
+}
+
+export const receiveCaseChecklistItem = async (
+  id: number,
+  payload: { document?: number | null; received_on?: string | null; note?: string; complete?: boolean },
+) => {
+  const response = await http.post<CaseChecklistItem & { progress_summary?: unknown }>(
+    `/case-checklist-items/${id}/receive/`,
+    payload,
+  )
+  return response.data
+}
+
+export const listCaseDocuments = async (caseId: number) => {
+  const response = await http.get<PaginatedResponse<Document>>('/documents/', { params: { case: caseId, page_size: 100 } })
+  return response.data
+}
+
+export const getTodayWorkbench = async (scope: 'mine' | 'all' = 'mine') => {
+  const response = await http.get<TodayWorkbench>('/workbench/today/', { params: { scope } })
   return response.data
 }

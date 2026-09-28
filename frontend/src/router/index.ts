@@ -34,6 +34,7 @@ import TaxRenewalVouchersPage from '../pages/TaxRenewalVouchersPage.vue'
 import TimelinesPage from '../pages/TimelinesPage.vue'
 import VisaReturnApplicationsPage from '../pages/VisaReturnApplicationsPage.vue'
 import VoucherPlaceholderPage from '../pages/VoucherPlaceholderPage.vue'
+import TodayWorkbenchPage from '../pages/TodayWorkbenchPage.vue'
 import { landingPath, requiredPermissionFor } from '../utils/access'
 import { useAuthStore } from '../stores/auth'
 
@@ -55,6 +56,11 @@ const router = createRouter({
           path: 'dashboard',
           name: 'dashboard',
           component: DashboardPage,
+        },
+        {
+          path: 'workbench',
+          name: 'workbench',
+          component: TodayWorkbenchPage,
         },
         {
           path: 'reception/new',

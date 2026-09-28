@@ -247,6 +247,17 @@ export interface CompanyStaffPayload {
   note?: string
 }
 
+export type CaseWorkStatus = 'active' | 'waiting'
+export type CaseWaitingReason = 'customer_documents' | 'immigration_review' | 'third_party' | 'payment' | 'other'
+
+export const CASE_WAITING_REASON_OPTIONS: Array<{ value: CaseWaitingReason; label: string }> = [
+  { value: 'customer_documents', label: '顧客資料待ち' },
+  { value: 'immigration_review', label: '入管審査待ち' },
+  { value: 'third_party', label: '関係先回答待ち' },
+  { value: 'payment', label: '入金待ち' },
+  { value: 'other', label: 'その他' },
+]
+
 export interface Case {
   id: number
   case_number: string
@@ -292,6 +303,21 @@ export interface Case {
   status_changed_at: string | null
   next_action: string
   next_action_due_at: string | null
+  // --- Next Action / 待機（P1。変更は専用 API 経由） ---
+  next_action_assignee?: number | null
+  next_action_assignee_name?: string
+  next_action_blocked_reason?: string
+  next_action_completed_at?: string | null
+  next_action_completed_by?: number | null
+  next_action_state?: 'none' | 'open' | 'done'
+  work_status?: CaseWorkStatus
+  work_status_display?: string
+  waiting_reason?: CaseWaitingReason | ''
+  waiting_reason_display?: string
+  waiting_note?: string
+  waiting_since?: string | null
+  waiting_until?: string | null
+  waiting_days?: number | null
   task_total_count: number
   task_completed_count: number
   next_task_title: string
@@ -657,6 +683,10 @@ export interface CaseChecklistItem {
   is_visible_to_customer: boolean
   importance_level: CaseChecklistImportanceLevel
   sort_order: number
+  // 資料受領（P1）
+  received_at?: string | null
+  document?: number | null
+  document_title?: string
   created_at: string
   updated_at: string
 }
@@ -1076,4 +1106,39 @@ export interface SystemUserUpdatePayload {
   last_name?: string
   is_active?: boolean
   is_superuser?: boolean
+}
+
+// --- 今日の作業台（P1） ---
+export interface WorkbenchCaseRow {
+  id: number
+  case_number: string
+  case_type: string
+  customer_name: string
+  status: string
+  status_display: string
+  responsible_employee_id: number | null
+  responsible_employee_name: string
+  next_action: string
+  next_action_due_at: string | null
+  next_action_assignee_id: number | null
+  next_action_assignee_name: string
+  next_action_blocked_reason: string
+  next_action_state: 'none' | 'open' | 'done'
+  due_status: 'overdue' | 'today' | 'upcoming' | null
+  work_status: CaseWorkStatus
+  waiting_reason: CaseWaitingReason | ''
+  waiting_reason_display: string
+  waiting_since: string | null
+  waiting_until: string | null
+  waiting_days: number | null
+  updated_at: string
+}
+
+export interface TodayWorkbench {
+  scope: 'mine' | 'all'
+  employee_linked: boolean
+  cases: WorkbenchCaseRow[]
+  next_actions: WorkbenchCaseRow[]
+  waiting: WorkbenchCaseRow[]
+  summary: { cases: number; next_actions: number; overdue: number; today: number; waiting: number; waiting_overdue: number }
 }

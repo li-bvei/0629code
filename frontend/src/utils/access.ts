@@ -10,6 +10,7 @@ const ROUTE_PERMISSIONS: Array<[string, string]> = [
   ['/vouchers', 'accounting.use_voucher'],
   ['/reports', 'accounting.use_voucher'],
   ['/dashboard', 'cases.use_cases'],
+  ['/workbench', 'cases.use_cases'],
   ['/reception', 'cases.use_cases'],
   ['/cases', 'cases.use_cases'],
   ['/case-checklists', 'cases.use_cases'],
