@@ -21,6 +21,8 @@ ROLE_PERMISSIONS = {
         'cases.case_change_all',
         'cases.manage_case_settings',
         'customers.view_sensitive_identity',
+        'customers.customer_link_all',
+        'customers.company_link_all',
         'documents.document_download_all',
     ],
     ACCOUNTING_ADMIN: [

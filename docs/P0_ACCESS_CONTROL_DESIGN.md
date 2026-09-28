@@ -605,18 +605,19 @@ IncomeSource、VehicleUsage、AccountingProject、帐票、Visa、税务证明�
 
 1. **新增两个权限**：`cases.manage_case_settings`（案件种别、模板、担当者、在留资格等设置的写入，归 `system_admin`），以及 `accounting.manage_expense_category`（支出分类的写入，归 `accounting_admin`）。设置类资源的读取只需要 `use_cases` 或 `use_expense`。
 2. **不能以他人为担当新建案件**：没有 `case_change_all` 的用户新建案件（包括新规受付）时，只能把自己设为担当，指定他人返回 403。当前担当可以把案件改派给别人（写 `case_reassign` 审计）。
-3. **未立案顾客**：`basic` 级别的字段暂定为 id、姓名、フリガナ、生年月日、性别、国籍、在留资格、案件数和家族标签、更新时间，不含证件号、联系方式、地址、备注。这类顾客只有李（`case_change_all`）可以修改。**字段清单待用户确认**（Q7）。
+3. **未立案顾客**（Q7，2026-09-28 最终确定）：`basic` 级别 = 姓名、フリガナ、生年月日、国籍、登记时间、遮罩后的电话（末 4 位）和邮箱（`a***@domain`）。不含完整联系方式、地址、在留卡、护照、My Number、家族详情、文件、会计数据。只有李能看完整资料，也只有李（`case_change_all`）能修改这类顾客。P1 增加 `Customer.created_by` 后再按创建人隔离。
 4. **公司的表现级别**：`minimal` = id、名称、カナ、法人番号；`basic`（无案件的公司）再加代表者、地址、決算月；`masked` 会把 `bank_account_number` 遮罩为末 4 位。
 5. **防重复匹配接口** `customers/match/`：对范围外的候选去掉电话和邮箱，改为返回最小识别字段。按案件编号搜索顾客时，只在自己能看到的案件范围内检索。
 6. **期限列表** `dashboard/deadlines/`：只包含能看详情的顾客/公司（本人担当或持有 `customer_view_all`），显示的案件编号也限定在本人可见范围内。
 7. **修复一个现有漏洞**：`CompanyStaffSerializer` 原本会返回关联人物的 My Number 明文，现改为只返回 `has_my_number`。
 8. **docker-compose 挂载变更**：frontend 的 `media_volume` 从 `/usr/share/nginx/html/media` 改挂到 `/var/protected_media`。原因是旧挂载点位于 Web 根目录下，即使删除 `/media/` 的 location 块，`location /` 的 `try_files` 仍能把文件直接发出去。
-9. **保留的诊断功能**：目前只保留 `tax-renewal-pdf-diagnostics`（读取模板字段），其余 PDF 坐标调试、表单项调试和编号样本全部改为只在开发环境注册。清風 PDF（`seifu-notice-pdf/*`）是暂停中的业务功能，按 `use_seifu` 控制，不算诊断功能。**保留清单待用户确认**（Q10）。
+9. **生产诊断端点**（Q10，2026-09-28 最终确定）：生产只保留 `GET /api/health/`、`GET /api/readiness/`（不返回业务数据，未登录可访问）。`tax-renewal-pdf-diagnostics` 在内的所有 PDF 诊断和调试、seed、demo、调试 HTML，只在开发环境（`ENABLE_DEV_TOOLS=True`）注册，而且开发环境也要求 superuser + `use_diagnostics`。本阶段不设「李专用的生产诊断端点」。清風 PDF 是暂停中的业务功能，按 `use_seifu` 控制。
+11. **受控关联规则**（2026-09-28 稳定化修正）：修复了 P0 的一个权限绕过——通过提交任意既有 Customer/Company ID，让对象进入自己的担当范围。所有接收既有对象 ID 的入口统一执行 `PartyRule.check_link`，包括 Case 新建和更新、受付的 `existing_customer_id`、`existing_company_id`、家族 `customer`、代表者、FamilyMember 的 `family_customer`、CompanyStaff 的 `customer`、Company 的代表者。对象有其他担当者（含未分配）的进行中案件时返回 403，只有显式持有 `customers.customer_link_all` / `customers.company_link_all`（归 `system_admin`，初期只有李）的用户可以关联，并写 `cross_scope_link` 审计；被拒绝的请求写 `cross_scope_link_denied`；关联无担当的对象写 `party_link_unassigned`。新增 migration `customers/0010_party_link_permissions`（只新增权限）。
 10. **`me` 接口**：`permissions` 字段不再返回 Django 的 `get_all_permissions()`（superuser 会得到全部权限），改为与 `business_permissions` 相同的显式业务权限。
 
 ### 14.3 验证
 
-- 后端 `python manage.py test`：170 项全部通过（原有 97 项，保留全部原断言，只给测试用户补了显式角色；新增 73 项访问控制测试）。
+- 后端 `python manage.py test`：183 项全部通过（原有 97 项，保留全部原断言；访问控制测试 86 项，其中包含稳定化修正新增的 13 项关联绕过测试）。
 - `makemigrations --check`：No changes；`manage.py check`：0 issues；前端 `npm run build`：通过（大 chunk 警告与之前相同）。
 - 预览库 `gyoseishoshi_erp_p0_preview` + 4 个测试账号：用 Django 测试客户端调用真实端点做冒烟，结果与权限矩阵一致。
 - **未完成**：

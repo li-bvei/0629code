@@ -168,143 +168,212 @@ docker compose --env-file .env.prod exec backend python manage.py migrate
 
 ## 2026-09 P0 访问控制上线（尚未执行，每个数据操作须用户单独批准）
 
-设计依据：`docs/SYSTEM_ARCHITECTURE.md`、`docs/P0_ACCESS_CONTROL_DESIGN.md`（D1～D12）。本节是生产执行清单；**AI 不得自行执行**。
+设计依据：`docs/SYSTEM_ARCHITECTURE.md`、`docs/P0_ACCESS_CONTROL_DESIGN.md`（D1～D12）。本节是生产执行清单，**AI 不得自行执行**。**任何一步失败都立即停止**，不要继续后面的步骤；按本节末尾的回滚表处理。
 
-### 新增 migration（均为加法，backend 启动时自动 `migrate`）
+### 新增 migration（均为加法，不写业务数据）
 
 | migration | 内容 |
 |---|---|
 | `employees/0002_employee_user` | `employees.user_id`（OneToOne，可空） |
-| `authentication/0001_initial` | `authentication_protected_accounts` 表 + 权限 `manage_users`、`use_diagnostics` |
+| `authentication/0001_initial` | `authentication_protected_accounts` 表，以及权限 `manage_users`、`use_diagnostics` |
 | `audit/0001_initial` | `audit_logs` 表 |
-| `accounting/0015_expense_owner_and_business_permissions` | `accounting_expenses.owner_id/created_by_id/updated_by_id`（可空）+ 会计各模块权限 |
-| `cases/0017_alter_case_options`、`customers/0009_alter_customer_options`、`documents/0003_alter_document_options` | 仅新增自定义 Permission（Meta.permissions），不改表结构 |
+| `accounting/0015_expense_owner_and_business_permissions` | `accounting_expenses.owner_id/created_by_id/updated_by_id`（可空），以及会计各模块权限 |
+| `cases/0017`、`customers/0009`、`customers/0010_party_link_permissions`、`documents/0003` | 只新增自定义 Permission（含 `customer_link_all`、`company_link_all`），不改表结构 |
 
-不写入任何业务数据。旧代码可以在新表结构上运行（新增列均可空），所以代码回滚不需要反向 migration。
+旧代码可以在新表结构上运行（新增列都可空），所以代码回滚不需要反向 migration。
 
-### 重要：上线后到分配角色之前的空窗
+### 关于新旧代码交接
 
-新代码对业务权限只认显式的 Group 或授权，不认 `is_superuser`。**backend 新代码启动后、执行 D6/D7 之前，所有人的业务 API 都返回 403，网页端的账号管理也无法使用**（服务器命令不受影响）。因此 D1～D7 必须在同一个维护时间窗内连续完成。
+- 新代码对业务权限只认显式的 Group 或授权，不认 `is_superuser`。所以 **D2～D7 必须在新后端对用户开放之前完成**，本清单把它们放在维护模式中、启动新后端之前执行。
+- compose 里 backend 的启动命令会自动执行 `migrate`。本清单改为用一次性容器（`run --rm`）先执行 `migrate --plan` 和 `migrate`，再 `up`；`up` 时的自动 `migrate` 就不会再有变化。
+- 旧镜像里没有新的管理命令，所以 D1 用旧系统自带的 `manage.py shell` 做只读查询。
 
-### 执行顺序
-
-先设置变量（容器内执行）：
+### 变量
 
 ```bash
 cd /www/wwwroot/0629code
-EXEC="docker compose --env-file .env.prod exec backend python manage.py"
+mkdir -p p0_ops                      # 快照、回填 CSV、日志保存到宿主机
+OLD_EXEC="docker compose --env-file .env.prod exec backend python manage.py"      # 旧系统运行中使用
+RUN="docker compose --env-file .env.prod run --rm --no-deps -v $PWD/p0_ops:/ops backend python manage.py"  # 新镜像一次性容器
 ```
 
-**0. 事前备份**（必须）
+### 执行顺序
+
+**1. D1 只读核对（旧系统仍在运行）**：结果交用户确认，确认后才进入第 2 步。
 
 ```bash
-docker compose --env-file .env.prod exec db sh -c 'mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --single-transaction "$MYSQL_DATABASE"' > backup_before_p0_$(date +%Y%m%d_%H%M).sql
-docker run --rm -v 0629code_media_volume:/m -v "$PWD":/b alpine tar czf /b/media_before_p0_$(date +%Y%m%d_%H%M).tgz -C /m .
-docker compose --env-file .env.prod images   # 记录当前 frontend/backend 镜像 tag，用于回滚
+$OLD_EXEC shell -c "
+from django.contrib.auth.models import User, Group
+from django.db.models import Count, Min, Max, Sum
+from apps.employees.models import Employee
+from apps.accounting.models import Expense
+from apps.documents.models import Document
+for u in User.objects.order_by('id'):
+    print('user', u.id, u.username, u.last_name + u.first_name, 'active', u.is_active, 'staff', u.is_staff, 'superuser', u.is_superuser, list(u.groups.values_list('name', flat=True)))
+for e in Employee.objects.order_by('id'):
+    print('employee', e.id, e.name, e.is_active)
+print('groups', list(Group.objects.values_list('name', flat=True)))
+print('expense', Expense.objects.aggregate(n=Count('id'), min_id=Min('id'), max_id=Max('id'), min_date=Min('expense_date'), max_date=Max('expense_date'), total=Sum('amount')))
+print('documents', Document.objects.count(), 'with_file', Document.objects.exclude(file='').count())
+" | tee p0_ops/d1_readonly.txt
+docker run --rm -v 0629code_media_volume:/m:ro alpine sh -c 'echo files: $(find /m -type f | wc -l); find /m -type f | sed "s#^/m/##" | cut -d/ -f1 | sort | uniq -c' | tee -a p0_ops/d1_readonly.txt
 ```
 
-**1. 只更新 backend**（此时 frontend 和旧 nginx 保持不变）
+（不输出密码哈希或 Token。卷名以 `docker volume ls` 为准。）
+
+**2. 开启维护模式**：在宝塔 vhost 中对 `/sun/` 返回维护页（503），只放行操作人员的 IP。
+
+**3. 备份**（必须）
+
+```bash
+docker compose --env-file .env.prod exec db sh -c 'mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --single-transaction "$MYSQL_DATABASE"' > p0_ops/backup_before_p0_$(date +%Y%m%d_%H%M).sql
+docker run --rm -v 0629code_media_volume:/m:ro -v "$PWD/p0_ops":/b alpine tar czf /b/media_before_p0_$(date +%Y%m%d_%H%M).tgz -C /m .
+docker compose --env-file .env.prod images | tee p0_ops/images_before_p0.txt     # 记录回滚用的镜像
+```
+
+**4. 准备新后端镜像，并停止旧后端**（防止迁移期间有写入）
 
 ```bash
 git fetch && git checkout <P0 合并后的提交>
-# .env.prod 追加 .env.prod.example 中「P0 アクセス制御」的 5 个变量（PROTECTED_ADMIN_ENFORCEMENT=False, LOCALDEV_CHECK_MODE=warn）
+# .env.prod 追加 .env.prod.example 中「P0 アクセス制御」的变量（PROTECTED_ADMIN_ENFORCEMENT=False, LOCALDEV_CHECK_MODE=warn）
 docker compose --env-file .env.prod build backend
-docker compose --env-file .env.prod up -d backend      # 自动 migrate
+docker compose --env-file .env.prod stop backend
 ```
 
-**2. D1 只读核对**（结果交用户确认）
+**5. migrate --plan**（确认只包含上表列出的 migration）
 
 ```bash
-$EXEC link_user_employee --plan
-$EXEC protect_account --list
-$EXEC backfill_expense_owner --username zbry6947@gmail.com   # 只读统计（未关联或未受保护时会报错退出，属预期）
-$EXEC inventory_media_references
-$EXEC check_access_config
+$RUN migrate --plan | tee p0_ops/migrate_plan.txt
 ```
 
-**3. D2/D3 关联账号**（先不加 `--apply` 看差异，再加 `--apply`）
+**6. migrate**
 
 ```bash
-$EXEC link_user_employee --map zbry6947@gmail.com:李 --map zywwind@gmail.com:周 --create-employee jiao:焦
-$EXEC link_user_employee --map zbry6947@gmail.com:李 --map zywwind@gmail.com:周 --create-employee jiao:焦 --apply
+$RUN migrate | tee p0_ops/migrate.txt
+$RUN check_access_config            # 阶段 A：保护账号为空时只输出 WARNING
 ```
 
-**4. D4 快照 + 注册李为 ProtectedAccount（阶段 A）**
+**7. D2/D3 关联账号**（先不加 `--apply` 看差异，确认后再加 `--apply --yes`）
 
 ```bash
-$EXEC export_access_snapshot --output /app/access_snapshot_before_p0.json   # 容器内临时文件，下一行复制到宿主机
-docker compose --env-file .env.prod cp backend:/app/access_snapshot_before_p0.json ./   # 复制到宿主机保存
-$EXEC protect_account --username zbry6947@gmail.com
-$EXEC protect_account --username zbry6947@gmail.com --apply
+$RUN link_user_employee --plan
+$RUN link_user_employee --map zbry6947@gmail.com:李 --map zywwind@gmail.com:周 --create-employee jiao:焦
+$RUN link_user_employee --map zbry6947@gmail.com:李 --map zywwind@gmail.com:周 --create-employee jiao:焦 --apply --yes
 ```
 
-**5. D6/D7 创建角色并分配**
+**8. D4 阶段 A：快照 + 注册李为受保护账号**
 
 ```bash
-$EXEC setup_access_roles
-$EXEC setup_access_roles --apply
-$EXEC assign_business_roles --username zbry6947@gmail.com --roles system_admin,accounting_admin,business_admin --apply
-$EXEC assign_business_roles --username jiao --roles business_admin,expense_viewer --apply
-$EXEC assign_business_roles --username zywwind@gmail.com --roles business_admin,expense_viewer --apply
-$EXEC check_access_config
+$RUN export_access_snapshot --output /ops/access_snapshot_before_p0.json
+$RUN protect_account --username zbry6947@gmail.com
+$RUN protect_account --username zbry6947@gmail.com --apply --yes
 ```
 
-**6. 验证**（李、焦、周分别登录）
-
-- 李：能登录；能看到全部案件、全部 Expense、余额、收入与帐票；能使用账号管理；能进 Django Admin。
-- 焦、周：能登录；Expense 可以看全部但不能修改他人记录；看不到余额、收入、帐票、Visa、税务；案件可以看全部，但只能修改本人担当的。
-- 在服务器上确认恢复命令可用：`$EXEC help changepassword`、`$EXEC help axes_reset_username`、`$EXEC restore_access_snapshot /app/access_snapshot_before_p0.json --dry-run`（不改密码、不写数据）。
-
-**7. D8 Expense 回填**（`P0_ACCESS_CONTROL_DESIGN.md` §9.2 的 8 个步骤）
+**9. D6/D7 创建角色并分配**
 
 ```bash
-$EXEC backfill_expense_owner --username zbry6947@gmail.com            # 核对条数 N、ID 范围、金额
-$EXEC backfill_expense_owner --username zbry6947@gmail.com --apply --expect-count N --output-dir /app/backfill_logs
-docker compose --env-file .env.prod cp backend:/app/backfill_logs ./backfill_logs    # 保存 ID 清单 CSV
+$RUN setup_access_roles
+$RUN setup_access_roles --apply --yes
+$RUN assign_business_roles --username zbry6947@gmail.com --roles system_admin,accounting_admin,business_admin --apply --yes
+$RUN assign_business_roles --username jiao --roles business_admin,expense_viewer --apply --yes
+$RUN assign_business_roles --username zywwind@gmail.com --roles business_admin,expense_viewer --apply --yes
+$RUN check_access_config
 ```
 
-**8. D9/D10 更新 frontend + nginx**（关闭公开 `/media/`）
+**10. 启动新后端**
 
 ```bash
-$EXEC inventory_media_references            # D9：确认「/media/ 参照 合計」，有引用时先处理
+docker compose --env-file .env.prod up -d backend
+curl -s http://127.0.0.1:8081/sun/api/health/        # {"status":"ok"}
+curl -s http://127.0.0.1:8081/sun/api/readiness/     # {"status":"ready"}
+```
+
+**11. 验证登录和权限**（维护模式下从放行 IP 访问）
+
+- 李：能登录；能看到全部案件、全部 Expense、余额、收入和帐票；能使用账号管理；能进 Django Admin。
+- 焦、周：能登录；Expense 能看全部，但不能修改或导出他人记录；看不到余额、收入、帐票、Visa、税务；案件能看全部，但只能修改本人担当的；关联其他担当者的顾客/公司会返回 403。
+- 确认恢复命令可用：`$RUN help changepassword`、`$RUN restore_access_snapshot /ops/access_snapshot_before_p0.json --dry-run`。
+
+**12. D8 Expense 回填**（`P0_ACCESS_CONTROL_DESIGN.md` §9.2 的 8 个步骤）
+
+```bash
+$RUN backfill_expense_owner --username zbry6947@gmail.com                   # 核对条数 N（应与 D1 一致）
+$RUN backfill_expense_owner --username zbry6947@gmail.com --apply --yes --expect-count N --output-dir /ops
+```
+
+**13. 准备前端**
+
+frontend 镜像里同时包含前端页面和 nginx 配置，所以这一步只 **build**，不 `up`；实际切换放在第 16 步（D10）。
+
+```bash
 docker compose --env-file .env.prod build frontend
-docker compose --env-file .env.prod run --rm --no-deps frontend nginx -t   # 语法检查（本地未能验证）
-docker compose --env-file .env.prod up -d frontend
-curl -sI http://127.0.0.1:8081/sun/media/case_documents/任意文件名 | head -1     # 期望 404
-curl -sI http://127.0.0.1:8081/media/case_documents/任意文件名 | head -1         # 期望 404
-curl -sI http://127.0.0.1:8081/_protected_media/case_documents/任意文件名 | head -1  # 期望 404
 ```
 
-然后用李的账号，在书类一览下载和预览一个文件（包括 PDF 和日文文件名），确认正常。
+**14. D9 媒体引用盘点**（只读；若「/media/ 参照 合計」大于 0，先停下来确认处理方式）
 
-**9. D5 阶段 B：Admin 只允许受保护账号**（在确认阶段 A 正常之后单独执行）
+```bash
+$RUN inventory_media_references | tee p0_ops/d9_media_inventory.txt
+```
+
+**15. 在 nginx 容器中检查语法**（本地从未做过，这是阻断项）
+
+```bash
+docker compose --env-file .env.prod run --rm --no-deps frontend nginx -t
+```
+
+**16. D10 切换前端和 nginx**（关闭公开 `/media/`，media 卷改挂到 Web 根目录之外）
+
+```bash
+docker compose --env-file .env.prod up -d frontend
+```
+
+**17. 验证下载、预览和旧文件**
+
+```bash
+curl -sI http://127.0.0.1:8081/sun/media/case_documents/任意文件名 | head -1          # 期望 404
+curl -sI http://127.0.0.1:8081/media/case_documents/任意文件名 | head -1              # 期望 404
+curl -sI http://127.0.0.1:8081/_protected_media/case_documents/任意文件名 | head -1   # 期望 404
+```
+
+然后用李的账号，在书类一览中下载和预览一个既有文件（PDF、日文文件名、大文件断点续传），确认审计里有 `download_authorized`/`download_started`。再用焦的账号访问非本人担当案件的文件，确认返回 403 并有 `download_denied`。
+
+**18. D5 阶段 B：Admin 只允许受保护账号**
 
 ```bash
 # .env.prod：DJANGO_PROTECTED_ADMIN_ENFORCEMENT=True
 docker compose --env-file .env.prod up -d backend
-$EXEC check_access_config        # 保护表为空时会失败
+$RUN check_access_config            # 保护表为空时会失败
 ```
 
 确认李能进 Admin，焦、周不能进。
 
-**10. D11 焦、周降级**（批次 8 全部验证通过后单独执行）
+**19. D11 焦、周降级**
 
 ```bash
-$EXEC export_access_snapshot --output /app/access_snapshot_before_demote.json
-docker compose --env-file .env.prod cp backend:/app/access_snapshot_before_demote.json ./
-$EXEC shell -c "from django.contrib.auth.models import User; User.objects.filter(username__in=['jiao','zywwind@gmail.com']).update(is_superuser=False, is_staff=False)"
+$RUN export_access_snapshot --output /ops/access_snapshot_before_demote.json
+$RUN shell -c "from django.contrib.auth.models import User; print(User.objects.filter(username__in=['jiao','zywwind@gmail.com']).update(is_superuser=False, is_staff=False))"
 ```
 
-**11. D12 localdev**：D1 如发现生产存在启用中的 `localdev`，经批准后只能停用（`is_active=False`），不自动删除；确认后把 `.env.prod` 的 `DJANGO_LOCALDEV_CHECK_MODE` 改为 `enforce`。
+确认焦、周仍能登录，业务范围不变，但进不了 Admin 和账号管理。
+
+**20. D12 localdev**：根据 D1 结果决定。生产上存在且启用的 `localdev`，经批准后只能停用（`is_active=False`），不删除；确认后把 `DJANGO_LOCALDEV_CHECK_MODE` 改为 `enforce`，再执行 `check_access_config`。
+
+**21. 退出维护模式**：恢复宝塔 vhost。
+
+### 生产诊断端点
+
+生产只保留 `GET /api/health/`（存活）和 `GET /api/readiness/`（DB 连接），两者都不返回业务数据，未登录也可访问。seed、demo、PDF 坐标调试、调试 HTML，以及任何返回业务数据的诊断端点，在生产中都不注册（`ENABLE_DEV_TOOLS=False`，或 `APP_ENV=production`）。
 
 ### 回滚
 
 | 对象 | 方法 |
 |---|---|
-| backend 代码 | 回到上线前的提交，`build backend && up -d backend`。新增列均可空，旧代码可直接运行，不需要反向 migration |
-| frontend + nginx | 回到上线前的提交，或用记录的旧镜像 tag，`build frontend && up -d frontend`（docker-compose 的 media 挂载也会一起恢复） |
-| 阶段 B | `.env.prod` 改回 `DJANGO_PROTECTED_ADMIN_ENFORCEMENT=False` 并重启 backend |
-| 账号、Group、superuser | `$EXEC restore_access_snapshot <snapshot.json>`（先确认差异，再加 `--apply`；可以用 `--user` 限定账号） |
-| Expense 回填 | `$EXEC backfill_expense_owner --rollback <csv>`（先确认，再加 `--apply`） |
-| 反向 migration（仅在确实需要删除新增表/列时） | `migrate accounting 0014`、`migrate employees 0001`、`migrate authentication zero`、`migrate audit zero`（会丢失 owner、关联、审计数据，须先备份并批准） |
-| 李无法登录 | `$EXEC changepassword zbry6947@gmail.com`、`$EXEC axes_reset_username zbry6947@gmail.com`、`$EXEC protect_account --username zbry6947@gmail.com --apply`、`$EXEC restore_access_snapshot <file> --user zbry6947@gmail.com --apply` |
+| 第 5～9 步失败（新后端尚未对用户开放） | 停止操作；`docker compose up -d backend` 用第 4 步之前的镜像（见 `p0_ops/images_before_p0.txt`）或上线前的提交重新 build。新增列和新表可以保留，不影响旧代码 |
+| backend 代码 | 回到上线前的提交，`build backend && up -d backend`；不需要反向 migration |
+| frontend + nginx | 回到上线前的提交或旧镜像，`build frontend && up -d frontend`（docker-compose 的 media 挂载一起恢复） |
+| 阶段 B | `DJANGO_PROTECTED_ADMIN_ENFORCEMENT=False`，重启 backend |
+| 账号、Group、superuser | `$RUN restore_access_snapshot /ops/<snapshot>.json`（先看差异，再加 `--apply --yes`；可以用 `--user` 限定账号） |
+| Expense 回填 | `$RUN backfill_expense_owner --rollback /ops/<csv>`（先看差异，再加 `--apply --yes`） |
+| 反向 migration（仅在必须删除新表/新列时） | `migrate accounting 0014`、`migrate employees 0001`、`migrate authentication zero`、`migrate audit zero`（会丢失 owner、关联、审计数据，须先备份并批准） |
+| 李无法登录 | `$RUN changepassword zbry6947@gmail.com`、`$RUN axes_reset_username zbry6947@gmail.com`、`$RUN protect_account --username zbry6947@gmail.com --apply --yes`、`$RUN restore_access_snapshot /ops/<file> --user zbry6947@gmail.com --apply --yes` |
+| 数据整体恢复 | 用第 3 步的 SQL 和媒体卷备份恢复（须批准） |

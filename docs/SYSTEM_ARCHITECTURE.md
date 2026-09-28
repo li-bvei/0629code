@@ -93,6 +93,14 @@ api                         → 聚合各模块，不被领域模块依赖
 | Document | 继承父 Case | 下载限本人担当 | `document_download_all` |
 | RealEstate（P3） | 独立规则，P3 设计 | — | 内部利润分配仅限明确授权者 |
 
+**受控关联规则**（防止通过关联对象自行扩大权限）：Customer/Company 的范围由「关联了本人担当的案件」推导，所以凡是接收既有 Customer/Company ID 的入口，都必须在后端用提交的真实 ID 执行 `PartyRule.check_link`，不能依赖前端候选列表。这些入口包括：Case 新建和更新、新规受付（`existing_customer_id`、`existing_company_id`、家族 `customer`、代表者）、FamilyMember 的 `family_customer`、CompanyStaff 的 `customer`、Company 的代表者。
+
+- 对象已在本人担当范围内：可以关联。
+- 对象没有其他担当者（含未分配）的进行中案件：可以关联，写审计 `party_link_unassigned`。
+- 对象有其他担当者的进行中案件：返回 403；只有显式持有 `customers.customer_link_all` / `customers.company_link_all` 的用户（初期只有李）可以关联，并写审计 `cross_scope_link`。
+
+**未立案顾客**：普通业务用户只能看到姓名、フリガナ、生年月日、国籍、登记时间，以及遮罩后的电话和邮箱。完整联系方式、地址、在留卡、护照、My Number、家族详情、文件、会计数据，只有李（`view_sensitive_identity`）能看。P1 增加 `Customer.created_by` 后，再按创建人进一步隔离。
+
 ## 6. BusinessAccessPolicy
 
 - 实现位置：`apps/authentication/access_policy.py`（策略）+ `access_rules.py`（每个资源的规则）。
@@ -163,7 +171,8 @@ api                         → 聚合各模块，不被领域模块依赖
 - 按显示姓名或硬编码数据库 ID 识别特权账号。
 - 为 Expense 引入审批状态机。
 - 在 Case 中复制会计明细、完整公司资料或不动产数据。
-- 生产环境开放演示数据生成、seed 或调试端点。
+- 生产环境开放演示数据生成、seed、调试端点，或任何返回业务数据的诊断端点（生产只保留 `/api/health/`、`/api/readiness/`）。
+- 允许通过提交任意既有 Customer/Company ID 扩大自己的担当范围（必须执行受控关联规则）。
 - 为了“统一”而重写或合并现有模块。
 
 ## 12. P0～P3 实施顺序

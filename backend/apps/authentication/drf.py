@@ -45,6 +45,23 @@ def default_access_action(view, request):
     return 'view' if request.method in SAFE_METHODS else 'change'
 
 
+def flush_link_events(request, policy, instance=None):
+    """受控関連規則のイベントを AuditLog に書く。拒否は即時、許可は保存成功後に呼ぶ。"""
+    from apps.audit.services import record
+
+    events, policy.link_events = policy.link_events, []
+    for event in events:
+        denied = event['action'].endswith('_denied')
+        record(
+            module='access', action=event['action'], request=request, obj=event['obj'],
+            result='denied' if denied else 'success', via_permission=event.get('via_permission', ''),
+            extra={
+                'field': event.get('field', ''),
+                'target': f'{instance._meta.label_lower}:{instance.pk}' if instance is not None else '',
+            },
+        )
+
+
 class BusinessAccessPermission(BasePermission):
     """モジュール権限（has_permission）とオブジェクト判定（has_object_permission）。"""
 
@@ -119,14 +136,26 @@ class BusinessScopedViewSetMixin(BusinessAccessMixin):
         return context
 
     def perform_create(self, serializer):
-        extra = self.access_rule.prepare_create(self.business_policy, serializer.validated_data)
+        policy = self.business_policy
+        try:
+            extra = self.access_rule.prepare_create(policy, serializer.validated_data)
+        except Exception:
+            flush_link_events(self.request, policy)
+            raise
         instance = serializer.save(**extra)
+        flush_link_events(self.request, policy, instance)
         self.after_create(instance)
 
     def perform_update(self, serializer):
+        policy = self.business_policy
         before = serializer.instance
-        extra = self.access_rule.prepare_update(self.business_policy, before, serializer.validated_data)
+        try:
+            extra = self.access_rule.prepare_update(policy, before, serializer.validated_data)
+        except Exception:
+            flush_link_events(self.request, policy)
+            raise
         instance = serializer.save(**extra)
+        flush_link_events(self.request, policy, instance)
         self.after_update(instance)
 
     def after_create(self, instance):

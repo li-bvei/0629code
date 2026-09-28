@@ -8,7 +8,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.authentication.drf import BusinessAccessMixin
+from apps.authentication.access_rules import COMPANY_RULE, CUSTOMER_RULE
+from apps.authentication.drf import BusinessAccessMixin, flush_link_events
 from apps.cases.models import Case
 
 from .models import ReceptionIdempotencyRecord
@@ -84,9 +85,39 @@ class ReceptionCreateView(BusinessAccessMixin, APIView):
             data['case'] = case_data
         return data
 
+    def _check_existing_links(self, data):
+        """受付で指定された既存の顧客・会社（本人・家族・代表者・会社）に受控関連規則を適用する。
+        フロントの候補一覧ではなく、送られてきた実 ID を検査する。"""
+        policy = self.business_policy
+        customers = policy.queryset('customer', 'list')
+        companies = policy.queryset('company', 'list')
+
+        def check_customer(raw_id, via):
+            if raw_id in (None, ''):
+                return
+            obj = customers.filter(pk=raw_id).first()
+            CUSTOMER_RULE.check_link(policy, obj, via=via)
+
+        check_customer(data.get('existing_customer_id'), 'reception.existing_customer_id')
+        for index, member in enumerate(data.get('family_members') or []):
+            if isinstance(member, dict):
+                check_customer(member.get('customer'), f'reception.family_members[{index}].customer')
+        company_data = data.get('company')
+        if isinstance(company_data, dict):
+            check_customer(company_data.get('representative_customer'), 'reception.company.representative_customer')
+        existing_company_id = data.get('existing_company_id')
+        if existing_company_id not in (None, ''):
+            COMPANY_RULE.check_link(policy, companies.filter(pk=existing_company_id).first(),
+                                    via='reception.existing_company_id')
+
     def post(self, request):
         request_id = (request.data.get('request_id') or '').strip()
         payload = self._resolve_case_responsible(request)
+        try:
+            self._check_existing_links(payload)
+        except Exception:
+            flush_link_events(request, self.business_policy)
+            raise
 
         if request_id:
             existing = ReceptionIdempotencyRecord.objects.filter(request_id=request_id).first()
@@ -117,6 +148,7 @@ class ReceptionCreateView(BusinessAccessMixin, APIView):
 
         if request_id:
             ReceptionIdempotencyRecord.objects.filter(request_id=request_id).update(response=result)
+        flush_link_events(request, self.business_policy)
         return Response(result, status=status.HTTP_201_CREATED)
 
 

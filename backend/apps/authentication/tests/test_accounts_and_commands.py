@@ -147,15 +147,21 @@ class DevToolsAndDiagnosticsTests(TestCase):
                 self.client.force_login(self.li)
                 for url in ('/api/case-checklist-demo/seed/', '/api/accounting/zei-pdf-position-debug/templates/',
                             '/api/accounting/visa-form-fields/', '/api/accounting/visa-position-debug/config/',
-                            '/api/accounting/tax-renewal-pdf-diagnostics/numbered_sample/'):
+                            '/api/accounting/tax-renewal-pdf-diagnostics/numbered_sample/',
+                            '/api/accounting/tax-renewal-pdf-diagnostics/'):
                     response = self.client.post(url) if 'seed' in url or 'numbered' in url else self.client.get(url)
                     self.assertEqual(response.status_code, 404, url)
                 self.assertEqual(self.client.post('/api/checklist-item-presets/seed-standard/').status_code, 404)
                 self.assertEqual(self.client.post('/api/residence-status-masters/seed-standard/').status_code, 404)
+                # 本番で残るのは health / readiness だけ（業務データを返さない・未ログイン可）
+                self.client.logout()
+                self.assertEqual(self.client.get('/api/health/').json(), {'status': 'ok'})
+                self.assertEqual(self.client.get('/api/readiness/').json(), {'status': 'ready'})
         finally:
             self._reload_urls()
 
-    def test_kept_diagnostic_requires_superuser_and_explicit_permission(self):
+    def test_dev_only_diagnostic_requires_superuser_and_explicit_permission(self):
+        # 開発環境（ENABLE_DEV_TOOLS=True）でのみ登録。そこでも superuser + use_diagnostics が必要。
         self.client.force_login(self.jiao)
         self.assertEqual(self.client.get('/api/accounting/tax-renewal-pdf-diagnostics/').status_code, 403)
         self.client.force_login(self.li)

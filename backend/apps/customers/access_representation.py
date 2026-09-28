@@ -13,10 +13,9 @@ from apps.authentication.access_rules import (
 IDENTITY_FIELDS = ('residence_card_no', 'passport_no')
 BANK_MASK_FIELDS = ('bank_account_number',)
 
-CUSTOMER_BASIC_FIELDS = (
-    'id', 'name', 'name_kana', 'birth_date', 'gender', 'nationality', 'residence_status',
-    'cases_count', 'is_dependent', 'primary_applicant', 'dependents_count', 'created_at', 'updated_at',
-)
+# 案件の無い顧客（受付のみ）：普通の業務利用者に見せるのはこれだけ。電話・メールは伏せ字。
+# 住所・在留カード・旅券・My Number・家族詳細・ファイル・会計は含めない（2026-09-28 確定）。
+CUSTOMER_BASIC_FIELDS = ('id', 'name', 'name_kana', 'birth_date', 'nationality', 'created_at')
 COMPANY_MINIMAL_FIELDS = ('id', 'name', 'name_kana', 'corporate_number')
 COMPANY_BASIC_FIELDS = COMPANY_MINIMAL_FIELDS + (
     'representative_name', 'postal_code', 'address', 'fiscal_month', 'cases_count', 'created_at', 'updated_at',
@@ -28,6 +27,13 @@ def mask_value(value):
         return value
     text = str(value)
     return '****' + text[-4:] if len(text) > 4 else '****'
+
+
+def mask_email(value):
+    if not value or '@' not in str(value):
+        return mask_value(value)
+    local, _, domain = str(value).partition('@')
+    return f'{local[:1]}***@{domain}'
 
 
 def mask_fields(data, fields):
@@ -69,7 +75,10 @@ def minimal_customer(instance):
 def shape_customer(data, level):
     data.pop('my_number', None)
     if level == LEVEL_BASIC:
-        data = {key: data[key] for key in CUSTOMER_BASIC_FIELDS if key in data}
+        basic = {key: data[key] for key in CUSTOMER_BASIC_FIELDS if key in data}
+        basic['phone'] = mask_value(data.get('phone') or '')
+        basic['email'] = mask_email(data.get('email') or '')
+        data = basic
     elif level == LEVEL_MASKED:
         mask_fields(data, IDENTITY_FIELDS)
     data['access_level'] = level

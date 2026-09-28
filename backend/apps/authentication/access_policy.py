@@ -41,6 +41,8 @@ class BusinessAccessPolicy:
         )
         self.employee = get_user_employee(user) if self.authenticated else None
         self.codes = self._load_explicit_codes()
+        # 受控関連規則で発生した監査イベント（保存成功後に drf.flush_link_events で記録）
+        self.link_events = []
 
     # --- 権限の読み込み ---------------------------------------------------
     def _load_explicit_codes(self):

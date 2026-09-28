@@ -222,7 +222,11 @@ class PartyAccessTests(AccessFixtureMixin, TestCase):
         self.as_user(self.staff_a)
         data = self.client.get(f'/api/customers/{self.cust_new.id}/').json()
         self.assertEqual(data['access_level'], 'basic')
-        self.assertFalse(self.FORBIDDEN_SEARCH_KEYS & set(data))
+        self.assertEqual(set(data), {'id', 'name', 'name_kana', 'birth_date', 'nationality', 'created_at',
+                                     'phone', 'email', 'access_level'})
+        self.assertEqual(data['phone'], '****0000')
+        self.assertNotIn('080-0000-0000', self.client.get(f'/api/customers/{self.cust_new.id}/').content.decode())
+        self.assertEqual(self.rows(self.client.get(f'/api/family-members/?customer={self.cust_new.id}')), [])
         response = self.client.patch(f'/api/customers/{self.cust_new.id}/', {'name': 'x'}, content_type='application/json')
         self.assertEqual(response.status_code, 403)
         self.as_user(self.li)

@@ -66,6 +66,8 @@ class Customer(models.Model):
         permissions = [
             ('customer_view_all', '担当外を含む顧客・会社の詳細閲覧（機微項目を除く）'),
             ('view_sensitive_identity', '担当外の在留カード番号・旅券番号・口座情報の閲覧'),
+            ('customer_link_all', '他担当の進行中案件がある顧客の関連付け（案件・受付・家族・職員・代表者）'),
+            ('company_link_all', '他担当の進行中案件がある会社の関連付け（案件・受付）'),
         ]
         ordering = ['name']
 

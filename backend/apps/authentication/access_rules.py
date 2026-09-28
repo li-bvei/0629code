@@ -181,9 +181,20 @@ class CaseRule(Rule):
             raise PermissionDenied('他の担当者の案件は作成できません。')
         return responsible_id
 
+    def check_party_links(self, policy, data, instance=None):
+        """案件に紐付ける顧客・会社は受控関連規則に従う（任意 ID で範囲を広げさせない）。"""
+        for field, rule in (('customer', CUSTOMER_RULE_REF()), ('company', COMPANY_RULE_REF())):
+            if field not in data:
+                continue
+            obj = data[field]
+            if obj is None or (instance is not None and getattr(instance, f'{field}_id') == obj.pk):
+                continue
+            rule.check_link(policy, obj, via=f'case.{field}')
+
     def prepare_create(self, policy, data):
         responsible = data.get('responsible_employee')
         self.resolve_create_responsible_id(policy, responsible.pk if responsible else None)
+        self.check_party_links(policy, data)
         if responsible is None:
             return {'responsible_employee': policy.employee}
         return {}
@@ -196,6 +207,7 @@ class CaseRule(Rule):
                 policy.has(self.CHANGE_ALL) or self.is_assigned(policy, instance)
             ):
                 raise PermissionDenied('担当者を変更する権限がありません。')
+        self.check_party_links(policy, data, instance)
         return {}
 
     def via_permission(self, policy, action, obj=None):
@@ -336,6 +348,42 @@ class PartyRule(Rule):
             return LEVEL_BASIC
         return LEVEL_MINIMAL
 
+    LINK_ALL = None  # 他担当の進行中案件がある対象を関連付けるための明示権限
+    LINK_DENIED_MESSAGE = ''
+
+    def foreign_active_case_exists(self, policy, obj):
+        """他の担当者（または未割当）の進行中案件が紐付いているか。"""
+        Case = self._case_model()
+        qs = Case.objects.filter(
+            **{self.case_fk: obj}, registration_status=Case.REGISTRATION_STATUS_ACTIVE,
+        ).exclude(status__in=[Case.STATUS_COMPLETED, Case.STATUS_WITHDRAWN, Case.STATUS_REJECTED])
+        if policy.employee_id is not None:
+            qs = qs.exclude(responsible_employee_id=policy.employee_id)
+        return qs.exists()
+
+    def check_link(self, policy, obj, *, via=''):
+        """既存の顧客・会社を案件・受付・家族・職員・代表者として関連付けてよいか（受控関連規則）。
+
+        - 本人担当範囲内：可
+        - 他担当（未割当を含む）の進行中案件が無い：可（範囲外なら監査用イベントを記録）
+        - 他担当の進行中案件がある：LINK_ALL 明示付与者のみ可（cross_scope_link を監査）、それ以外は 403
+        フロントの候補一覧に依存せず、送られてきた実 ID で判定する。
+        """
+        if obj is None:
+            return
+        assigned, _ = self._flags(policy, obj)
+        if assigned:
+            return
+        if self.foreign_active_case_exists(policy, obj):
+            if policy.has(self.LINK_ALL):
+                policy.link_events.append({
+                    'action': 'cross_scope_link', 'obj': obj, 'via_permission': self.LINK_ALL, 'field': via,
+                })
+                return
+            policy.link_events.append({'action': 'cross_scope_link_denied', 'obj': obj, 'field': via})
+            raise PermissionDenied(self.LINK_DENIED_MESSAGE)
+        policy.link_events.append({'action': 'party_link_unassigned', 'obj': obj, 'via_permission': '', 'field': via})
+
     def detail_scope(self, policy, queryset):
         """詳細（全項目または伏せ字付き）を表示できる範囲。期限一覧などの集計に使う。"""
         queryset = self.annotate(policy, queryset)
@@ -379,15 +427,37 @@ class PartyRule(Rule):
 class CustomerRule(PartyRule):
     case_fk = 'customer'
     model_label = 'customers.Customer'
+    LINK_ALL = 'customers.customer_link_all'
+    LINK_DENIED_MESSAGE = 'この顧客は他の担当者の進行中案件に紐付いているため、関連付けできません。管理者に依頼してください。'
 
 
 class CompanyRule(PartyRule):
     case_fk = 'company'
     model_label = 'companies.Company'
+    LINK_ALL = 'customers.company_link_all'
+    LINK_DENIED_MESSAGE = 'この会社は他の担当者の進行中案件に紐付いているため、関連付けできません。管理者に依頼してください。'
+
+    def prepare_create(self, policy, data):
+        CUSTOMER_RULE_REF().check_link(policy, data.get('representative_customer'), via='representative_customer')
+        return {}
+
+    def prepare_update(self, policy, instance, data):
+        new = data.get('representative_customer')
+        if 'representative_customer' in data and new is not None and new.pk != instance.representative_customer_id:
+            CUSTOMER_RULE_REF().check_link(policy, new, via='representative_customer')
+        return {}
+
+
+def CUSTOMER_RULE_REF():
+    return CUSTOMER_RULE
 
 
 CUSTOMER_RULE = CustomerRule()
 COMPANY_RULE = CompanyRule()
+
+
+def COMPANY_RULE_REF():
+    return COMPANY_RULE
 
 
 class PartyChildRule(Rule):
@@ -395,10 +465,12 @@ class PartyChildRule(Rule):
 
     view_code = 'cases.use_cases'
 
-    def __init__(self, parent_rule, parent_field, model_label=None):
+    def __init__(self, parent_rule, parent_field, model_label=None, link_field=None):
         self.parent_rule = parent_rule
         self.parent_field = parent_field
         self.model_label = model_label
+        # 家族の family_customer・会社職員の customer（既存顧客の関連付け）
+        self.link_field = link_field
 
     def scope(self, policy, queryset, action):
         if action in READ_ACTIONS and policy.has_any(PartyRule.VIEW_ALL, PartyRule.SENSITIVE):
@@ -432,13 +504,23 @@ class PartyChildRule(Rule):
         if self.parent_rule.object_decision(policy, parent, 'change') != ALLOW:
             raise PermissionDenied('この顧客・会社への書き込み権限がありません。')
 
+    def _check_link(self, policy, data, instance=None):
+        if not self.link_field or self.link_field not in data:
+            return
+        obj = data[self.link_field]
+        if obj is None or (instance is not None and getattr(instance, f'{self.link_field}_id') == obj.pk):
+            return
+        CUSTOMER_RULE.check_link(policy, obj, via=f'{self.model_label}.{self.link_field}')
+
     def prepare_create(self, policy, data):
         self._check_parent_writable(policy, data.get(self.parent_field))
+        self._check_link(policy, data)
         return {}
 
     def prepare_update(self, policy, instance, data):
         if self.parent_field in data and data[self.parent_field] != self.parent(instance):
             self._check_parent_writable(policy, data[self.parent_field])
+        self._check_link(policy, data, instance)
         return {}
 
 
@@ -468,9 +550,11 @@ RULES = {
     'dismissed_deadline': ModuleRule('cases.use_cases', model_label='reminders.DismissedDeadline'),
     # 顧客・会社
     'customer': CUSTOMER_RULE,
-    'family_member': PartyChildRule(CUSTOMER_RULE, 'customer', model_label='customers.FamilyMember'),
+    'family_member': PartyChildRule(CUSTOMER_RULE, 'customer', model_label='customers.FamilyMember',
+                                    link_field='family_customer'),
     'company': COMPANY_RULE,
-    'company_staff': PartyChildRule(COMPANY_RULE, 'company', model_label='companies.CompanyStaff'),
+    'company_staff': PartyChildRule(COMPANY_RULE, 'company', model_label='companies.CompanyStaff',
+                                    link_field='customer'),
     # システム
     'diagnostics': DiagnosticsRule(),
 }

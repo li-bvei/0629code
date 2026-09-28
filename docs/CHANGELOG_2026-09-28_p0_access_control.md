@@ -46,16 +46,26 @@
   - 公司职员接口会明文返回 My Number；
   - 顾客列表的分页排序不稳定。
 
+## 稳定化修正（同日）
+
+- **修复权限绕过**：原来可以通过提交任意既有 Customer/Company ID，让对象进入自己的担当范围。现在以下入口统一执行受控关联规则（`PartyRule.check_link`）：Case 新建和更新、受付（`existing_customer_id`、`existing_company_id`、家族 `customer`、代表者）、FamilyMember 的 `family_customer`、CompanyStaff 的 `customer`、Company 的代表者。
+  - 对象有其他担当者（含未分配）的进行中案件：返回 403。只有持有 `customers.customer_link_all` / `company_link_all`（`system_admin`，李）的用户可以关联，写 `cross_scope_link`；被拒绝写 `cross_scope_link_denied`；关联无担当对象写 `party_link_unassigned`。
+  - 后端检查提交的真实 ID，不依赖前端候选列表。
+- **未立案顾客**：`basic` 级别最终确定为姓名、フリガナ、生年月日、国籍、登记时间、遮罩后的电话和邮箱。
+- **生产诊断**：只保留 `/api/health/`、`/api/readiness/`；`tax-renewal-pdf-diagnostics` 也改为只在开发环境注册。前端的「PDF字段诊断」按钮只在开发环境显示。
+- **部署顺序**：`DEPLOY.md` 改为 21 步（D1 在旧系统上只读 → 维护模式 → 备份 → `migrate --plan` → `migrate` → D2～D7 → 启动新后端 → 验证 → D8 → 准备前端 → D9 → `nginx -t` → D10 → 验证下载 → D5 → D11 → D12 → 退出维护模式），任何一步失败都停止。
+- **新增测试**：13 项关联绕过测试，health/readiness 测试，basic 级别字段测试。
+
 ## Migration
 
-`employees/0002_employee_user`、`authentication/0001_initial`、`audit/0001_initial`、`accounting/0015_expense_owner_and_business_permissions`、`cases/0017_alter_case_options`、`customers/0009_alter_customer_options`、`documents/0003_alter_document_options`。全部是加法 migration，不写入业务数据，旧代码可以在新表结构上运行。
+`employees/0002_employee_user`、`authentication/0001_initial`、`audit/0001_initial`、`accounting/0015_expense_owner_and_business_permissions`、`cases/0017_alter_case_options`、`customers/0009_alter_customer_options`、`customers/0010_party_link_permissions`、`documents/0003_alter_document_options`。全部是加法 migration，不写入业务数据，旧代码可以在新表结构上运行。
 
 ## 验证
 
-- `python manage.py test`：170 项全部通过（原有 97 项 + 新增 73 项）。
+- `python manage.py test`：183 项全部通过（原有 97 项 + 访问控制 86 项）。
 - `makemigrations --check`：无差异；`check`：0 issues；`npm run build`：通过；`git diff --check`：通过。
 - 预览库冒烟：结果与权限矩阵一致。
-- **未完成**：浏览器实测（预览进程没有读取 venv 的权限）；`nginx -t`（本机 Docker 未运行）。
+- **未完成，属于部署前阻断项**：浏览器实测（预览进程没有读取 venv 的权限）；`nginx -t`（本机 Docker 未运行，在上线第 15 步执行）。
 
 ## 部署与回滚
 
@@ -63,6 +73,6 @@
 
 ## 已知待办
 
-- 待用户确认：未立案顾客 `basic` 级别的字段清单（Q7）；生产保留的诊断功能清单（Q10）。
+- Q7（未立案顾客字段）和 Q10（生产诊断）已在稳定化修正中确定并实现。
 - 现有问题：`seed_demo_data` 引用了不存在的 `Task.STATUS_TODO`，运行时失败（与 P0 无关，未修）。
-- 家族关联到任意既有顾客、以及新建案件时关联任意既有顾客，会让担当者获得该顾客的完整访问权限。这是"按担当推导范围"模型本身的结果，已记为残余风险，P1 可以考虑增加审计或限制。
+- 关联**无担当**（没有进行中案件）的既有顾客/公司仍然允许，关联后即进入本人范围（写 `party_link_unassigned` 审计）。这是本次确认的规则；P1 增加 `Customer.created_by` 后可以进一步收紧。

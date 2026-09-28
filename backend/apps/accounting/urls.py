@@ -55,14 +55,15 @@ urlpatterns = [
     path('seifu-notice-pdf/preview/', seifu_notice_preview, name='seifu-notice-preview'),
     path('seifu-notice-pdf/generate/', seifu_notice_generate, name='seifu-notice-generate'),
     path('tax-renewal-templates/', tax_renewal_templates, name='tax-renewal-templates'),
-    path('tax-renewal-pdf-diagnostics/', tax_renewal_pdf_diagnostics, name='tax-renewal-pdf-diagnostics'),
     *router.urls,
 ]
 
-# 開発用の PDF 座標・フォーム項目デバッグ。本番（ENABLE_DEV_TOOLS=False）では URL 自体を登録しない。
+# 開発用の PDF 診断・座標・フォーム項目デバッグ。本番（ENABLE_DEV_TOOLS=False）では URL 自体を登録しない
+# （業務データを返す診断端点は本番に置かない）。
 # 開発環境でも superuser かつ authentication.use_diagnostics が必要。
 if settings.ENABLE_DEV_TOOLS:
     urlpatterns += [
+        path('tax-renewal-pdf-diagnostics/', tax_renewal_pdf_diagnostics, name='tax-renewal-pdf-diagnostics'),
         path('visa-form-fields/', visa_form_fields, name='visa-form-fields'),
         path('visa-form-fields/preview/', visa_form_fields_preview, name='visa-form-fields-preview'),
         path('visa-form-field-mapping/', visa_form_field_mapping, name='visa-form-field-mapping'),

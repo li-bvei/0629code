@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAuthStore } from '../stores/auth'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -33,6 +34,8 @@ import type {
 } from '../types/accounting'
 import './accounting/accounting.css'
 
+// PDF 診断は開発環境のみ（本番は後端で URL 未登録）。
+const auth = useAuthStore()
 const records = ref<TaxRenewalVoucherRecord[]>([])
 const templates = ref<TaxRenewalTemplate[]>([])
 const agentTemplates = ref<TaxRenewalAgentTemplate[]>([])
@@ -910,7 +913,7 @@ onMounted(async () => {
           <p>既存資料と代理人テンプレートを反映し、証明書生成用の記録を保存します。</p>
         </div>
         <div class="accounting-toolbar">
-          <el-button @click="openDiagnostics">PDF字段诊断</el-button>
+          <el-button v-if="auth.devToolsEnabled" @click="openDiagnostics">PDF字段诊断</el-button>
           <el-button type="primary" @click="openCreate">新建</el-button>
         </div>
       </div>
