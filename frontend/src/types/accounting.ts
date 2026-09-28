@@ -3,6 +3,10 @@ import type { PaginatedResponse } from './api'
 export interface AccountingListParams {
   // 関連案件で絞り込み（P2）
   case?: number | string
+  customer?: number | string
+  company?: number | string
+  // 帳票の状態（'unset' は状態未設定の旧データ）
+  status?: string
   page?: number
   page_size?: number
   search?: string
@@ -303,7 +307,7 @@ export interface AccountingVoucherTaxSummary {
   total: number | string
 }
 
-export interface AccountingVoucher {
+export interface AccountingVoucher extends BusinessDocumentCommon {
   id: number
   voucher_type: AccountingVoucherType
   voucher_type_display: string
@@ -333,6 +337,127 @@ export interface AccountingVoucher {
   created_by_username?: string
   created_at?: string
   updated_at?: string
+  // P2-C11：請求書・領収書は別々の状態列を持つ（自分の種別の列だけを使う。空は旧データ）
+  invoice_status: InvoiceStatus
+  receipt_status: ReceiptStatus
+  paid_date: string | null
+  source_estimate?: number | null
+  source_contract?: number | null
+  source_invoice?: number | null
+  source_estimate_number?: string
+  source_contract_number?: string
+  source_invoice_number?: string
+}
+
+
+export type InvoiceStatus = '' | 'draft' | 'issued' | 'sent' | 'paid' | 'cancelled'
+export type ReceiptStatus = '' | 'draft' | 'issued' | 'voided'
+export type EstimateStatus = 'draft' | 'submitted' | 'accepted' | 'declined' | 'cancelled'
+export type ContractStatus = 'draft' | 'sent' | 'signed' | 'terminated' | 'cancelled'
+export type BusinessDocumentKind = 'estimate' | 'contract' | 'invoice' | 'receipt'
+export type BusinessDocumentEndpoint = 'estimates' | 'contracts' | 'vouchers'
+
+// 帳票共通の表示補助（後端が帳票ごとの Workflow から作る）
+export interface BusinessDocumentCommon {
+  document_kind: BusinessDocumentKind
+  status_value: string
+  status_display: string
+  is_editable: boolean
+  allowed_transitions: { value: string; label: string }[]
+  status_changed_at: string | null
+  issued_snapshot: Record<string, unknown>
+  case: number | null
+  customer: number | null
+  company: number | null
+  case_number: string
+  customer_name: string
+  company_name: string
+  updated_by?: number | null
+}
+
+interface BusinessDocumentBase extends BusinessDocumentCommon {
+  id: number
+  issue_date: string
+  recipient_name: string
+  recipient_honorific: string
+  recipient_postal_code: string
+  recipient_address: string
+  title: string
+  line_items: AccountingVoucherLineItem[]
+  amount: number | string
+  tax_amount: number | string
+  total_amount: number | string
+  tax_summary?: AccountingVoucherTaxSummary
+  note: string
+  issuer_name: string
+  issuer_postal_code: string
+  issuer_address: string
+  issuer_tel: string
+  issuer_registration_number: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface Estimate extends BusinessDocumentBase {
+  estimate_number: string
+  status: EstimateStatus
+  valid_until: string | null
+}
+
+export interface Contract extends BusinessDocumentBase {
+  contract_number: string
+  status: ContractStatus
+  start_date: string | null
+  end_date: string | null
+  payment_terms: string
+  body: string
+  signed_date: string | null
+  source_estimate: number | null
+  source_estimate_number?: string
+}
+
+export interface BusinessDocumentPayload {
+  issue_date: string
+  recipient_name?: string
+  recipient_honorific?: string
+  recipient_postal_code?: string
+  recipient_address?: string
+  title?: string
+  line_items?: AccountingVoucherLineItem[]
+  note?: string
+  issuer_name?: string
+  issuer_postal_code?: string
+  issuer_address?: string
+  issuer_tel?: string
+  issuer_registration_number?: string
+  case?: number | null
+  customer?: number | null
+  company?: number | null
+  valid_until?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  payment_terms?: string
+  body?: string
+}
+
+export interface VoucherLinkRow {
+  id: number
+  number: string
+  issue_date: string
+  title: string
+  recipient_name: string
+  status: string
+  status_display: string
+  total_amount: number
+}
+
+export type VoucherLinkBlock = { visible: false } | { visible: true; count: number; items: VoucherLinkRow[] }
+
+export interface VoucherLinks {
+  estimates: VoucherLinkBlock
+  contracts: VoucherLinkBlock
+  invoices: VoucherLinkBlock
+  receipts: VoucherLinkBlock
 }
 
 export interface AccountingVoucherPayload {
@@ -356,6 +481,9 @@ export interface AccountingVoucherPayload {
   issuer_tel?: string
   issuer_registration_number?: string
   bank_info?: string
+  case?: number | null
+  customer?: number | null
+  company?: number | null
 }
 
 export interface VoucherItemTemplate {

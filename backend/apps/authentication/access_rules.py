@@ -125,6 +125,45 @@ class IncomeRule(Rule):
         return check_accounting_links(policy, data, instance)
 
 
+# --- 帳票：見積書・契約書・請求書・領収書（P2-C11） ------------------------------------
+
+class BusinessDocumentRule(ModuleRule):
+    """帳票はモジュール権限のみ（帳票ごとに別の権限）。関連付けと元帳票の参照を検査する。
+
+    - 顧客・会社・案件への関連付けは会計記録と同じ規則（案件は「変更」できること）。
+    - 元の見積書・契約書・請求書を指定する場合は、その帳票の閲覧権限も必要。
+    """
+
+    SOURCE_RESOURCES = {'source_estimate': 'estimate', 'source_contract': 'contract', 'source_invoice': 'voucher'}
+
+    def _check_sources(self, policy, data, instance=None):
+        for field, resource in self.SOURCE_RESOURCES.items():
+            obj = data.get(field)
+            if obj is None or (instance is not None and getattr(instance, f'{field}_id', None) == obj.pk):
+                continue
+            if not policy.module_allowed(resource, 'view'):
+                raise PermissionDenied('元の帳票を参照する権限がありません。')
+
+    def prepare_create(self, policy, data):
+        self._check_sources(policy, data)
+        return {**check_accounting_links(policy, data), 'created_by': policy.user, 'updated_by': policy.user}
+
+    def prepare_update(self, policy, instance, data):
+        self._check_sources(policy, data, instance)
+        return {**check_accounting_links(policy, data, instance), 'updated_by': policy.user}
+
+
+class AnyBusinessDocumentRule(ModuleRule):
+    """帳票明細の定型項目・帳票の関連要約：いずれかの帳票を使える人は読める。変更は請求書・領収書の権限者。"""
+
+    READ_CODES = ('accounting.use_voucher', 'accounting.use_estimate', 'accounting.use_contract')
+
+    def module_allowed(self, policy, action):
+        if action in READ_ACTIONS:
+            return any(policy.has(code) for code in self.READ_CODES)
+        return policy.has('accounting.use_voucher')
+
+
 # --- 会計：支出（報銷） ---------------------------------------------------------
 
 class ExpenseRule(Rule):
@@ -592,7 +631,11 @@ RULES = {
     'income': IncomeRule(),
     'vehicle': ModuleRule('accounting.use_vehicle', model_label='accounting.VehicleUsage'),
     'project': ModuleRule('accounting.use_project'),
-    'voucher': ModuleRule('accounting.use_voucher'),
+    'voucher': BusinessDocumentRule('accounting.use_voucher', model_label='accounting.AccountingVoucher'),
+    'voucher_item_template': AnyBusinessDocumentRule('accounting.use_voucher', model_label='accounting.VoucherItemTemplate'),
+    'voucher_links': AnyBusinessDocumentRule('accounting.use_voucher'),
+    'estimate': BusinessDocumentRule('accounting.use_estimate', model_label='accounting.Estimate'),
+    'contract': BusinessDocumentRule('accounting.use_contract', model_label='accounting.Contract'),
     'visa': ModuleRule('accounting.use_visa'),
     'seifu': ModuleRule('accounting.use_seifu'),
     'tax_renewal': ModuleRule('accounting.use_tax_renewal', model_label='accounting.TaxRenewalVoucherRecord'),

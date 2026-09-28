@@ -35,6 +35,7 @@
 - [2026-09-28 P2 Visa 一括导入分支](CHANGELOG_2026-09-28_p2_visa_import.md)
 - [2026-09-28 P2 文件管理分支](CHANGELOG_2026-09-28_p2_documents.md)
 - [2026-09-29 P2 集成分支](CHANGELOG_2026-09-29_p2_integration.md)
+- [2026-09-29 P2-C11 帐票](CHANGELOG_2026-09-29_p2_c11_vouchers.md)
 - [2026-09 项目审查报告](PROJECT_AUDIT_2026-09.md)
 
 ## 历史上下文

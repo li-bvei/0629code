@@ -177,7 +177,7 @@ Portal 相关数据应支持：
 | `authentication_protected_accounts`（ProtectedAccount） | `user_id` OneToOne（`PROTECT`）、`reason`、`created_at`；权限 `authentication.manage_users`、`authentication.use_diagnostics` 也挂在此模型上 | `authentication/0001_initial` | 用外键关联账号，不在代码中固定 ID；只能用 `protect_account` 增删；Admin 两阶段启用由 `PROTECTED_ADMIN_ENFORCEMENT` 控制 |
 | `accounting_expenses.owner_id`（`PROTECT`）/`created_by_id`/`updated_by_id`（`SET_NULL`） | 均为 FK → `auth.User`，`null=True` | `accounting/0015_expense_owner_and_business_permissions` | 新建记录时由后端强制写入；历史数据用 `backfill_expense_owner` 回填（dry-run、expect-count、CSV、可回滚）；NOT NULL 以后另行评估 |
 | `audit_logs`（AuditLog，`apps/audit`） | 用户、username 快照、Employee、IP、User-Agent、request_id、module、action、object_type/id/repr、result、changes、reason、via_permission、extra | `audit/0001_initial` | 只能经 `apps.audit.services.record()` 写入；没有 API；Admin 只读，仅受保护账号且有 `audit.view_auditlog` 时可见 |
-| 自定义业务权限（Meta.permissions） | accounting：`use_expense`、`expense_view_all`、`expense_change_all`、`expense_export_all`、`manage_expense_category`、`use_income`、`use_vehicle`、`use_project`、`use_voucher`、`use_visa`、`use_tax_renewal`、`use_seifu`；cases：`use_cases`、`case_view_all`、`case_change_all`、`manage_case_settings`；customers：`customer_view_all`、`view_sensitive_identity`；documents：`document_view_all`、`document_download_all` | `accounting/0015`、`cases/0017`、`customers/0009`、`documents/0003` | 数据范围用权限名表达，不新建权限表或范围表 |
+| 自定义业务权限（Meta.permissions） | accounting：`use_expense`、`expense_view_all`、`expense_change_all`、`expense_export_all`、`manage_expense_category`、`use_income`、`use_vehicle`、`use_project`、`use_voucher`、`use_estimate`、`use_contract`（P2-C11，`accounting/0018`）、`use_visa`、`use_tax_renewal`、`use_seifu`；cases：`use_cases`、`case_view_all`、`case_change_all`、`manage_case_settings`；customers：`customer_view_all`、`view_sensitive_identity`；documents：`document_view_all`、`document_download_all` | `accounting/0015`、`cases/0017`、`customers/0009`、`documents/0003` | 数据范围用权限名表达，不新建权限表或范围表 |
 
 #### Group 与初期成员（`setup_access_roles` 创建，`assign_business_roles` 分配；生产分配须经 D6/D7 批准）
 
@@ -240,3 +240,16 @@ Portal 相关数据应支持：
 
 - Checklist 关联沿用 P1 的 `case_checklist_items.document_id`；上传时可以指定同一案件的必要资料。
 - 已在集成分支 `codex/p2-integration` 与会计、Visa 分支合并（文档冲突已手动合并；migration 分属 `accounting/0016～0017` 与 `documents/0004`，互不依赖）。
+
+### 11.7 P2-C11 帐票（2026-09-29 本地已实现，分支 `codex/p2-c11-vouchers`；生产未部署）
+
+| 对象 | 字段 | migration | 说明 |
+|---|---|---|---|
+| `accounting_estimates`（Estimate，見積書） | `estimate_number`（EST-YYYYMMDD-NNNN，唯一）、`status`（draft/submitted/accepted/declined/cancelled）、`valid_until`，以及共享抽象列 | `accounting/0018_business_documents_c11` | 権限 `accounting.use_estimate` |
+| `accounting_contracts`（Contract，契約書） | `contract_number`（CON-…）、`status`（draft/sent/signed/terminated/cancelled）、`start_date`、`end_date`、`payment_terms`、`body`、`signed_date`、`source_estimate_id`（SET_NULL），以及共享抽象列 | 同上 | 権限 `accounting.use_contract` |
+| 共享抽象列（見積書・契約書） | 宛先（名称/敬称/邮编/住所）、`title`、`line_items`、`amount`/`tax_amount`/`total_amount`、発行者、`issued_snapshot`、`status_changed_at`、`case_id`/`customer_id`/`company_id`（SET_NULL）、`created_by_id`/`updated_by_id` | 同上 | 只共享列，不共享状态 |
+| `accounting_vouchers`（請求書・領収書） | `invoice_status`（''/draft/issued/sent/paid/cancelled）、`receipt_status`（''/draft/issued/voided）、`paid_date`、`status_changed_at`、`issued_snapshot`、`source_estimate_id`、`source_contract_id`、`source_invoice_id`（self）、`case_id`/`customer_id`/`company_id`、`updated_by_id` | 同上 | 两种帐票各用自己的状态列；**既有行状态为空（旧数据），不批量回填** |
+| `accounting_document_number_sequences` | `key`（前缀-日期，唯一）、`last_number` | 同上 | 加锁取号，且大于同前缀已有最大号；旧 INV/REC 编号格式不变 |
+
+- 离开下書き时写入 `issued_snapshot`，之后宛先・金额等锁定（只可改备注和关联案件），不可删除。
+- 状态迁移、创建、更新、删除、PDF 下载写 AuditLog（`module='voucher'`）。

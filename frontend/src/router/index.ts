@@ -34,6 +34,8 @@ import TaxRenewalVouchersPage from '../pages/TaxRenewalVouchersPage.vue'
 import TimelinesPage from '../pages/TimelinesPage.vue'
 import VisaReturnApplicationsPage from '../pages/VisaReturnApplicationsPage.vue'
 import VoucherPlaceholderPage from '../pages/VoucherPlaceholderPage.vue'
+import ContractsPage from '../pages/vouchers/ContractsPage.vue'
+import EstimatesPage from '../pages/vouchers/EstimatesPage.vue'
 import TodayWorkbenchPage from '../pages/TodayWorkbenchPage.vue'
 import { landingPath, requiredPermissionFor } from '../utils/access'
 import { useAuthStore } from '../stores/auth'
@@ -245,14 +247,12 @@ const router = createRouter({
         {
           path: 'vouchers/estimates',
           name: 'voucher-estimates',
-          component: VoucherPlaceholderPage,
-          props: { title: '見積書' },
+          component: EstimatesPage,
         },
         {
           path: 'vouchers/contracts',
           name: 'voucher-contracts',
-          component: VoucherPlaceholderPage,
-          props: { title: '契約書' },
+          component: ContractsPage,
         },
         {
           path: 'vouchers/certificates',

@@ -168,7 +168,7 @@ Case
 - `/timelines`：Timeline
 - `/documents`：文件模块基础页面，完整工作流尚未完成
 - `/accounting/*`：会计 Dashboard、支出、收入来源、车辆、项目收支
-- `/vouchers/*`：請求書/領収書、返签 visa、税务证明、清風通知书和占位页面
+- `/vouchers/*`：請求書/領収書、見積書、契約書（P2-C11 本地实现）、返签 visa、税务证明、清風通知书和占位页面（証明書・その他）
 - `/settings`：密码修改与 root 账号管理
 
 菜单上已隐藏或标记暂缓的功能：独立 Task、部分 Reminder、客户 Portal、完整文件工作流、部分帳票。
@@ -328,6 +328,8 @@ Case
 
 **P2 集成（分支 `codex/p2-integration`，2026-09-29）**：基于 P1，合并 Visa（含会计）与文件分支；只有文档冲突，已手动合并；后端 247 项、前端单元测试、构建、migration 检查全部通过。后续 P2-C11 帐票在此分支上开发。详见 `docs/CHANGELOG_2026-09-29_p2_integration.md`。
 
+**P2-C11 帐票（分支 `codex/p2-c11-vouchers`，基于集成分支，2026-09-29）**：見積書・契約書新表（`accounting/0018`），請求書・領収書沿用既有表但状态列分开（`invoice_status`/`receipt_status`），四种帐票各自的状态、编号、发行快照和 PDF；共用的只有编号、金额计算、快照/迁移执行与审计。既有請求書・領収書状态保持为空（旧数据），不批量回填。从帐票创建另一帐票只复制为下書き，不联动状态。新增权限 `use_estimate`/`use_contract`（加入 accounting_admin，部署后需 `setup_access_roles --apply --yes`）。案件/顾客/公司详情有帳票卡片。后端 260 项、前端单元 10 项、构建通过；浏览器实测未做。详见 `docs/CHANGELOG_2026-09-29_p2_c11_vouchers.md`。
+
 原计划清单（保留作对照）：
 
 1. Case Workspace Action Bar：対応記録、資料受領、タスク、ファイル、入金、待機、完了。
@@ -348,7 +350,7 @@ Case
 - P2-C8：个人报销按 owner 隔离，保持简单登记，不新增审核、支付或入账流程。
 - P2-C9：完善现有 Checklist/Document 文件管理（上传、下载、分类、关联、元数据、替换/归档/删除审计、后端鉴权、备份恢复）；不连接或迁移 Google Drive；第一阶段不做完整版本管理。Checklist 模板内容去重与业务审阅也并入此项。
 - P2-C10：Visa CSV/XLSX 导入、校验与批量 PDF。
-- P2-C11：报价、契约、请求、领收帐票分别完善。
+- P2-C11：报价、契约、请求、领收帐票分别完善。（✅ 本地，分支 `codex/p2-c11-vouchers`）
 
 ### P3：不动产业务模块
 

@@ -13,6 +13,7 @@ import {
   updateFamilyMember,
 } from '../api/familyMembers'
 import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
+import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
 import type { CaseApplicationCategory, CasePayload, CaseTypeMaster, CreateCustomerPayload, Customer, CustomerCaseSummary, CustomerDetail, CustomerRelatedCompany, Employee, FamilyMember, FamilyMemberPayload, ResidenceStatusMaster, UpdateCustomerPayload } from '../types/api'
 import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
@@ -850,6 +851,7 @@ onMounted(() => {
               <li><span>マイナンバー</span><strong>{{ customer.has_my_number ? '登録済み' : '未登録' }}</strong></li>
             </ul>
           </el-card>
+          <VoucherLinksCard :customer-id="customerId" />
         </aside>
       </div>
     </div>

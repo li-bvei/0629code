@@ -15,11 +15,11 @@ from .zei_pdf_position_debug import (
     zei_pdf_position_test_pdf,
 )
 from .visa_import_views import VisaImportViewSet
+from .voucher_views import AccountingVoucherViewSet, ContractViewSet, EstimateViewSet, voucher_links
 from .views import (
     AccountingProjectExpenseViewSet,
     AccountingProjectIncomeViewSet,
     AccountingProjectViewSet,
-    AccountingVoucherViewSet,
     ExpenseCategoryViewSet,
     ExpenseViewSet,
     IncomeSourceViewSet,
@@ -43,6 +43,8 @@ router.register('projects', AccountingProjectViewSet, basename='accounting-proje
 router.register('project-incomes', AccountingProjectIncomeViewSet, basename='accounting-project-income')
 router.register('project-expenses', AccountingProjectExpenseViewSet, basename='accounting-project-expense')
 router.register('vouchers', AccountingVoucherViewSet, basename='accounting-voucher')
+router.register('estimates', EstimateViewSet, basename='accounting-estimate')
+router.register('contracts', ContractViewSet, basename='accounting-contract')
 router.register('voucher-item-templates', VoucherItemTemplateViewSet, basename='accounting-voucher-item-template')
 router.register('visa-return-applications', VisaReturnApplicationViewSet, basename='visa-return-application')
 router.register('visa-imports', VisaImportViewSet, basename='visa-import')
@@ -57,6 +59,7 @@ urlpatterns = [
     path('seifu-notice-pdf/preview/', seifu_notice_preview, name='seifu-notice-preview'),
     path('seifu-notice-pdf/generate/', seifu_notice_generate, name='seifu-notice-generate'),
     path('tax-renewal-templates/', tax_renewal_templates, name='tax-renewal-templates'),
+    path('voucher-links/', voucher_links, name='accounting-voucher-links'),
     *router.urls,
 ]
 

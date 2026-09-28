@@ -57,7 +57,7 @@
 | P2-C8 | 个人报销按 owner 隔离并保持简单登记 | ✅（本地） | 维持 P0 的 owner 隔离；没有新增任何审批/支付/入账状态（有测试确认） |
 | P2-C9 | Checklist/Document 现有系统文件管理 | ✅（本地，分支 `codex/p2-documents`） | 分类、元数据、上传检查、Checklist 关联、归档/恢复、替换历史、备份恢复说明；不连接 Drive，不做版本树 |
 | P2-C10 | Visa CSV/XLSX 导入、校验与批量 PDF | ✅（本地，分支 `codex/p2-visa-import`，基于会计分支） | `accounting/visa-imports/*`；导出全部写审计 |
-| P2-C11 | 报价/契约/请求/领收帐票分别完善 | ⬜ |
+| P2-C11 | 报价/契约/请求/领收帐票分别完善 | ✅（本地，分支 `codex/p2-c11-vouchers`） | 各自状态/编号/快照/PDF；共用编号、金额、审计基础；既有請求書・領収書状态不回填 |
 
 ### P3 — 不动产业务模块
 

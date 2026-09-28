@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -24,7 +25,25 @@ import type {
   VoucherItemTemplate,
 } from '../types/accounting'
 import { formatDate } from '../utils/date'
+import RemoteCaseSelect from '../components/RemoteCaseSelect.vue'
+import VoucherStatusActions from '../components/vouchers/VoucherStatusActions.vue'
+import { useDocumentList } from '../components/vouchers/useDocumentList'
 import './accounting/accounting.css'
+
+// P2-C11：請求書と領収書は状態を共有しない（invoice_status / receipt_status）。発行後は内容を変更できない。
+const route = useRoute()
+const documentActions = useDocumentList<AccountingVoucher>('vouchers', '請求書', listAccountingVouchers)
+const editingLocked = ref(false)
+const editingCaseOption = ref<{ value: number; label: string } | null>(null)
+const INVOICE_STATUS_OPTIONS = [
+  { value: 'draft', label: '下書き' }, { value: 'issued', label: '発行済み' }, { value: 'sent', label: '送付済み' },
+  { value: 'paid', label: '入金済み' }, { value: 'cancelled', label: '取消' }, { value: 'unset', label: '状態未設定（旧データ）' },
+]
+const RECEIPT_STATUS_OPTIONS = [
+  { value: 'draft', label: '下書き' }, { value: 'issued', label: '発行済み' }, { value: 'voided', label: '無効' },
+  { value: 'unset', label: '状態未設定（旧データ）' },
+]
+const statusOptions = computed(() => (filters.value.voucher_type === 'receipt' ? RECEIPT_STATUS_OPTIONS : INVOICE_STATUS_OPTIONS))
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -51,7 +70,8 @@ const filters = ref({
   title: '',
   amount_min: '',
   amount_max: '',
-  keyword: '',
+  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
+  status: '',
 })
 const newItemTemplate = ref({
   name: '',
@@ -132,6 +152,7 @@ const voucherForm = ref<AccountingVoucherPayload>({
   payment_method: '',
   ...defaultIssuer,
   bank_info: '',
+  case: null,
 })
 
 const rules: FormRules<AccountingVoucherPayload> = {
@@ -279,7 +300,9 @@ const fetchVouchers = async (page = currentPage.value) => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const data = await listAccountingVouchers({ page, ...filters.value })
+    // 状態の絞り込みは種別を選んだときだけ（請求書と領収書で状態の種類が違うため）
+    const params = { page, ...filters.value, status: filters.value.voucher_type ? filters.value.status : '' }
+    const data = await listAccountingVouchers(params)
     vouchers.value = data.results
     total.value = data.count
     currentPage.value = page
@@ -304,6 +327,7 @@ const resetFilters = () => {
     amount_min: '',
     amount_max: '',
     keyword: '',
+    status: '',
   }
   fetchVouchers(1)
 }
@@ -362,7 +386,10 @@ const resetForm = () => {
     payment_method: '',
     ...defaultIssuer,
     bank_info: '',
+    case: null,
   }
+  editingLocked.value = false
+  editingCaseOption.value = null
   selectedBankInfo.value = ''
   showRecipientDetail.value = false
   formRef.value?.clearValidate()
@@ -405,7 +432,10 @@ const openEditDialog = (voucher: AccountingVoucher) => {
     issuer_tel: voucher.issuer_tel,
     issuer_registration_number: voucher.issuer_registration_number,
     bank_info: voucher.bank_info,
+    case: voucher.case,
   }
+  editingLocked.value = !voucher.is_editable
+  editingCaseOption.value = voucher.case ? { value: voucher.case, label: voucher.case_number } : null
   selectedBankInfo.value = ''
   showRecipientDetail.value = Boolean(voucher.recipient_postal_code || voucher.recipient_address)
   formRef.value?.clearValidate()
@@ -556,6 +586,7 @@ const normalizeLineItems = () => {
 }
 
 const buildPayload = () => {
+  if (editingLocked.value) return { note: voucherForm.value.note, case: voucherForm.value.case }
   const lineItems = normalizeLineItems()
   const payload = {
     ...voucherForm.value,
@@ -579,7 +610,7 @@ const submitVoucher = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
   const lineItems = normalizeLineItems()
-  if (!lineItems.length || lineItems.some((item) => !item.item_name)) {
+  if (!editingLocked.value && (!lineItems.length || lineItems.some((item) => !item.item_name))) {
     ElMessage.error('明細の項目名を入力してください。')
     return
   }
@@ -590,7 +621,7 @@ const submitVoucher = async () => {
       await updateAccountingVoucher(editingVoucherId.value, buildPayload())
       ElMessage.success('帳票を更新しました。')
     } else {
-      await createAccountingVoucher(buildPayload())
+      await createAccountingVoucher(buildPayload() as AccountingVoucherPayload)
       ElMessage.success('帳票を作成しました。')
     }
     dialogVisible.value = false
@@ -652,6 +683,10 @@ const handleVoucherActionCommand = (voucher: AccountingVoucher, command: string)
     downloadPdf(voucher, true)
     return
   }
+  if (command === 'receipt') {
+    documentActions.createFrom(voucher.id, 'create-receipt')
+    return
+  }
   if (command === 'delete') {
     confirmDeleteVoucher(voucher)
   }
@@ -708,6 +743,15 @@ onMounted(() => {
           <el-option label="請求書" value="invoice" />
           <el-option label="領収書" value="receipt" />
         </el-select>
+        <el-select
+          v-model="filters.status"
+          clearable
+          :disabled="!filters.voucher_type"
+          :placeholder="filters.voucher_type ? '状態' : '状態（種別を選択）'"
+          class="accounting-filter-select"
+        >
+          <el-option v-for="option in statusOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
         <el-input v-model="filters.recipient_name" clearable placeholder="宛先" class="accounting-filter-search" />
         <el-input v-model="filters.title" clearable placeholder="件名 / 内容" class="accounting-filter-search" />
         <el-input v-model="filters.amount_min" clearable inputmode="numeric" placeholder="最低金額" class="accounting-filter-date" />
@@ -751,6 +795,20 @@ onMounted(() => {
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="番号" width="170">
+          <template #default="{ row }">
+            <div>{{ row.voucher_number }}</div>
+            <div v-if="row.source_invoice_number || row.source_contract_number || row.source_estimate_number" class="voucher-source">
+              元：{{ row.source_invoice_number || row.source_contract_number || row.source_estimate_number }}
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="状態" width="150">
+          <template #default="{ row }">
+            <VoucherStatusActions endpoint="vouchers" :doc="row" @changed="fetchVouchers()" />
+            <div v-if="row.paid_date" class="voucher-source">入金日 {{ formatDate(row.paid_date) }}</div>
+          </template>
+        </el-table-column>
         <el-table-column prop="recipient_name" label="宛先" min-width="180">
           <template #default="{ row }">{{ row.recipient_name || '-' }}</template>
         </el-table-column>
@@ -789,10 +847,11 @@ onMounted(() => {
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="edit">編集</el-dropdown-item>
+                  <el-dropdown-item command="edit">{{ row.is_editable ? '編集' : '表示・備考' }}</el-dropdown-item>
                   <el-dropdown-item command="pdf-no-seal">PDF（印章なし）</el-dropdown-item>
                   <el-dropdown-item command="pdf-seal">PDF（印章あり）</el-dropdown-item>
-                  <el-dropdown-item command="delete" divided class="danger-item">削除</el-dropdown-item>
+                  <el-dropdown-item v-if="row.voucher_type === 'invoice'" command="receipt" divided>領収書を作成</el-dropdown-item>
+                  <el-dropdown-item v-if="row.is_editable" command="delete" divided class="danger-item">削除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -817,7 +876,15 @@ onMounted(() => {
       class="accounting-expense-dialog"
       @closed="resetForm"
     >
-      <el-form ref="formRef" :model="voucherForm" :rules="rules" label-position="top">
+      <el-alert
+        v-if="editingLocked"
+        type="info"
+        show-icon
+        :closable="false"
+        class="voucher-locked-alert"
+        title="発行後の帳票です。宛先・金額などは変更できません（備考と関連案件のみ変更できます）。"
+      />
+      <el-form ref="formRef" :model="voucherForm" :rules="rules" :disabled="editingLocked" label-position="top">
         <div class="accounting-dialog-form">
           <el-form-item label="帳票種別" prop="voucher_type">
             <el-select v-model="voucherForm.voucher_type" class="form-control">
@@ -971,7 +1038,16 @@ onMounted(() => {
             </div>
           </div>
           <el-form-item label="備考" prop="note" class="accounting-dialog-full">
-            <el-input v-model="voucherForm.note" type="textarea" :rows="3" />
+            <el-input v-model="voucherForm.note" type="textarea" :rows="3" :disabled="false" />
+          </el-form-item>
+          <el-form-item label="関連案件（任意）" class="accounting-dialog-full">
+            <RemoteCaseSelect
+              v-model="voucherForm.case"
+              clearable
+              :disabled="false"
+              :initial-option="editingCaseOption"
+              placeholder="担当案件から選択"
+            />
           </el-form-item>
           <el-form-item v-if="voucherForm.voucher_type === 'invoice'" label="支払期限" prop="payment_due_date">
             <el-date-picker
@@ -1119,6 +1195,15 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.voucher-source {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.voucher-locked-alert {
+  margin-bottom: 12px;
+}
+
 :deep(.voucher-nowrap-form-item .el-form-item__label) {
   white-space: nowrap;
 }

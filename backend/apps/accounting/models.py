@@ -306,6 +306,57 @@ class AccountingVoucher(models.Model):
     issuer_tel = models.CharField('発行者電話番号', max_length=50, blank=True)
     issuer_registration_number = models.CharField('登録番号', max_length=100, blank=True)
     bank_info = models.TextField('振込先', blank=True)
+    # P2-C11：請求書と領収書は状態を共有しない。列も選択肢も別に持ち、自分の種別の列だけを使う。
+    # 既存行は空（状態未設定＝旧データ）のまま残し、一括で書き換えない。
+    INVOICE_STATUS_DRAFT = 'draft'
+    INVOICE_STATUS_ISSUED = 'issued'
+    INVOICE_STATUS_SENT = 'sent'
+    INVOICE_STATUS_PAID = 'paid'
+    INVOICE_STATUS_CANCELLED = 'cancelled'
+    INVOICE_STATUS_CHOICES = (
+        (INVOICE_STATUS_DRAFT, '下書き'),
+        (INVOICE_STATUS_ISSUED, '発行済み'),
+        (INVOICE_STATUS_SENT, '送付済み'),
+        (INVOICE_STATUS_PAID, '入金済み'),
+        (INVOICE_STATUS_CANCELLED, '取消'),
+    )
+    RECEIPT_STATUS_DRAFT = 'draft'
+    RECEIPT_STATUS_ISSUED = 'issued'
+    RECEIPT_STATUS_VOIDED = 'voided'
+    RECEIPT_STATUS_CHOICES = (
+        (RECEIPT_STATUS_DRAFT, '下書き'),
+        (RECEIPT_STATUS_ISSUED, '発行済み'),
+        (RECEIPT_STATUS_VOIDED, '無効'),
+    )
+    invoice_status = models.CharField('請求書の状態', max_length=20, choices=INVOICE_STATUS_CHOICES, blank=True, default='')
+    receipt_status = models.CharField('領収書の状態', max_length=20, choices=RECEIPT_STATUS_CHOICES, blank=True, default='')
+    paid_date = models.DateField('入金日', null=True, blank=True)
+    status_changed_at = models.DateTimeField('状態変更日時', null=True, blank=True)
+    issued_snapshot = models.JSONField('発行時の金額スナップショット', default=dict, blank=True)
+    source_estimate = models.ForeignKey(
+        'accounting.Estimate', verbose_name='元の見積書', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='vouchers',
+    )
+    source_contract = models.ForeignKey(
+        'accounting.Contract', verbose_name='元の契約書', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='vouchers',
+    )
+    source_invoice = models.ForeignKey(
+        'self', verbose_name='元の請求書', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='receipts',
+    )
+    customer = models.ForeignKey(
+        'customers.Customer', verbose_name='関連顧客', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    company = models.ForeignKey(
+        'companies.Company', verbose_name='関連会社', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    case = models.ForeignKey(
+        'cases.Case', verbose_name='関連案件', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -313,6 +364,10 @@ class AccountingVoucher(models.Model):
         on_delete=models.SET_NULL,
         related_name='accounting_vouchers',
         verbose_name='作成者',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='+', verbose_name='更新者',
     )
     created_at = models.DateTimeField('作成日時', auto_now_add=True)
     updated_at = models.DateTimeField('更新日時', auto_now=True)
@@ -366,22 +421,179 @@ class AccountingVoucher(models.Model):
         return calculate_voucher_amounts(items)[0]
 
     def generate_voucher_number(self):
+        # 形式（INV/REC-YYYYMMDD-NNNN）は従来どおり。採番は共通の連番表で排他制御する。
+        from .voucher_infra import allocate_number
+
         prefix = 'INV' if self.voucher_type == self.VOUCHER_TYPE_INVOICE else 'REC'
-        date_part = self.issue_date.strftime('%Y%m%d')
-        base = f'{prefix}-{date_part}'
-        latest = (
-            AccountingVoucher.objects
-            .filter(voucher_number__startswith=base)
-            .order_by('-voucher_number')
-            .first()
-        )
-        next_number = 1
-        if latest and latest.voucher_number:
-            try:
-                next_number = int(latest.voucher_number.split('-')[-1]) + 1
-            except ValueError:
-                next_number = 1
-        return f'{base}-{next_number:04d}'
+        return allocate_number(prefix, self.issue_date, AccountingVoucher, 'voucher_number')
+
+    @property
+    def status_field(self):
+        return 'invoice_status' if self.voucher_type == self.VOUCHER_TYPE_INVOICE else 'receipt_status'
+
+    @property
+    def number(self):
+        return self.voucher_number
+
+
+class DocumentNumberSequence(models.Model):
+    """帳票番号の連番（共通基盤）。キーは「接頭辞-発行日」。各帳票の番号規則は帳票ごとに別。"""
+
+    key = models.CharField('キー', max_length=40, unique=True)
+    last_number = models.PositiveIntegerField('最終番号', default=0)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_document_number_sequences'
+        verbose_name = '帳票番号の連番'
+        verbose_name_plural = '帳票番号の連番'
+
+    def __str__(self):
+        return f'{self.key}: {self.last_number}'
+
+
+class BusinessDocumentFields(models.Model):
+    """見積書・契約書が共有する「宛先・発行者・金額・関連」の列（抽象）。状態と番号規則は各帳票で定義する。"""
+
+    HONORIFIC_CHOICES = AccountingVoucher.HONORIFIC_CHOICES
+
+    issue_date = models.DateField('発行日')
+    recipient_name = models.CharField('宛先', max_length=255, blank=True)
+    recipient_honorific = models.CharField('敬称', max_length=10, choices=HONORIFIC_CHOICES, default='御中', blank=True)
+    recipient_postal_code = models.CharField('宛先郵便番号', max_length=20, blank=True)
+    recipient_address = models.TextField('宛先住所', blank=True)
+    title = models.CharField('件名', max_length=255, blank=True)
+    line_items = models.JSONField('明細行', default=list, blank=True)
+    amount = models.DecimalField('小計（税抜）', max_digits=12, decimal_places=0, default=0)
+    tax_amount = models.DecimalField('消費税額', max_digits=12, decimal_places=0, default=0)
+    total_amount = models.DecimalField('合計金額', max_digits=12, decimal_places=0, default=0)
+    note = models.TextField('備考', blank=True)
+    issuer_name = models.CharField('発行者名', max_length=255, default='SUNRISE日晟鴻達株式会社')
+    issuer_postal_code = models.CharField('発行者郵便番号', max_length=20, blank=True)
+    issuer_address = models.TextField('発行者住所', blank=True)
+    issuer_tel = models.CharField('発行者電話番号', max_length=50, blank=True)
+    issuer_registration_number = models.CharField('登録番号', max_length=100, blank=True)
+    status_changed_at = models.DateTimeField('状態変更日時', null=True, blank=True)
+    issued_snapshot = models.JSONField('発行時の金額スナップショット', default=dict, blank=True)
+    customer = models.ForeignKey(
+        'customers.Customer', verbose_name='関連顧客', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    company = models.ForeignKey(
+        'companies.Company', verbose_name='関連会社', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    case = models.ForeignKey(
+        'cases.Case', verbose_name='関連案件', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='+', verbose_name='作成者',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='+', verbose_name='更新者',
+    )
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    NUMBER_PREFIX = ''
+    NUMBER_FIELD = ''
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        normalized, summary = calculate_voucher_amounts(self.line_items)
+        self.line_items = normalized
+        self.amount = summary['subtotal']
+        self.tax_amount = summary['tax_total']
+        self.total_amount = summary['total']
+        if not getattr(self, self.NUMBER_FIELD):
+            from .voucher_infra import allocate_number
+
+            setattr(self, self.NUMBER_FIELD,
+                    allocate_number(self.NUMBER_PREFIX, self.issue_date, type(self), self.NUMBER_FIELD))
+        super().save(*args, **kwargs)
+
+    @property
+    def number(self):
+        return getattr(self, self.NUMBER_FIELD)
+
+
+class Estimate(BusinessDocumentFields):
+    """見積書。受注・失注は見積書自身の状態で、契約書・請求書の状態には連動しない。"""
+
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_DECLINED = 'declined'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = (
+        (STATUS_DRAFT, '下書き'),
+        (STATUS_SUBMITTED, '提出済み'),
+        (STATUS_ACCEPTED, '受注'),
+        (STATUS_DECLINED, '失注'),
+        (STATUS_CANCELLED, '取消'),
+    )
+    NUMBER_PREFIX = 'EST'
+    NUMBER_FIELD = 'estimate_number'
+
+    estimate_number = models.CharField('見積番号', max_length=50, unique=True, blank=True)
+    status = models.CharField('状態', max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    valid_until = models.DateField('有効期限', null=True, blank=True)
+
+    class Meta:
+        db_table = 'accounting_estimates'
+        permissions = [('use_estimate', '見積書の利用')]
+        verbose_name = '見積書'
+        verbose_name_plural = '見積書'
+        ordering = ['-issue_date', '-id']
+
+    def __str__(self):
+        return f'見積書 {self.estimate_number}'
+
+
+class Contract(BusinessDocumentFields):
+    """契約書。送付・締結・終了は契約書自身の状態。報酬額は明細行で持つ。"""
+
+    STATUS_DRAFT = 'draft'
+    STATUS_SENT = 'sent'
+    STATUS_SIGNED = 'signed'
+    STATUS_TERMINATED = 'terminated'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = (
+        (STATUS_DRAFT, '下書き'),
+        (STATUS_SENT, '送付済み'),
+        (STATUS_SIGNED, '締結済み'),
+        (STATUS_TERMINATED, '終了'),
+        (STATUS_CANCELLED, '取消'),
+    )
+    NUMBER_PREFIX = 'CON'
+    NUMBER_FIELD = 'contract_number'
+
+    contract_number = models.CharField('契約番号', max_length=50, unique=True, blank=True)
+    status = models.CharField('状態', max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    start_date = models.DateField('契約開始日', null=True, blank=True)
+    end_date = models.DateField('契約終了日', null=True, blank=True)
+    payment_terms = models.TextField('支払条件', blank=True)
+    body = models.TextField('契約条項', blank=True)
+    signed_date = models.DateField('締結日', null=True, blank=True)
+    source_estimate = models.ForeignKey(
+        Estimate, verbose_name='元の見積書', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='contracts',
+    )
+
+    class Meta:
+        db_table = 'accounting_contracts'
+        permissions = [('use_contract', '契約書の利用')]
+        verbose_name = '契約書'
+        verbose_name_plural = '契約書'
+        ordering = ['-issue_date', '-id']
+
+    def __str__(self):
+        return f'契約書 {self.contract_number}'
 
 
 class VisaReturnApplication(models.Model):

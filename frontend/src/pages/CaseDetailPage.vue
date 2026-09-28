@@ -63,6 +63,7 @@ import type { CaseStageDisplay } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 import CaseActionBar from '../components/case/CaseActionBar.vue'
 import CaseAccountingSummary from '../components/case/CaseAccountingSummary.vue'
+import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1378,6 +1379,7 @@ onMounted(() => {
           <div class="case-related-links"><router-link class="text-link" :to="`/customers/${caseDetail?.customer}`">顧客詳細を開く</router-link><router-link v-if="caseDetail?.company" class="text-link" :to="`/companies/${caseDetail.company}`">会社詳細を開く</router-link><el-button text type="primary" @click="openRegistrationStatusDialog">登録状態を変更</el-button></div>
           <CaseAccountingSummary :case-id="caseDetail.id" class="case-sidebar-accounting" />
         </el-card>
+        <VoucherLinksCard v-if="caseDetail" :case-id="caseDetail.id" />
       </aside>
       </div>
 

@@ -15,6 +15,7 @@ import {
   updateCompanyStaff,
 } from '../api/companyStaff'
 import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
+import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
 import { bankAccountTypeOptions, fiscalMonthOptions } from '../constants/options'
 import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, CreateCompanyPayload, CreateCustomerPayload, Customer, Employee, ResidenceStatusMaster } from '../types/api'
 import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
@@ -499,6 +500,7 @@ onMounted(() => {
 
         <aside class="record-sidebar">
           <el-card shadow="never"><template #header>現在の対応</template><template v-if="primaryCase"><router-link class="text-link primary-case-link" :to="`/cases/${primaryCase.id}`">{{ primaryCase.case_number }}</router-link><el-tag :type="getCaseDisplayStatusTagType(primaryCase.status)">{{ getCaseDisplayStatus(primaryCase.status) }}</el-tag><dl class="record-field-list sidebar-list"><div><dt>顧客</dt><dd>{{ primaryCase.customer_name }}</dd></div><div><dt>担当者</dt><dd>{{ displayValue(primaryCase.responsible_employee_name) }}</dd></div><div><dt>次の対応</dt><dd>{{ displayValue(primaryCase.next_action) }}</dd></div><div><dt>期限</dt><dd>{{ formatDate(primaryCase.next_action_due_at) }}</dd></div></dl></template><p v-else class="empty-text">関連案件はありません。</p></el-card>
+          <VoucherLinksCard :company-id="companyId" />
           <el-card shadow="never"><template #header>データ状態</template><ul class="company-data-status"><li><span>代表者</span><strong>{{ getRepresentativeName(company) ? '登録済み' : '未登録' }}</strong></li><li><span>連絡先</span><strong>{{ company.phone || company.email ? '登録済み' : '未登録' }}</strong></li><li><span>法人番号</span><strong>{{ company.corporate_number ? '登録済み' : '未登録' }}</strong></li><li><span>銀行情報</span><strong>{{ company.bank_account_number ? '登録済み' : '未登録' }}</strong></li></ul></el-card>
         </aside>
       </div>

@@ -133,7 +133,7 @@ const handleLogout = async () => {
           </el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu v-if="auth.canAny('accounting.use_voucher', 'accounting.use_visa', 'accounting.use_tax_renewal', 'accounting.use_seifu')" index="vouchers">
+        <el-sub-menu v-if="auth.canAny('accounting.use_voucher', 'accounting.use_estimate', 'accounting.use_contract', 'accounting.use_visa', 'accounting.use_tax_renewal', 'accounting.use_seifu')" index="vouchers">
           <template #title>
             <el-icon><Document /></el-icon>
             <span>帳票管理</span>
@@ -155,15 +155,13 @@ const handleLogout = async () => {
             <span>清風合格通知書</span>
             <el-tag size="small" type="info">暂停</el-tag>
           </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_voucher')" index="/vouchers/estimates">
+          <el-menu-item v-if="auth.can('accounting.use_estimate')" index="/vouchers/estimates">
             <el-icon><Document /></el-icon>
             <span>見積書</span>
-            <el-tag size="small" type="info">準備中</el-tag>
           </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_voucher')" index="/vouchers/contracts">
+          <el-menu-item v-if="auth.can('accounting.use_contract')" index="/vouchers/contracts">
             <el-icon><Document /></el-icon>
             <span>契約書</span>
-            <el-tag size="small" type="info">準備中</el-tag>
           </el-menu-item>
           <el-menu-item v-if="auth.can('accounting.use_voucher')" index="/vouchers/certificates">
             <el-icon><Document /></el-icon>

@@ -8,6 +8,8 @@ from .models import (
     AccountingProjectExpense,
     AccountingProjectIncome,
     AccountingVoucher,
+    Contract,
+    Estimate,
     Expense,
     ExpenseCategory,
     IncomeSource,
@@ -22,6 +24,16 @@ from .models import (
 from .seifu_notice_pdf import template_doc, validate_items
 from .tax_renewal_templates import get_tax_renewal_templates
 from .voucher_calculations import VoucherCalculationError, calculate_voucher_amounts, decimal_to_number
+from .voucher_infra import (
+    CONTRACT_WORKFLOW,
+    ESTIMATE_WORKFLOW,
+    INVOICE_WORKFLOW,
+    RECEIPT_WORKFLOW,
+    reject_locked_changes,
+)
+
+INVOICE_WORKFLOW_DRAFT = AccountingVoucher.INVOICE_STATUS_DRAFT
+RECEIPT_WORKFLOW_DRAFT = AccountingVoucher.RECEIPT_STATUS_DRAFT
 
 
 class ExpenseCategorySerializer(serializers.ModelSerializer):
@@ -167,36 +179,32 @@ class AccountingProjectExpenseSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class AccountingVoucherSerializer(serializers.ModelSerializer):
-    voucher_type_display = serializers.CharField(source='get_voucher_type_display', read_only=True)
-    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+class BusinessDocumentSerializerMixin:
+    """帳票共通：明細からの金額計算・発行後の内容ロック・表示用の補助項目（状態は各帳票の Workflow）。"""
 
-    class Meta:
-        model = AccountingVoucher
-        fields = '__all__'
-        read_only_fields = (
-            'voucher_number',
-            'amount',
-            'tax_amount',
-            'total_amount',
-            'created_by',
-            'created_at',
-            'updated_at',
-        )
+    COMMON_READ_ONLY = (
+        'amount', 'tax_amount', 'total_amount', 'status_changed_at', 'issued_snapshot',
+        'created_by', 'updated_by', 'created_at', 'updated_at',
+    )
 
-    def calculate_amounts(self, line_items):
-        try:
-            normalized_items, summary = calculate_voucher_amounts(line_items)
-        except VoucherCalculationError as exc:
-            raise serializers.ValidationError({'line_items': str(exc)})
-        return normalized_items, summary
+    def get_workflow(self, instance=None, attrs=None):
+        raise NotImplementedError
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
+        workflow = self.get_workflow(self.instance, attrs)
+        reject_locked_changes(workflow, self.instance, attrs)
+        if self.instance is not None and not workflow.is_editable(self.instance):
+            for name in ('line_items', 'amount', 'tax_amount', 'total_amount'):
+                attrs.pop(name, None)
+            return attrs
         line_items = attrs.get('line_items')
         if line_items is None and self.instance is not None:
             line_items = self.instance.line_items
-
-        normalized_items, summary = self.calculate_amounts(line_items or [])
+        try:
+            normalized_items, summary = calculate_voucher_amounts(line_items or [])
+        except VoucherCalculationError as exc:
+            raise serializers.ValidationError({'line_items': str(exc)})
         attrs['line_items'] = normalized_items
         attrs['amount'] = summary['subtotal']
         attrs['tax_amount'] = summary['tax_total']
@@ -206,11 +214,99 @@ class AccountingVoucherSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         _, summary = calculate_voucher_amounts(data.get('line_items') or [])
-        data['tax_summary'] = {
-            key: decimal_to_number(value)
-            for key, value in summary.items()
-        }
+        data['tax_summary'] = {key: decimal_to_number(value) for key, value in summary.items()}
+        workflow = self.get_workflow(instance)
+        status = getattr(instance, workflow.status_field) or ''
+        labels = dict(instance._meta.get_field(workflow.status_field).choices)
+        data['document_kind'] = workflow.kind
+        data['status_value'] = status
+        data['status_display'] = labels.get(status, '状態未設定（旧データ）')
+        data['is_editable'] = workflow.is_editable(instance)
+        data['allowed_transitions'] = [
+            {'value': target, 'label': labels.get(target, target)} for target in workflow.allowed_targets(status)
+        ]
+        data['case_number'] = instance.case.case_number if instance.case_id else ''
+        data['customer_name'] = instance.customer.name if instance.customer_id else ''
+        data['company_name'] = instance.company.name if instance.company_id else ''
         return data
+
+
+class AccountingVoucherSerializer(BusinessDocumentSerializerMixin, serializers.ModelSerializer):
+    voucher_type_display = serializers.CharField(source='get_voucher_type_display', read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    source_estimate_number = serializers.CharField(source='source_estimate.estimate_number', read_only=True, default='')
+    source_contract_number = serializers.CharField(source='source_contract.contract_number', read_only=True, default='')
+    source_invoice_number = serializers.CharField(source='source_invoice.voucher_number', read_only=True, default='')
+
+    class Meta:
+        model = AccountingVoucher
+        fields = '__all__'
+        read_only_fields = (
+            'voucher_number', 'invoice_status', 'receipt_status', 'paid_date',
+        ) + BusinessDocumentSerializerMixin.COMMON_READ_ONLY
+
+    def get_workflow(self, instance=None, attrs=None):
+        voucher_type = (attrs or {}).get('voucher_type') or getattr(instance, 'voucher_type', None)
+        return INVOICE_WORKFLOW if voucher_type == AccountingVoucher.VOUCHER_TYPE_INVOICE else RECEIPT_WORKFLOW
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        voucher_type = attrs.get('voucher_type') or getattr(self.instance, 'voucher_type', None)
+        source_invoice = attrs.get('source_invoice')
+        if source_invoice is not None:
+            if voucher_type != AccountingVoucher.VOUCHER_TYPE_RECEIPT:
+                raise serializers.ValidationError({'source_invoice': '元の請求書は領収書にだけ指定できます。'})
+            if source_invoice.voucher_type != AccountingVoucher.VOUCHER_TYPE_INVOICE:
+                raise serializers.ValidationError({'source_invoice': '請求書を指定してください。'})
+        if voucher_type == AccountingVoucher.VOUCHER_TYPE_RECEIPT:
+            for name in ('source_estimate', 'source_contract'):
+                if attrs.get(name) is not None:
+                    raise serializers.ValidationError({name: '領収書には元の請求書だけを指定できます。'})
+        return attrs
+
+    def create(self, validated_data):
+        # 新規作成は下書きから。状態の列は自分の種別の列だけを使う。
+        if validated_data.get('voucher_type') == AccountingVoucher.VOUCHER_TYPE_INVOICE:
+            validated_data['invoice_status'] = INVOICE_WORKFLOW_DRAFT
+        else:
+            validated_data['receipt_status'] = RECEIPT_WORKFLOW_DRAFT
+        return super().create(validated_data)
+
+
+class EstimateSerializer(BusinessDocumentSerializerMixin, serializers.ModelSerializer):
+    class Meta:
+        model = Estimate
+        fields = '__all__'
+        read_only_fields = ('estimate_number', 'status') + BusinessDocumentSerializerMixin.COMMON_READ_ONLY
+
+    def get_workflow(self, instance=None, attrs=None):
+        return ESTIMATE_WORKFLOW
+
+
+class ContractSerializer(BusinessDocumentSerializerMixin, serializers.ModelSerializer):
+    source_estimate_number = serializers.CharField(source='source_estimate.estimate_number', read_only=True, default='')
+
+    class Meta:
+        model = Contract
+        fields = '__all__'
+        read_only_fields = ('contract_number', 'status', 'signed_date') + BusinessDocumentSerializerMixin.COMMON_READ_ONLY
+
+    def get_workflow(self, instance=None, attrs=None):
+        return CONTRACT_WORKFLOW
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        start = attrs.get('start_date', getattr(self.instance, 'start_date', None))
+        end = attrs.get('end_date', getattr(self.instance, 'end_date', None))
+        if start and end and end < start:
+            raise serializers.ValidationError({'end_date': '契約終了日は開始日以降にしてください。'})
+        return attrs
+
+
+class VoucherTransitionSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    date = serializers.DateField(required=False, allow_null=True)
 
 
 class VoucherItemTemplateSerializer(serializers.ModelSerializer):

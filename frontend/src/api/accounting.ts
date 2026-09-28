@@ -15,6 +15,11 @@ import type {
   AccountingProjectPayload,
   AccountingVoucher,
   AccountingVoucherPayload,
+  BusinessDocumentEndpoint,
+  BusinessDocumentPayload,
+  Contract,
+  Estimate,
+  VoucherLinks,
   Expense,
   ExpenseCategory,
   ExpenseCategoryPayload,
@@ -590,5 +595,72 @@ export const getExpenseCategorySuggestions = async (params: {
 
 export const getCaseAccountingSummary = async (caseId: number) => {
   const response = await http.get<CaseAccountingSummary>(`/cases/${caseId}/accounting-summary/`)
+  return response.data
+}
+
+// --- 帳票（P2-C11）：見積書・契約書と、帳票共通の状態遷移・PDF・関連要約 ---
+
+export const listEstimates = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<Estimate>>('/accounting/estimates/', { params: cleanParams(params) })
+  return response.data
+}
+
+export const saveEstimate = async (id: number | null, payload: Partial<BusinessDocumentPayload>) => {
+  const response = id
+    ? await http.patch<Estimate>(`/accounting/estimates/${id}/`, payload)
+    : await http.post<Estimate>('/accounting/estimates/', payload)
+  return response.data
+}
+
+export const listContracts = async (params?: AccountingListParams) => {
+  const response = await http.get<AccountingPaginatedResponse<Contract>>('/accounting/contracts/', { params: cleanParams(params) })
+  return response.data
+}
+
+export const saveContract = async (id: number | null, payload: Partial<BusinessDocumentPayload>) => {
+  const response = id
+    ? await http.patch<Contract>(`/accounting/contracts/${id}/`, payload)
+    : await http.post<Contract>('/accounting/contracts/', payload)
+  return response.data
+}
+
+export const deleteBusinessDocument = async (endpoint: BusinessDocumentEndpoint, id: number) => {
+  await http.delete(`/accounting/${endpoint}/${id}/`)
+}
+
+export const transitionBusinessDocument = async (
+  endpoint: BusinessDocumentEndpoint,
+  id: number,
+  body: { status: string; reason?: string; date?: string | null },
+) => {
+  const response = await http.post(`/accounting/${endpoint}/${id}/transition/`, body)
+  return response.data
+}
+
+// 元の帳票から下書きを作る（元の帳票の状態は変わらない）
+export const createDocumentFrom = async (
+  endpoint: BusinessDocumentEndpoint,
+  id: number,
+  target: 'create-contract' | 'create-invoice' | 'create-receipt',
+) => {
+  const response = await http.post<{ id: number; contract_number?: string; voucher_number?: string }>(
+    `/accounting/${endpoint}/${id}/${target}/`,
+  )
+  return response.data
+}
+
+export const downloadBusinessDocumentPdf = async (endpoint: BusinessDocumentEndpoint, id: number, withSeal = false) => {
+  const response = await http.get<Blob>(`/accounting/${endpoint}/${id}/pdf/`, {
+    params: withSeal ? { with_seal: 1 } : undefined,
+    responseType: 'blob',
+  })
+  return {
+    blob: response.data,
+    contentDisposition: response.headers['content-disposition'] as string | undefined,
+  }
+}
+
+export const getVoucherLinks = async (params: { case?: number; customer?: number; company?: number }) => {
+  const response = await http.get<VoucherLinks>('/accounting/voucher-links/', { params })
   return response.data
 }

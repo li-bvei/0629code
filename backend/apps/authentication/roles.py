@@ -35,6 +35,8 @@ ROLE_PERMISSIONS = {
         'accounting.use_vehicle',
         'accounting.use_project',
         'accounting.use_voucher',
+        'accounting.use_estimate',
+        'accounting.use_contract',
         'accounting.use_visa',
         'accounting.use_tax_renewal',
         'accounting.use_seifu',

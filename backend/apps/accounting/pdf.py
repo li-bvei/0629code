@@ -489,6 +489,26 @@ def connect_summary_left_border(c, margin_x, summary_top_y, table_bottom_y):
 
 
 def build_invoice_pdf(voucher, with_seal=False):
+    return build_billing_style_pdf(
+        voucher, with_seal=with_seal, title='請求書', heading='請　求　書',
+        greeting='拝啓　益々ご清祥のこととお慶び申し上げます。下記の通り、ご請求申し上げます。',
+        section='【請求金額等】', date_label='納付期日', date_value=voucher.payment_due_date,
+        total_label='請求金額合計', show_bank=True,
+    )
+
+
+def build_estimate_pdf(estimate, with_seal=False):
+    # 見積書は請求書と同じ体裁を使うが、文言・期日・振込先は見積書固有（振込先は出さない）。
+    return build_billing_style_pdf(
+        estimate, with_seal=with_seal, title='見積書', heading='御　見　積　書',
+        greeting='拝啓　益々ご清祥のこととお慶び申し上げます。下記の通り、御見積申し上げます。',
+        section='【御見積金額等】', date_label='有効期限', date_value=estimate.valid_until,
+        total_label='御見積金額合計', show_bank=False, number_label='見積番号', number=estimate.estimate_number,
+    )
+
+
+def build_billing_style_pdf(voucher, *, with_seal, title, heading, greeting, section, date_label, date_value,
+                            total_label, show_bank, number_label='', number=''):
     font_name = register_mincho_font()
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -497,7 +517,7 @@ def build_invoice_pdf(voucher, with_seal=False):
     content_w = width - margin_x * 2
     top_y = height - 18 * mm
 
-    c.setTitle('請求書')
+    c.setTitle(title)
     c.setFillColor(colors.black)
 
     recipient = recipient_with_honorific(voucher)
@@ -513,6 +533,8 @@ def build_invoice_pdf(voucher, with_seal=False):
     issuer_x = issuer_right_x - issuer_block_w
     issuer_y = top_y
     draw_right_text(c, issuer_right_x, issuer_y, f'発行日：{japanese_date(voucher.issue_date)}', font_name, 9)
+    if number_label:
+        draw_right_text(c, issuer_right_x, issuer_y - 12, f'{number_label}：{number}', font_name, 9)
     issuer_y -= 24
     for line in issuer_lines(voucher):
         draw_text(c, issuer_x, issuer_y, line, font_name, 9)
@@ -520,23 +542,21 @@ def build_invoice_pdf(voucher, with_seal=False):
     draw_company_seal(c, width - 56 * mm, top_y - 26 * mm, with_seal)
 
     y = height - 58 * mm
-    draw_bold_center_text(c, width / 2, y, '請　求　書', font_name, 22)
+    draw_bold_center_text(c, width / 2, y, heading, font_name, 22)
 
     y -= 14 * mm
-    greeting = '拝啓　益々ご清祥のこととお慶び申し上げます。下記の通り、ご請求申し上げます。'
     draw_text(c, margin_x, y, greeting, font_name, 11)
 
     y -= 9 * mm
     draw_bold_center_text(c, width / 2, y, '記', font_name, 12)
 
     y -= 8 * mm
-    draw_bold_text(c, margin_x, y, '【請求金額等】', font_name, 12)
+    draw_bold_text(c, margin_x, y, section, font_name, 12)
     y -= 5 * mm
 
-    payment_due = japanese_date(voucher.payment_due_date)
     amount_rows = [
-        [{'text': '納付期日', 'align': 'right'}, {'text': payment_due, 'align': 'center'}],
-        [{'text': '請求金額合計', 'align': 'right'}, {'text': yen(voucher.total_amount), 'align': 'center', 'bold': True}],
+        [{'text': date_label, 'align': 'right'}, {'text': japanese_date(date_value), 'align': 'center'}],
+        [{'text': total_label, 'align': 'right'}, {'text': yen(voucher.total_amount), 'align': 'center', 'bold': True}],
     ]
     y = draw_table(
         c,
@@ -604,6 +624,19 @@ def build_invoice_pdf(voucher, with_seal=False):
         for index in range(len(detail_rows))
     ]
     y = draw_table(c, margin_x, y, col_widths, row_heights, detail_rows, font_name, font_size=10)
+
+    if not show_bank:
+        note = (getattr(voucher, 'note', '') or '').strip()
+        if note:
+            y -= 9 * mm
+            draw_bold_text(c, margin_x, y, '【備考】', font_name, 12)
+            y -= 6 * mm
+            draw_wrapped_lines(c, margin_x, y, note, font_name, size=10, leading=15, max_chars=48)
+        y = 30 * mm
+        draw_right_text(c, width - margin_x, y, '以上', font_name, 12)
+        c.save()
+        buffer.seek(0)
+        return buffer.getvalue()
 
     y -= 11 * mm
     draw_bold_text(c, margin_x, y, '【支払い銀行】', font_name, 12)
@@ -778,5 +811,144 @@ def build_voucher_pdf(voucher, with_seal=False):
 def voucher_pdf_response(voucher, with_seal=False):
     filename = build_voucher_pdf_filename(voucher)
     response = HttpResponse(build_voucher_pdf(voucher, with_seal=with_seal), content_type='application/pdf')
+    response['Content-Disposition'] = build_content_disposition(filename)
+    return response
+
+
+def build_contract_pdf(contract, with_seal=False):
+    """契約書（甲：宛先、乙：発行者）。条項は複数ページにわたってよい。"""
+    font_name = register_mincho_font()
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    margin_x = 20 * mm
+    content_w = width - margin_x * 2
+    bottom = 22 * mm
+    title = (contract.title or '').strip() or '業務委託契約書'
+    party_a = (contract.recipient_name or '').strip() or '（甲）'
+    party_b = issuer_value(contract, 'issuer_name')
+
+    c.setTitle(title)
+    y = height - 24 * mm
+    draw_bold_center_text(c, width / 2, y, title, font_name, 20)
+    y -= 8 * mm
+    draw_right_text(c, width - margin_x, y, f'契約番号：{contract.contract_number}', font_name, 9)
+
+    def ensure_space(current_y, needed):
+        if current_y - needed >= bottom:
+            return current_y
+        c.showPage()
+        return height - 24 * mm
+
+    def paragraph(current_y, text, size=10.5, indent=0):
+        leading = size + 5
+        for line in split_text_by_width(text, font_name, size, content_w - indent):
+            current_y = ensure_space(current_y, leading)
+            draw_text(c, margin_x + indent, current_y, line, font_name, size)
+            current_y -= leading
+        return current_y
+
+    y -= 12 * mm
+    y = paragraph(y, f'{party_a}（以下「甲」という。）と{party_b}（以下「乙」という。）は、'
+                     f'次のとおり契約（以下「本契約」という。）を締結する。')
+
+    y -= 4 * mm
+    period = ''
+    if contract.start_date or contract.end_date:
+        period = f'{japanese_date(contract.start_date)} から {japanese_date(contract.end_date)} まで'
+    header_fill = colors.HexColor('#f0f0f0')
+    summary_rows = [
+        [{'text': '契約期間', 'align': 'center', 'fill': header_fill}, {'text': period or '別途定めるとおり'}],
+        [{'text': '報酬額（税込）', 'align': 'center', 'fill': header_fill}, {'text': yen(contract.total_amount), 'bold': True}],
+        [{'text': '支払条件', 'align': 'center', 'fill': header_fill}, {'text': contract.payment_terms or ''}],
+    ]
+    heights = [content_driven_row_height(row, [40 * mm, content_w - 40 * mm], font_name, 8 * mm) for row in summary_rows]
+    y = ensure_space(y, sum(heights) + 4 * mm)
+    y = draw_table(c, margin_x, y, [40 * mm, content_w - 40 * mm], heights, summary_rows, font_name, font_size=10)
+
+    items = get_line_items(contract) if contract.line_items else []
+    if items:
+        y -= 6 * mm
+        y = ensure_space(y, 20 * mm)
+        draw_bold_text(c, margin_x, y, '（報酬の内訳）', font_name, 10)
+        y -= 4 * mm
+        col_widths = [content_w * 0.5, content_w * 0.17, content_w * 0.1, content_w * 0.23]
+        rows = [[
+            {'text': '項目', 'align': 'center', 'bold': True, 'fill': header_fill},
+            {'text': '単価', 'align': 'center', 'bold': True, 'fill': header_fill},
+            {'text': '数量', 'align': 'center', 'bold': True, 'fill': header_fill},
+            {'text': '金額', 'align': 'center', 'bold': True, 'fill': header_fill},
+        ]]
+        for item in items:
+            rows.append([
+                {'text': get_line_item_name(item)},
+                {'text': yen(item.get('unit_price')), 'align': 'right'},
+                {'text': plain_number(item.get('quantity')), 'align': 'center'},
+                {'text': yen(get_line_total(item)), 'align': 'right'},
+            ])
+        rows.extend(build_invoice_summary_rows(contract, leading_blank_span=2, merge_label=True))
+        row_heights = [content_driven_row_height(row, col_widths, font_name, 7.5 * mm) if i and i < len(items) + 1
+                       else 7 * mm for i, row in enumerate(rows)]
+        y = ensure_space(y, sum(row_heights))
+        y = draw_table(c, margin_x, y, col_widths, row_heights, rows, font_name, font_size=9)
+
+    body = (contract.body or '').strip()
+    if body:
+        y -= 8 * mm
+        y = ensure_space(y, 12 * mm)
+        for raw in body.splitlines():
+            y = paragraph(y, raw) if raw.strip() else y - 4 * mm
+
+    if (contract.note or '').strip():
+        y -= 4 * mm
+        y = paragraph(y, f'（備考）{contract.note.strip()}', size=9.5)
+
+    y -= 8 * mm
+    y = ensure_space(y, 62 * mm)
+    y = paragraph(y, '本契約の成立を証するため、本書を2通作成し、甲乙記名押印のうえ、各1通を保有する。')
+    y -= 6 * mm
+    draw_text(c, margin_x, y, japanese_date(contract.signed_date or contract.issue_date), font_name, 10.5)
+
+    y -= 14 * mm
+    block_x = margin_x + content_w * 0.45
+    draw_text(c, block_x - 14 * mm, y, '甲', font_name, 11)
+    a_y = y
+    for line in [contract.recipient_address or '', party_a]:
+        for part in split_text_by_width(line, font_name, 10, content_w * 0.5):
+            if part:
+                draw_text(c, block_x, a_y, part, font_name, 10)
+                a_y -= 14
+    draw_right_text(c, width - margin_x, y - 14, '印', font_name, 10)
+
+    y = min(a_y, y - 28) - 10 * mm
+    draw_text(c, block_x - 14 * mm, y, '乙', font_name, 11)
+    b_y = y
+    b_lines = [f'〒{issuer_value(contract, "issuer_postal_code")}']
+    b_lines += [line for line in issuer_value(contract, 'issuer_address').splitlines() if line]
+    b_lines.append(party_b)
+    for line in b_lines:
+        draw_text(c, block_x, b_y, line, font_name, 10)
+        b_y -= 14
+    if with_seal:
+        draw_company_seal(c, width - margin_x - 20 * mm, b_y - 4, with_seal)
+    else:
+        draw_right_text(c, width - margin_x, y - 14, '印', font_name, 10)
+
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+BUSINESS_DOCUMENT_BUILDERS = {
+    'estimate': ('見積書', build_estimate_pdf),
+    'contract': ('契約書', build_contract_pdf),
+}
+
+
+def business_document_pdf_response(kind, obj, with_seal=False):
+    label, builder = BUSINESS_DOCUMENT_BUILDERS[kind]
+    recipient_name = clean_filename_part(obj.recipient_name or '')
+    filename = f'{recipient_name}様{label}_{obj.number}.pdf' if recipient_name else f'{label}_{obj.number}.pdf'
+    response = HttpResponse(builder(obj, with_seal=with_seal), content_type='application/pdf')
     response['Content-Disposition'] = build_content_disposition(filename)
     return response

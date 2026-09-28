@@ -27,7 +27,6 @@ from .models import (
 )
 from .category_suggestions import build_suggestions
 from .excel import expenses_excel_response, project_excel_response
-from .pdf import voucher_pdf_response
 from .serializers import (
     AccountingProjectDetailSerializer,
     AccountingProjectExpenseSerializer,
@@ -624,65 +623,8 @@ class AccountingProjectExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         return queryset.order_by('-expense_date', '-id')
 
 
-class AccountingVoucherViewSet(BusinessScopedViewSetMixin, ModelViewSet):
-    access_resource = 'voucher'
-    queryset = AccountingVoucher.objects.select_related('created_by')
-    serializer_class = AccountingVoucherSerializer
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-
-        if params.get('voucher_type'):
-            queryset = queryset.filter(voucher_type=params['voucher_type'])
-
-        issue_date_from = params.get('issue_date_from') or params.get('start_date')
-        issue_date_to = params.get('issue_date_to') or params.get('end_date')
-        if issue_date_from:
-            queryset = queryset.filter(issue_date__gte=issue_date_from)
-        if issue_date_to:
-            queryset = queryset.filter(issue_date__lte=issue_date_to)
-
-        if params.get('recipient_name'):
-            queryset = queryset.filter(recipient_name__icontains=params['recipient_name'])
-        if params.get('title'):
-            keyword = params['title']
-            queryset = queryset.filter(Q(title__icontains=keyword) | Q(line_items__icontains=keyword))
-        if params.get('amount_min'):
-            queryset = queryset.filter(total_amount__gte=params['amount_min'])
-        if params.get('amount_max'):
-            queryset = queryset.filter(total_amount__lte=params['amount_max'])
-        if params.get('payment_due_date_from'):
-            queryset = queryset.filter(payment_due_date__gte=params['payment_due_date_from'])
-        if params.get('payment_due_date_to'):
-            queryset = queryset.filter(payment_due_date__lte=params['payment_due_date_to'])
-
-        keyword = params.get('keyword') or params.get('search')
-        if keyword:
-            queryset = queryset.filter(
-                Q(voucher_number__icontains=keyword)
-                | Q(recipient_name__icontains=keyword)
-                | Q(title__icontains=keyword)
-                | Q(details__icontains=keyword)
-                | Q(note__icontains=keyword)
-                | Q(bank_info__icontains=keyword)
-                | Q(line_items__icontains=keyword)
-            )
-        return queryset.order_by('-issue_date', '-id')
-
-    def perform_create(self, serializer):
-        user = self.request.user if self.request.user.is_authenticated else None
-        serializer.save(created_by=user)
-
-    @action(detail=True, methods=['get'], url_path='pdf')
-    def pdf(self, request, pk=None):
-        voucher = self.get_object()
-        with_seal = parse_bool(request.query_params.get('with_seal')) is True
-        return voucher_pdf_response(voucher, with_seal=with_seal)
-
-
 class VoucherItemTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
-    access_resource = 'voucher'
+    access_resource = 'voucher_item_template'
     queryset = VoucherItemTemplate.objects.all()
     serializer_class = VoucherItemTemplateSerializer
 
