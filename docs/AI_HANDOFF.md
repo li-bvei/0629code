@@ -99,7 +99,7 @@ git log --oneline main..HEAD
 
 | 检查 | 结果 | 说明 |
 |---|---|---|
-| `python manage.py test` | **通过** | Ran 183 tests — OK（原有 97 项全部保留断言，仅给测试用户补显式角色；访问控制测试 86 项，含稳定化修正新增的关联绕过测试） |
+| `python manage.py test` | **通过** | Ran 189 tests — OK（原有 97 项全部保留断言；访问控制测试 92 项，含关联绕过与无担当进行中案件测试） |
 | `python manage.py makemigrations --check --dry-run` | 无差异 | |
 | `python manage.py check` | 0 issues | |
 | `npm run build` | 通过 | `vue-tsc -b && vite build` |
@@ -305,7 +305,7 @@ Case
 - **localdev**：生产发现时先只读报告，批准后只能停用，不自动删除；部署检查先 warning，确认停用后改为 enforce。
 - **策略白名单**：受控模型只允许在策略内部、migration、management command、测试和 Admin 中直接查询；ViewSet、Dashboard、导出、图表、余额、copy-expenses 一律经过策略。
 - **需用户单独批准的数据操作**：D1～D12，见方案 §12（D4 为阶段 A 注册李，D5 为阶段 B 开启 enforcement，D12 为 localdev 停用）。生产执行顺序以 `docs/DEPLOY.md` 的 21 步为准（D1 在旧系统上只读执行 → 维护模式 → 备份 → `migrate --plan` → `migrate` → D2～D7 → 启动新后端 → …）。
-- **受控关联规则**（2026-09-28 稳定化修正）：接收既有 Customer/Company ID 的入口一律执行 `PartyRule.check_link`，包括 Case、受付、家族、公司职员、代表者。对象有其他担当者的进行中案件时返回 403，只有 `customer_link_all` / `company_link_all`（李）可以关联，并写 `cross_scope_link` 审计。
+- **受控关联规则**（2026-09-28 稳定化修正）：接收既有 Customer/Company ID 的入口一律执行 `PartyRule.check_link`，包括 Case、受付、家族、公司职员、代表者。对象有其他担当者或**未分配**的进行中案件时返回 403，只有 `customer_link_all` / `company_link_all`（李）可以关联，并写 `cross_scope_link` 审计。
 - **未立案顾客**：普通用户只能看到姓名、フリガナ、生年月日、国籍、登记时间、遮罩后的电话和邮箱；只有李能看完整资料。
 - **生产诊断**：只保留 `/api/health/`、`/api/readiness/`；其余诊断、调试、seed 都只在开发环境注册。
 - 以上结构已在分支 `codex/p0-access-control` 本地实现并有测试；生产数据库尚未应用，账号关联/角色/回填/nginx 切换均未执行。

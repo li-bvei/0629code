@@ -55,6 +55,7 @@
 - **生产诊断**：只保留 `/api/health/`、`/api/readiness/`；`tax-renewal-pdf-diagnostics` 也改为只在开发环境注册。前端的「PDF字段诊断」按钮只在开发环境显示。
 - **部署顺序**：`DEPLOY.md` 改为 21 步（D1 在旧系统上只读 → 维护模式 → 备份 → `migrate --plan` → `migrate` → D2～D7 → 启动新后端 → 验证 → D8 → 准备前端 → D9 → `nginx -t` → D10 → 验证下载 → D5 → D11 → D12 → 退出维护模式），任何一步失败都停止。
 - **新增测试**：13 项关联绕过测试，health/readiness 测试，basic 级别字段测试。
+- **无担当进行中案件**：未分配（`responsible_employee` 为空）的进行中案件显式算作「其他担当」，关联其顾客/公司同样返回 403（提示文案注明「未割当」），只有 link_all 可以关联；已结案、inactive/archived 的案件不构成阻断。新增 6 项测试，全量测试 189 项通过。
 
 ## Migration
 
@@ -62,7 +63,7 @@
 
 ## 验证
 
-- `python manage.py test`：183 项全部通过（原有 97 项 + 访问控制 86 项）。
+- `python manage.py test`：189 项全部通过（原有 97 项 + 访问控制 92 项）。
 - `makemigrations --check`：无差异；`check`：0 issues；`npm run build`：通过；`git diff --check`：通过。
 - 预览库冒烟：结果与权限矩阵一致。
 - **未完成，属于部署前阻断项**：浏览器实测（预览进程没有读取 venv 的权限）；`nginx -t`（本机 Docker 未运行，在上线第 15 步执行）。

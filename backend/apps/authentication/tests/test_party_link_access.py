@@ -35,7 +35,7 @@ class PartyLinkBypassTests(AccessFixtureMixin, TestCase):
     def test_case_create_with_other_staffs_customer_is_denied(self):
         before = Case.objects.count()
         response = self.post(self.staff_b, '/api/cases/', {**self.case_payload, 'customer': self.cust_a.id})
-        self.assertDenied(response, '他の担当者の進行中案件')
+        self.assertDenied(response, '進行中案件')
         self.assertEqual(Case.objects.count(), before)
         self.assertTrue(AuditLog.objects.filter(action='cross_scope_link_denied', user=self.staff_b,
                                                 object_id=str(self.cust_a.id), result='denied').exists())
@@ -67,31 +67,31 @@ class PartyLinkBypassTests(AccessFixtureMixin, TestCase):
         before = FamilyMember.objects.count()
         response = self.post(self.staff_b, '/api/family-members/',
                              {'customer': self.cust_b.id, 'family_customer': self.cust_a.id, 'relationship': 'spouse'})
-        self.assertDenied(response, '他の担当者の進行中案件')
+        self.assertDenied(response, '進行中案件')
         self.assertEqual(FamilyMember.objects.count(), before)
 
     def test_company_staff_link_bypass_is_denied(self):
         before = CompanyStaff.objects.count()
         response = self.post(self.staff_b, '/api/company-staff/',
                              {'company': self.company_b.id, 'customer': self.cust_a.id, 'position': '社員'})
-        self.assertDenied(response, '他の担当者の進行中案件')
+        self.assertDenied(response, '進行中案件')
         self.assertEqual(CompanyStaff.objects.count(), before)
 
     def test_company_representative_bypass_is_denied(self):
         response = self.post(self.staff_b, '/api/companies/', {'name': '新会社', 'representative_customer': self.cust_a.id})
-        self.assertDenied(response, '他の担当者の進行中案件')
+        self.assertDenied(response, '進行中案件')
 
     # --- 受付 -------------------------------------------------------------------
     def test_reception_existing_customer_and_company_bypass_are_denied(self):
         case = {'case_type_master': self.case_type.id, 'application_category': self.category.id}
         before = Case.objects.count()
         for body, keyword in (
-            ({'existing_customer_id': self.cust_a.id, 'case': case}, '他の担当者の進行中案件'),
+            ({'existing_customer_id': self.cust_a.id, 'case': case}, '進行中案件'),
             ({'existing_customer_id': self.cust_b.id, 'existing_company_id': self.company_a.id, 'case': case}, 'この会社'),
             ({'existing_customer_id': self.cust_b.id, 'family_members': [{'customer': self.cust_a.id, 'relationship': 'spouse'}]},
-             '他の担当者の進行中案件'),
+             '進行中案件'),
             ({'existing_customer_id': self.cust_b.id, 'company': {'name': '代表者経由', 'representative_customer': self.cust_a.id}},
-             '他の担当者の進行中案件'),
+             '進行中案件'),
         ):
             response = self.post(self.staff_b, '/api/receptions/', body)
             self.assertDenied(response, keyword)
@@ -144,3 +144,68 @@ class PartyLinkBypassTests(AccessFixtureMixin, TestCase):
         self.assertEqual(response.status_code, 201, response.content)
         self.assertTrue(AuditLog.objects.filter(action='cross_scope_link', user=self.li,
                                                 object_id=str(self.cust_a.id)).exists())
+
+
+class UnassignedActiveCaseLinkTests(AccessFixtureMixin, TestCase):
+    """無担当（responsible_employee が NULL）の進行中案件に紐付く顧客・会社の関連付け。"""
+
+    def setUp(self):
+        super().setUp()
+        self.orphan_customer = Customer.objects.create(name='無担当顧客', birth_date='1985-01-01')
+        self.orphan_company = Company.objects.create(name='無担当会社')
+        self.orphan_case = Case.objects.create(
+            case_type='x', case_type_master=self.case_type, application_category=self.category,
+            status=Case.STATUS_OPEN, customer=self.orphan_customer, company=self.orphan_company,
+            responsible_employee=None,
+        )
+        self.payload = {'case_type_master': self.case_type.id, 'application_category': self.category.id,
+                        'status': Case.STATUS_OPEN}
+
+    def post(self, user, url, body):
+        self.as_user(user)
+        return self.client.post(url, body, content_type='application/json')
+
+    def test_staff_cannot_link_customer_or_company_of_unassigned_active_case(self):
+        response = self.post(self.staff_a, '/api/cases/', {**self.payload, 'customer': self.orphan_customer.id})
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('未割当', response.json()['detail'])
+        response = self.post(self.staff_a, '/api/cases/', {**self.payload, 'customer': self.cust_a.id,
+                                                            'company': self.orphan_company.id})
+        self.assertEqual(response.status_code, 403)
+        response = self.post(self.staff_a, '/api/receptions/', {
+            'existing_customer_id': self.orphan_customer.id,
+            'case': {'case_type_master': self.case_type.id, 'application_category': self.category.id},
+        })
+        self.assertEqual(response.status_code, 403)
+        response = self.post(self.staff_a, '/api/family-members/',
+                             {'customer': self.cust_a.id, 'family_customer': self.orphan_customer.id,
+                              'relationship': 'spouse'})
+        self.assertEqual(response.status_code, 403)
+
+    def test_business_admin_without_link_all_is_denied(self):
+        response = self.post(self.jiao, '/api/cases/', {**self.payload, 'customer': self.orphan_customer.id})
+        self.assertEqual(response.status_code, 403)
+
+    def test_user_without_employee_is_denied(self):
+        response = self.post(self.unlinked, '/api/cases/', {**self.payload, 'customer': self.orphan_customer.id,
+                                                             'responsible_employee': None})
+        self.assertIn(response.status_code, (400, 403))
+        self.assertFalse(Case.objects.filter(customer=self.orphan_customer).exclude(pk=self.orphan_case.pk).exists())
+
+    def test_li_can_link_with_cross_scope_audit(self):
+        response = self.post(self.li, '/api/cases/', {**self.payload, 'customer': self.orphan_customer.id,
+                                                       'company': self.orphan_company.id})
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(
+            AuditLog.objects.filter(action='cross_scope_link', user=self.li).count(), 2,
+        )
+
+    def test_unassigned_but_closed_case_does_not_block(self):
+        Case.objects.filter(pk=self.orphan_case.pk).update(status=Case.STATUS_COMPLETED)
+        response = self.post(self.staff_a, '/api/cases/', {**self.payload, 'customer': self.orphan_customer.id})
+        self.assertEqual(response.status_code, 201, response.content)
+
+    def test_inactive_registration_does_not_block(self):
+        Case.objects.filter(pk=self.orphan_case.pk).update(registration_status=Case.REGISTRATION_STATUS_ARCHIVED)
+        response = self.post(self.staff_a, '/api/cases/', {**self.payload, 'customer': self.orphan_customer.id})
+        self.assertEqual(response.status_code, 201, response.content)

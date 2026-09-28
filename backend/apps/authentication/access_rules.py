@@ -357,8 +357,9 @@ class PartyRule(Rule):
         qs = Case.objects.filter(
             **{self.case_fk: obj}, registration_status=Case.REGISTRATION_STATUS_ACTIVE,
         ).exclude(status__in=[Case.STATUS_COMPLETED, Case.STATUS_WITHDRAWN, Case.STATUS_REJECTED])
+        # 未割当（responsible_employee が NULL）の進行中案件も「他担当」として扱う（明示的に判定）。
         if policy.employee_id is not None:
-            qs = qs.exclude(responsible_employee_id=policy.employee_id)
+            qs = qs.filter(Q(responsible_employee__isnull=True) | ~Q(responsible_employee_id=policy.employee_id))
         return qs.exists()
 
     def check_link(self, policy, obj, *, via=''):
@@ -428,14 +429,14 @@ class CustomerRule(PartyRule):
     case_fk = 'customer'
     model_label = 'customers.Customer'
     LINK_ALL = 'customers.customer_link_all'
-    LINK_DENIED_MESSAGE = 'この顧客は他の担当者の進行中案件に紐付いているため、関連付けできません。管理者に依頼してください。'
+    LINK_DENIED_MESSAGE = 'この顧客は他の担当者または未割当の進行中案件に紐付いているため、関連付けできません。管理者に依頼してください。'
 
 
 class CompanyRule(PartyRule):
     case_fk = 'company'
     model_label = 'companies.Company'
     LINK_ALL = 'customers.company_link_all'
-    LINK_DENIED_MESSAGE = 'この会社は他の担当者の進行中案件に紐付いているため、関連付けできません。管理者に依頼してください。'
+    LINK_DENIED_MESSAGE = 'この会社は他の担当者または未割当の進行中案件に紐付いているため、関連付けできません。管理者に依頼してください。'
 
     def prepare_create(self, policy, data):
         CUSTOMER_RULE_REF().check_link(policy, data.get('representative_customer'), via='representative_customer')
