@@ -121,6 +121,12 @@ class CaseSerializer(serializers.ModelSerializer):
     days_until_additional_request = serializers.SerializerMethodField()
     additional_documents_duration_days = serializers.SerializerMethodField()
     total_processing_days = serializers.SerializerMethodField()
+    # --- Next Action / 待機（読み取り専用。変更は専用 action → work_service） ---
+    next_action_assignee_name = serializers.CharField(source='next_action_assignee.name', read_only=True, default='')
+    next_action_state = serializers.SerializerMethodField()
+    work_status_display = serializers.CharField(source='get_work_status_display', read_only=True)
+    waiting_reason_display = serializers.CharField(source='get_waiting_reason_display', read_only=True)
+    waiting_days = serializers.SerializerMethodField()
 
     class Meta:
         model = Case
@@ -169,6 +175,20 @@ class CaseSerializer(serializers.ModelSerializer):
             'status_changed_at',
             'next_action',
             'next_action_due_at',
+            'next_action_assignee',
+            'next_action_assignee_name',
+            'next_action_blocked_reason',
+            'next_action_completed_at',
+            'next_action_completed_by',
+            'next_action_state',
+            'work_status',
+            'work_status_display',
+            'waiting_reason',
+            'waiting_reason_display',
+            'waiting_note',
+            'waiting_since',
+            'waiting_until',
+            'waiting_days',
             'task_total_count',
             'task_completed_count',
             'next_task_title',
@@ -203,6 +223,23 @@ class CaseSerializer(serializers.ModelSerializer):
             'registration_status_display',
             'status',
             'status_display',
+            # 次の対応・待機も専用 action（work_service：事務・Timeline・AuditLog）でのみ変更する。
+            'next_action',
+            'next_action_due_at',
+            'next_action_assignee',
+            'next_action_assignee_name',
+            'next_action_blocked_reason',
+            'next_action_completed_at',
+            'next_action_completed_by',
+            'next_action_state',
+            'work_status',
+            'work_status_display',
+            'waiting_reason',
+            'waiting_reason_display',
+            'waiting_note',
+            'waiting_since',
+            'waiting_until',
+            'waiting_days',
             'customer_name',
             'company_name',
             'responsible_employee_name',
@@ -325,6 +362,16 @@ class CaseSerializer(serializers.ModelSerializer):
         progress = get_required_checklist_progress(obj)
         setattr(obj, cached_name, progress)
         return progress
+
+    def get_next_action_state(self, obj):
+        if not obj.next_action:
+            return 'none'
+        return 'done' if obj.next_action_completed_at else 'open'
+
+    def get_waiting_days(self, obj):
+        if obj.work_status != Case.WORK_STATUS_WAITING or not obj.waiting_since:
+            return None
+        return (timezone.localdate() - obj.waiting_since).days
 
     def get_customer_name(self, obj):
         return obj.customer.name

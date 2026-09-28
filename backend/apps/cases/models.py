@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 
@@ -196,6 +197,49 @@ class Case(models.Model):
     status_changed_at = models.DateField('進捗変更日', blank=True, null=True)
     next_action = models.TextField('次の対応', blank=True)
     next_action_due_at = models.DateField('対応期限', blank=True, null=True)
+    # --- Next Action / 待機（P1）。13 の進捗 status とは独立した「作業状態」。
+    # 変更は apps.cases.work_service 経由（事務・Timeline・AuditLog）で行い、通常の PATCH では書けない。
+    next_action_assignee = models.ForeignKey(
+        'employees.Employee',
+        verbose_name='次の対応の担当者',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_next_actions',
+    )
+    next_action_blocked_reason = models.TextField('次の対応の阻害要因', blank=True)
+    next_action_completed_at = models.DateTimeField('次の対応の完了日時', blank=True, null=True)
+    next_action_completed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name='次の対応の完了者',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='completed_case_next_actions',
+    )
+    WORK_STATUS_ACTIVE = 'active'
+    WORK_STATUS_WAITING = 'waiting'
+    WORK_STATUS_CHOICES = [
+        (WORK_STATUS_ACTIVE, '対応中'),
+        (WORK_STATUS_WAITING, '待機中'),
+    ]
+    WAITING_REASON_CUSTOMER = 'customer_documents'
+    WAITING_REASON_IMMIGRATION = 'immigration_review'
+    WAITING_REASON_THIRD_PARTY = 'third_party'
+    WAITING_REASON_PAYMENT = 'payment'
+    WAITING_REASON_OTHER = 'other'
+    WAITING_REASON_CHOICES = [
+        (WAITING_REASON_CUSTOMER, '顧客資料待ち'),
+        (WAITING_REASON_IMMIGRATION, '入管審査待ち'),
+        (WAITING_REASON_THIRD_PARTY, '関係先回答待ち'),
+        (WAITING_REASON_PAYMENT, '入金待ち'),
+        (WAITING_REASON_OTHER, 'その他'),
+    ]
+    work_status = models.CharField('作業状態', max_length=20, choices=WORK_STATUS_CHOICES, default=WORK_STATUS_ACTIVE)
+    waiting_reason = models.CharField('待機理由', max_length=30, choices=WAITING_REASON_CHOICES, blank=True)
+    waiting_note = models.TextField('待機メモ', blank=True)
+    waiting_since = models.DateField('待機開始日', blank=True, null=True)
+    waiting_until = models.DateField('待機予定終了日', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

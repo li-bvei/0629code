@@ -384,7 +384,10 @@ class DashboardSummaryView(BusinessAccessMixin, APIView):
             'cases': {
                 'total': base.count(),
                 'active': open_cases.count(),
-                'waiting': open_cases.filter(status__in=WAITING_CASE_STATUSES).count(),
+                # 待機は work_status（P1）で判定する。旧来の「審査中などの状態」による暫定集計は
+                # waiting_by_status として残す（口径変更の比較用）。
+                'waiting': open_cases.filter(work_status=Case.WORK_STATUS_WAITING).count(),
+                'waiting_by_status': open_cases.filter(status__in=WAITING_CASE_STATUSES).count(),
                 'completed': base.filter(status=Case.STATUS_COMPLETED).count(),
                 'unassigned': open_cases.filter(responsible_employee__isnull=True).count(),
                 'without_next_action': open_cases.filter(

@@ -61,6 +61,14 @@ from .status_service import (
     update_case_progress_info,
 )
 from .utils import apply_checklist_template_to_case, generate_case_number
+from .work_service import (
+    CaseWorkError,
+    complete_next_action,
+    end_waiting,
+    record_payment_link,
+    set_next_action,
+    start_waiting,
+)
 
 
 class ActiveOrderingMixin:
@@ -351,6 +359,94 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         )
         return Response(self.get_serializer(case).data)
 
+    # --- Next Action / 待機 / 入金の記録（P1）。いずれも「変更」権限が必要（BusinessAccessPolicy）。
+    def _work_error(self, exc):
+        payload = {'detail': exc.detail}
+        if exc.field:
+            payload[exc.field] = [exc.detail]
+        return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+
+    def _work_response(self, case):
+        case.refresh_from_db()
+        return Response(self.get_serializer(case).data)
+
+    @action(detail=True, methods=['post'], url_path='next-action')
+    def next_action(self, request, pk=None):
+        case = self.get_object()
+        assignee = None
+        assignee_id = request.data.get('assignee')
+        if assignee_id not in (None, ''):
+            from apps.employees.models import Employee
+
+            assignee = Employee.objects.filter(pk=assignee_id).first()
+            if assignee is None:
+                return Response({'assignee': ['担当者が見つかりません。']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            set_next_action(
+                case,
+                text=request.data.get('next_action'),
+                assignee=assignee,
+                due_at=request.data.get('next_action_due_at'),
+                blocked_reason=request.data.get('blocked_reason') or '',
+                actor=request.user,
+                request=request,
+            )
+        except CaseWorkError as exc:
+            return self._work_error(exc)
+        return self._work_response(case)
+
+    @action(detail=True, methods=['post'], url_path='next-action/complete')
+    def complete_next_action(self, request, pk=None):
+        case = self.get_object()
+        try:
+            complete_next_action(case, note=request.data.get('note') or '', actor=request.user, request=request)
+        except CaseWorkError as exc:
+            return self._work_error(exc)
+        return self._work_response(case)
+
+    @action(detail=True, methods=['post'], url_path='waiting/start')
+    def start_waiting(self, request, pk=None):
+        case = self.get_object()
+        try:
+            start_waiting(
+                case,
+                reason=request.data.get('waiting_reason'),
+                note=request.data.get('waiting_note') or '',
+                until=request.data.get('waiting_until'),
+                actor=request.user,
+                request=request,
+            )
+        except CaseWorkError as exc:
+            return self._work_error(exc)
+        return self._work_response(case)
+
+    @action(detail=True, methods=['post'], url_path='waiting/end')
+    def end_waiting(self, request, pk=None):
+        case = self.get_object()
+        try:
+            end_waiting(case, note=request.data.get('note') or '', actor=request.user, request=request)
+        except CaseWorkError as exc:
+            return self._work_error(exc)
+        return self._work_response(case)
+
+    @action(detail=True, methods=['post'], url_path='payment-note')
+    def payment_note(self, request, pk=None):
+        """入金を案件経過に記録するだけ（会計データは作らない）。会計への登録は会計モジュールで行う。"""
+        case = self.get_object()
+        try:
+            timeline = record_payment_link(
+                case,
+                amount=request.data.get('amount'),
+                received_on=request.data.get('received_on'),
+                note=request.data.get('note') or '',
+                reference=request.data.get('reference') or '',
+                actor=request.user,
+                request=request,
+            )
+        except CaseWorkError as exc:
+            return self._work_error(exc)
+        return Response({'timeline_id': timeline.id}, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['post'], url_path='change-status')
     def change_status(self, request, pk=None):
         case = self.get_object()
@@ -371,6 +467,8 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
             if isinstance(exc, CaseStatusChangeError):
                 return self._status_change_error_response(exc)
             return Response({'detail': '変更日が正しくありません。'}, status=status.HTTP_400_BAD_REQUEST)
+        record(module='cases', action='case_status_changed', request=request, obj=case,
+               extra={'previous': result.previous_status, 'new': result.new_status, 'forced': result.forced})
         return self._status_change_response(result)
 
     @action(detail=True, methods=['post'], url_path='change-registration-status')

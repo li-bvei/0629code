@@ -272,7 +272,13 @@ def change_case_status(
             status_payload,
         )
         if next_action is not None:
-            locked_case.next_action = (next_action or '').strip()
+            new_action = (next_action or '').strip()
+            if new_action != locked_case.next_action:
+                # 新しい次の対応になったら完了状態をリセットする。
+                locked_case.next_action_completed_at = None
+                locked_case.next_action_completed_by = None
+                changed_fields.update({'next_action_completed_at', 'next_action_completed_by'})
+            locked_case.next_action = new_action
             changed_fields.add('next_action')
             if locked_case.next_action:
                 detail_lines.append(f'次の対応：{locked_case.next_action}')
@@ -281,11 +287,27 @@ def change_case_status(
             changed_fields.add('next_action_due_at')
             if locked_case.next_action_due_at:
                 detail_lines.append(f'対応期限：{_format_date(locked_case.next_action_due_at)}')
+        if new_status in {Case.STATUS_COMPLETED, Case.STATUS_WITHDRAWN, Case.STATUS_REJECTED} and \
+                locked_case.work_status == Case.WORK_STATUS_WAITING:
+            # 終了した案件は待機を解除する（待機の経過は下の Timeline に残す）。
+            detail_lines.append(f'待機を解除（{locked_case.get_waiting_reason_display() or "理由なし"}）')
+            locked_case.work_status = Case.WORK_STATUS_ACTIVE
+            locked_case.waiting_reason = ''
+            locked_case.waiting_note = ''
+            locked_case.waiting_since = None
+            locked_case.waiting_until = None
+            changed_fields.update({'work_status', 'waiting_reason', 'waiting_note', 'waiting_since', 'waiting_until'})
+        if new_status == Case.STATUS_COMPLETED and previous_status != Case.STATUS_COMPLETED:
+            status_event_type, status_title = Timeline.EVENT_CASE_COMPLETED, '案件完了'
+        elif previous_status == Case.STATUS_COMPLETED and new_status != Case.STATUS_COMPLETED:
+            status_event_type, status_title = Timeline.EVENT_CASE_REOPENED, '案件再開'
+        else:
+            status_event_type, status_title = Timeline.EVENT_STATUS_CHANGED, '案件進捗変更'
         validate_case_progress_dates(locked_case)
         locked_case.save(update_fields=[*changed_fields, 'updated_at'])
         timeline = _create_timeline(
             locked_case,
-            '案件進捗変更',
+            status_title,
             CASE_STATUS_LABELS.get(previous_status, previous_status),
             CASE_STATUS_LABELS.get(new_status, new_status),
             changed_by,
@@ -294,6 +316,7 @@ def change_case_status(
             force,
             source,
             detail_lines,
+            event_type=status_event_type,
         )
         event = {
             'event_type': 'case_status_changed',
