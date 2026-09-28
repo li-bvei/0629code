@@ -219,5 +219,6 @@ Portal 相关数据应支持：
 |---|---|---|---|
 | `accounting_expenses`、`accounting_income_sources` | `customer_id`、`company_id`、`case_id`（均为可空 FK，`SET_NULL`） | `accounting/0016_income_expense_party_links` | 关联案件需要对该案件有「变更」权限，顾客/公司需要在本人可见范围内；关联或解除关联时，只在案件 Timeline 记录日期和分类（不记金额，不记所有者） |
 
+- `is_reimbursed`（精算済み）是历史兼容字段：当前 UI 已废止（新增、编辑、列表、筛选、仪表盘统计均不再显示，前端不再发送），不构成报销流程；模型字段、数据库列和历史数据保持不变，后端 API 暂时保留兼容（省略时新建为默认 False，更新时保留原值）。
 - `Expense.category` 仍是自由文本；分类建议（`category_suggestions.py`）只读取本人的历史记录，不写入数据。
 - Visa 分支从本分支的最新提交创建，Visa 的 migration 编号接在 `0016` 之后。

@@ -24,7 +24,6 @@ export interface AccountingListParams {
   payment_method?: string
   purpose?: string
   is_active?: boolean | string
-  is_reimbursed?: boolean | string
   is_exported?: boolean | string
 }
 
@@ -52,7 +51,8 @@ export interface Expense {
   payment_method: string
   expense_target: string
   note: string
-  is_reimbursed: boolean
+  // 歴史互換の項目。現在の UI では表示・送信しない（報銷フローではない）
+  is_reimbursed?: boolean
   is_exported: boolean
   // 所有者（後端が設定。フロントからは送らない）
   owner?: number | null
@@ -77,7 +77,6 @@ export interface ExpensePayload {
   payment_method?: string
   expense_target?: string
   note?: string
-  is_reimbursed: boolean
   is_exported: boolean
   customer?: number | null
   company?: number | null
@@ -181,7 +180,8 @@ export interface AccountingDashboard {
   monthly_expense_total: number | string
   monthly_income_source_total: number | string | null
   monthly_vehicle_km_total: number | string | null
-  monthly_unreimbursed_total: number | string
+  // 歴史互換：API は返すが UI では表示しない
+  monthly_unreimbursed_total?: number | string
   total_expense_amount: number | string
   total_income_source_amount: number | string | null
   current_balance: number | string | null
@@ -764,7 +764,7 @@ export interface ExpenseCategorySuggestions {
 export interface CaseAccountingSummary {
   case_id: number
   expense: { visible: boolean; scope?: 'own' | 'all'; count?: number; total?: number
-    recent?: Array<{ id: number; expense_date: string; category: string; amount: number; is_reimbursed: boolean; is_own: boolean }> }
+    recent?: Array<{ id: number; expense_date: string; category: string; amount: number; is_own: boolean }> }
   income: { visible: boolean; count?: number; total?: number
     recent?: Array<{ id: number; source_date: string; source_target: string; amount: number }> }
   tax_renewal: { visible: boolean; count?: number; recent?: Array<{ id: number; title: string; status: string }> }

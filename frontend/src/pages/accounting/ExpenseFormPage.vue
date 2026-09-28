@@ -33,7 +33,6 @@ const form = ref<ExpensePayload>({
   payment_method: '',
   expense_target: '',
   note: '',
-  is_reimbursed: false,
   is_exported: false,
   customer: null,
   company: null,
@@ -108,7 +107,6 @@ const fetchExpense = async () => {
     payment_method: expense.payment_method,
     expense_target: expense.expense_target,
     note: expense.note,
-    is_reimbursed: expense.is_reimbursed,
     is_exported: false,
     customer: expense.customer ?? null,
     company: expense.company ?? null,
@@ -227,9 +225,6 @@ onMounted(async () => {
         </div>
         <el-form-item label="備考" prop="note">
           <el-input v-model="form.note" type="textarea" :rows="4" />
-        </el-form-item>
-        <el-form-item>
-          <el-checkbox v-model="form.is_reimbursed">精算済み</el-checkbox>
         </el-form-item>
       </el-form>
 

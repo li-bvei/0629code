@@ -320,7 +320,7 @@ Case
 - 入金只写 Timeline（`payment_received`，metadata 中 `accounting_record_created=false`），不创建任何会计数据。
 - 后端 213 项测试、前端单元测试 6 项全部通过；前端 build 通过。**浏览器实测尚未完成**（与 P0 同样的阻断项）。
 
-**P2 会计（分支 `codex/p2-accounting`，基于 P1 `dde7e4f`）**：Income/Expense 可以选择关联 Customer/Company/Case（`accounting/0016`）；案件侧显示会计摘要，会计侧可以跳回案件；支出分类支持搜索、手动输入、规范名建议和本人历史推荐，建议不会自动改写数据；报销仍是简单登记，owner 隔离不变。详见 `docs/CHANGELOG_2026-09-28_p2_accounting.md`。Visa 分支 `codex/p2-visa-import` 从本分支创建，文件分支 `codex/p2-documents` 独立推进。
+**P2 会计（分支 `codex/p2-accounting`，基于 P1 `dde7e4f`）**：Income/Expense 可以选择关联 Customer/Company/Case（`accounting/0016`）；案件侧显示会计摘要，会计侧可以跳回案件；支出分类支持搜索、手动输入、规范名建议和本人历史推荐，建议不会自动改写数据；报销仍是简单登记，owner 隔离不变。「精算済み」UI 已废止：`is_reimbursed`（精算済み）是历史兼容字段：当前 UI 已废止（新增、编辑、列表、筛选、仪表盘统计均不再显示，前端不再发送），不构成报销流程；模型字段、数据库列和历史数据保持不变，后端 API 暂时保留兼容（省略时新建为默认 False，更新时保留原值）。详见 `docs/CHANGELOG_2026-09-28_p2_accounting.md`。Visa 分支 `codex/p2-visa-import` 从本分支创建，文件分支 `codex/p2-documents` 独立推进。
 
 原计划清单（保留作对照）：
 

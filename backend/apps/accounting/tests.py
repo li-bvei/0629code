@@ -132,6 +132,36 @@ class ExpenseSummaryApiTests(TestCase):
         self.assertEqual(body['balance'], 3300)
 
 
+class ExpenseReimbursedCompatibilityTests(TestCase):
+    """is_reimbursed は歴史互換の項目。UI は廃止し送信しないが、API は受け付け・保持する（報銷フローではない）。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(username='reimbursed-compat', password='password')
+        grant_full_business_access(self.user, employee_name='互換確認')
+        self.client.force_authenticate(self.user)
+
+    def test_create_without_is_reimbursed_uses_default(self):
+        response = self.client.post('/api/accounting/expenses/', {
+            'expense_date': '2026-07-01', 'category': '交通費', 'amount': '500',
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertFalse(Expense.objects.get(pk=response.json()['id']).is_reimbursed)
+
+    def test_patch_without_is_reimbursed_keeps_historical_value(self):
+        expense = Expense.objects.create(
+            expense_date=date(2026, 7, 1), category='交通費', amount=Decimal('500'),
+            is_reimbursed=True, owner=self.user,
+        )
+        response = self.client.patch(f'/api/accounting/expenses/{expense.id}/', {
+            'expense_date': '2026-07-02', 'category': '交通費', 'amount': '800',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        expense.refresh_from_db()
+        self.assertEqual(expense.amount, Decimal('800'))
+        self.assertTrue(expense.is_reimbursed)
+
+
 class VisaReturnBulkCreateApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
