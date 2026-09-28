@@ -1,5 +1,6 @@
 <script setup lang="ts" generic="T extends { id: number }">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, watch } from 'vue'
+import { createRemoteSearch } from './remoteSearch'
 
 interface OptionRow {
   value: number
@@ -26,50 +27,13 @@ const emit = defineEmits<{
   (e: 'change', row: T | null): void
 }>()
 
-const options = ref<OptionRow[]>([])
-const loading = ref(false)
-const rowCache = new Map<number, T>()
-
-const runSearch = async (search: string) => {
-  loading.value = true
-  try {
-    const rows = await props.fetcher(search.trim())
-    rows.forEach((row) => rowCache.set(row.id, row))
-    const mapped = rows.map((row) => props.toOption(row))
-    // 選択中の値が候補に含まれない場合でもラベルが消えないよう先頭に維持する。
-    const selected = options.value.find((o) => o.value === props.modelValue)
-    if (selected && !mapped.some((o) => o.value === selected.value)) {
-      options.value = [selected, ...mapped]
-    } else {
-      options.value = mapped
-    }
-  } catch {
-    options.value = []
-  } finally {
-    loading.value = false
-  }
-}
-
-const ensureInitial = async () => {
-  const id = props.modelValue
-  if (!id) return
-  if (options.value.some((o) => o.value === id)) return
-  if (props.initialOption && props.initialOption.value === id) {
-    options.value = [props.initialOption, ...options.value]
-    return
-  }
-  if (props.fetchOne) {
-    try {
-      const row = await props.fetchOne(id)
-      if (row) {
-        rowCache.set(row.id, row)
-        options.value = [props.toOption(row), ...options.value]
-      }
-    } catch {
-      /* 取得失敗時は id のみ表示 */
-    }
-  }
-}
+const { options, loading, error, rowCache, runSearch, ensureInitial } = createRemoteSearch<T>({
+  fetcher: (search) => props.fetcher(search),
+  fetchOne: props.fetchOne ? (id) => props.fetchOne!(id) : undefined,
+  toOption: (row) => props.toOption(row),
+  getModelValue: () => props.modelValue,
+  getInitialOption: () => props.initialOption,
+})
 
 const onChange = (value: number | null) => {
   emit('update:modelValue', value)
@@ -100,6 +64,9 @@ onMounted(async () => {
     @change="onChange"
     @visible-change="(visible: boolean) => visible && !options.length && runSearch('')"
   >
+    <template #empty>
+      <p class="remote-select-empty" :class="{ 'is-error': error }">{{ error || (loading ? '読み込み中…' : '該当する候補がありません') }}</p>
+    </template>
     <el-option
       v-for="option in options"
       :key="option.value"
@@ -113,3 +80,16 @@ onMounted(async () => {
     </el-option>
   </el-select>
 </template>
+
+<style scoped>
+.remote-select-empty {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.remote-select-empty.is-error {
+  color: var(--el-color-danger);
+}
+</style>
