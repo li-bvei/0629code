@@ -64,6 +64,7 @@ from .utils import apply_checklist_template_to_case, generate_case_number
 from .work_service import (
     CaseWorkError,
     complete_next_action,
+    receive_checklist_item,
     end_waiting,
     record_payment_link,
     set_next_action,
@@ -1064,6 +1065,37 @@ class CaseChecklistItemViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         self._record_completion_event(item, was_completed, request)
         response.data['progress_summary'] = self._progress_payload(item.case)
         return response
+
+    @action(detail=True, methods=['post'], url_path='receive')
+    def receive(self, request, pk=None):
+        """資料受領（同じ案件の既存 Document を任意で関連付け、Timeline・監査に記録）。"""
+        item = self.get_object()
+        document = None
+        document_id = request.data.get('document')
+        if document_id not in (None, ''):
+            # 関連付けるファイルも利用者が見られる範囲から探す（BusinessAccessPolicy）。
+            document = self.business_policy.queryset('document', 'list').filter(pk=document_id).first()
+            if document is None:
+                return Response({'document': ['ファイルが見つかりません。']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            receive_checklist_item(
+                item,
+                document=document,
+                received_on=request.data.get('received_on'),
+                note=request.data.get('note') or '',
+                complete=str(request.data.get('complete', '')).lower() in ('1', 'true', 'yes'),
+                actor=request.user,
+                request=request,
+            )
+        except CaseWorkError as exc:
+            payload = {'detail': exc.detail}
+            if exc.field:
+                payload[exc.field] = [exc.detail]
+            return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        item.refresh_from_db()
+        data = self.get_serializer(item).data
+        data['progress_summary'] = self._progress_payload(item.case)
+        return Response(data)
 
     def _record_completion_event(self, item, was_completed, request):
         if item.is_completed and not was_completed:

@@ -45,6 +45,8 @@ from .serializers import (
     VoucherItemTemplateSerializer,
 )
 from apps.audit.services import record
+from apps.timelines.models import Timeline
+from apps.timelines.services import record_case_event
 from apps.authentication.drf import BusinessScopedViewSetMixin, business_api_view
 
 from .seifu_notice_pdf import seifu_notice_pdf_response
@@ -772,7 +774,14 @@ class TaxRenewalVoucherRecordViewSet(BusinessScopedViewSetMixin, ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
-        serializer.save(created_by=user)
+        record_obj = serializer.save(created_by=user)
+        if record_obj.case_id:
+            # 会計側の記録は会計モジュールに置き、案件には「関連付けた」事実だけを残す。
+            record_case_event(
+                record_obj.case, Timeline.EVENT_ACCOUNTING_LINKED, '税務証明記録を関連付け',
+                description=f'記録：{record_obj.title}', actor=self.request.user,
+                metadata={'module': 'accounting.tax_renewal', 'record_id': record_obj.pk},
+            )
 
     @action(detail=True, methods=['post'], url_path='generate_pdf')
     def generate_pdf(self, request, pk=None):
@@ -783,7 +792,14 @@ class TaxRenewalVoucherRecordViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         if template_key not in (record.selected_templates or []):
             return Response({'detail': '该记录未选择此模板。'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            return tax_renewal_pdf_response(record, template_key)
+            response = tax_renewal_pdf_response(record, template_key)
+            if record.case_id:
+                record_case_event(
+                    record.case, Timeline.EVENT_PDF_GENERATED, '税務証明 PDF を作成',
+                    description=f'記録：{record.title} / テンプレート：{template_key}', actor=request.user,
+                    metadata={'module': 'accounting.tax_renewal', 'record_id': record.pk, 'template_key': template_key},
+                )
+            return response
         except FileNotFoundError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
         except ValueError as exc:

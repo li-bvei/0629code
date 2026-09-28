@@ -440,6 +440,16 @@ class CaseChecklistItem(models.Model):
     )
     note = models.TextField(blank=True)
     responsible_party = models.CharField(max_length=30, choices=RESPONSIBLE_PARTY_CHOICES, blank=True)
+    # 資料受領（P1）：同じ案件の既存 Document を関連付けられる（ファイル自体は Document の受保護ダウンロードで扱う）。
+    received_at = models.DateField('受領日', blank=True, null=True)
+    document = models.ForeignKey(
+        'documents.Document',
+        verbose_name='関連ファイル',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='checklist_items',
+    )
     acquisition_place = models.CharField(max_length=255, blank=True)
     required_details = models.TextField(blank=True)
     internal_note = models.TextField(blank=True)

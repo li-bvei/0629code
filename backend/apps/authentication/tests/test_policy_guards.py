@@ -15,6 +15,8 @@ BACKEND = Path(settings.BASE_DIR)
 # 業務ビューとして走査するファイル。
 VIEW_FILES = [
     'api/views.py',
+    'api/workbench.py',
+    'api/health.py',
     'apps/accounting/views.py',
     'apps/accounting/seifu_notice_pdf.py',
     'apps/accounting/visa_form_fields.py',

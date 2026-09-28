@@ -595,6 +595,7 @@ class CaseChecklistItemSerializer(serializers.ModelSerializer):
     case_number = serializers.CharField(source='case.case_number', read_only=True)
     completed_by_name = serializers.SerializerMethodField()
     item_type_display = serializers.CharField(source='get_item_type_display', read_only=True)
+    document_title = serializers.CharField(source='document.title', read_only=True, default='')
 
     class Meta:
         model = CaseChecklistItem
@@ -623,6 +624,9 @@ class CaseChecklistItemSerializer(serializers.ModelSerializer):
             'is_visible_to_customer',
             'importance_level',
             'sort_order',
+            'received_at',
+            'document',
+            'document_title',
             'created_at',
             'updated_at',
         ]
@@ -631,6 +635,10 @@ class CaseChecklistItemSerializer(serializers.ModelSerializer):
             'case_number',
             'completed_by_name',
             'item_type_display',
+            # 受領日・関連ファイルは receive action（同一案件の Document のみ・Timeline・監査）でのみ設定する。
+            'received_at',
+            'document',
+            'document_title',
             'created_at',
             'updated_at',
         ]

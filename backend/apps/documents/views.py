@@ -7,6 +7,8 @@ from rest_framework.viewsets import ModelViewSet
 from apps.audit.services import record
 from apps.authentication.access_policy import ALLOW, NOT_FOUND
 from apps.authentication.drf import BusinessScopedViewSetMixin
+from apps.timelines.models import Timeline
+from apps.timelines.services import record_case_event
 
 from .models import Document
 from .protected_download import build_file_response, is_first_range_request, resolve_document_path
@@ -74,6 +76,12 @@ class DocumentViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     def after_create(self, instance):
         record(module='documents', action='document_upload', request=self.request, obj=instance,
                extra={'case_id': instance.case_id, 'file_size': instance.file_size})
+        if instance.file:
+            record_case_event(
+                instance.case, Timeline.EVENT_DOCUMENT_UPLOADED, f'ファイル登録：{instance.title}',
+                description=f'ファイル名：{instance.file_name}', actor=self.request.user,
+                metadata={'document_id': instance.pk},
+            )
 
     def perform_update(self, serializer):
         previous_file = serializer.instance.file.name if serializer.instance.file else ''
@@ -83,6 +91,12 @@ class DocumentViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         action_name = 'document_replace' if current_file != previous_file else 'document_update'
         record(module='documents', action=action_name, request=self.request, obj=instance,
                extra={'case_id': instance.case_id})
+        if action_name == 'document_replace' and current_file:
+            record_case_event(
+                instance.case, Timeline.EVENT_DOCUMENT_UPLOADED, f'ファイル差し替え：{instance.title}',
+                description=f'ファイル名：{instance.file_name}', actor=self.request.user,
+                metadata={'document_id': instance.pk, 'replaced': True},
+            )
 
     def perform_destroy(self, instance):
         record(module='documents', action='document_delete', request=self.request, obj=instance,

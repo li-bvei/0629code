@@ -209,3 +209,48 @@ def record_payment_link(case, *, amount=None, received_on=None, note='', referen
         )
         _audit(request, 'case_payment_noted', case, {'timeline_id': timeline.id})
     return timeline
+
+
+def receive_checklist_item(item, *, document=None, received_on=None, note='', complete=False, actor=None, request=None):
+    """資料受領：受領日と（任意で）同じ案件の既存 Document を関連付け、Timeline に記録する。
+
+    complete=True のときは Checklist 項目も完了にする。Google Drive などの外部保存先は扱わない。
+    """
+    from .models import CaseChecklistItem
+
+    received = _parse_date(received_on, 'received_on') or timezone.localdate()
+    if document is not None and document.case_id != item.case_id:
+        raise CaseWorkError('同じ案件のファイルだけを関連付けできます。', 'document')
+    employee = getattr(actor, 'employee', None) if actor is not None and hasattr(actor, 'employee') else None
+    with transaction.atomic():
+        locked = CaseChecklistItem.objects.select_for_update().select_related('case').get(pk=item.pk)
+        locked.received_at = received
+        if document is not None:
+            locked.document = document
+        fields = ['received_at', 'document', 'updated_at']
+        completed_now = complete and not locked.is_completed
+        if completed_now:
+            locked.is_completed = True
+            locked.completed_at = timezone.now()
+            locked.completed_by = employee
+            fields += ['is_completed', 'completed_at', 'completed_by']
+        locked.save(update_fields=fields)
+        lines = [f'受領日：{received.isoformat()}']
+        if document is not None:
+            lines.append(f'ファイル：{document.title}')
+        if note:
+            lines.append(f'備考：{note.strip()}')
+        record_case_event(
+            locked.case, Timeline.EVENT_DOCUMENT_RECEIVED, f'資料受領：{locked.name}', description='\n'.join(lines),
+            actor=actor, occurred_at=received,
+            metadata={'checklist_item_id': locked.id, 'document_id': document.pk if document else None},
+        )
+        if completed_now:
+            record_case_event(
+                locked.case, Timeline.EVENT_CHECKLIST_COMPLETED, f'資料・タスク完了：{locked.name}', actor=actor,
+                metadata={'checklist_item_id': locked.id, 'category': locked.category},
+            )
+        record(module='cases', action='checklist_item_received', request=request, obj=locked,
+               extra={'case_id': locked.case_id, 'document_id': document.pk if document else None,
+                      'completed': completed_now})
+    return locked

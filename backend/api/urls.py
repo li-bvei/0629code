@@ -25,6 +25,7 @@ from apps.reminders.views import DismissedDeadlineViewSet, ReminderViewSet
 from apps.tasks.views import TaskViewSet
 from apps.timelines.views import TimelineViewSet
 from .health import health, readiness
+from .workbench import TodayWorkbenchView
 from .views import DashboardDeadlinesView, DashboardSummaryView, ReceptionCreateView
 
 router = BusinessRouter()
@@ -59,6 +60,7 @@ urlpatterns = [
     path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard-summary'),
     path('dashboard/deadlines/', DashboardDeadlinesView.as_view(), name='dashboard-deadlines'),
     path('receptions/', ReceptionCreateView.as_view(), name='reception-create'),
+    path('workbench/today/', TodayWorkbenchView.as_view(), name='workbench-today'),
     path('health/', health, name='health'),
     path('readiness/', readiness, name='readiness'),
 ]

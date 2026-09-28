@@ -145,3 +145,129 @@ class PaymentNoteTests(WorkFixture, TestCase):
         self.assertTrue(AuditLog.objects.filter(action='case_payment_noted').exists())
         self.assertEqual(self.post(self.staff_a, 'payment-note/', {'amount': 'abc'}).status_code, 400)
         self.assertEqual(self.post(self.staff_b, 'payment-note/', {}).status_code, 404)
+
+
+class TodayWorkbenchTests(WorkFixture, TestCase):
+    def setUp(self):
+        super().setUp()
+        today = timezone.localdate()
+        self.case_b = Case.objects.create(case_type='x', case_type_master=self.case_type, application_category=self.category,
+                                          status=Case.STATUS_COLLECTING_DOCUMENTS, customer=self.customer,
+                                          responsible_employee=self.emp_b)
+        Case.objects.filter(pk=self.case_a.pk).update(next_action='a の対応', next_action_due_at=today - timedelta(days=1))
+        Case.objects.filter(pk=self.case_b.pk).update(next_action='b の対応', next_action_due_at=today,
+                                                       work_status=Case.WORK_STATUS_WAITING, waiting_reason='other',
+                                                       waiting_since=today - timedelta(days=5))
+        self.closed = Case.objects.create(case_type='x', case_type_master=self.case_type, application_category=self.category,
+                                          status=Case.STATUS_COMPLETED, customer=self.customer, responsible_employee=self.emp_a,
+                                          next_action='終わった')
+
+    def get(self, user, scope='mine'):
+        self.client.force_login(user)
+        return self.client.get(f'/api/workbench/today/?scope={scope}')
+
+    def test_mine_is_limited_to_own_cases_and_actions(self):
+        data = self.get(self.staff_a).json()
+        self.assertEqual([c['id'] for c in data['cases']], [self.case_a.id])
+        self.assertEqual([c['id'] for c in data['next_actions']], [self.case_a.id])
+        self.assertEqual(data['next_actions'][0]['due_status'], 'overdue')
+        self.assertEqual(data['summary']['overdue'], 1)
+        self.assertEqual(data['waiting'], [])
+        data = self.get(self.staff_b).json()
+        self.assertEqual([c['id'] for c in data['waiting']], [self.case_b.id])
+        self.assertEqual(data['waiting'][0]['waiting_days'], 5)
+
+    def test_next_action_assigned_to_me_on_visible_case(self):
+        Case.objects.filter(pk=self.case_b.pk).update(next_action_assignee=self.jiao.employee)
+        data = self.get(self.jiao).json()
+        self.assertEqual([c['id'] for c in data['next_actions']], [self.case_b.id])
+        self.assertEqual(data['cases'], [])
+
+    def test_all_scope_requires_view_all(self):
+        self.assertEqual(self.get(self.staff_a, 'all').status_code, 403)
+        data = self.get(self.jiao, 'all').json()
+        self.assertEqual({c['id'] for c in data['cases']}, {self.case_a.id, self.case_b.id})
+        self.assertEqual(data['summary']['waiting'], 1)
+
+    def test_unlinked_user_and_superuser_only(self):
+        unlinked = make_user('unlinked_wb', roles=[STAFF])
+        data = self.get(unlinked).json()
+        self.assertFalse(data['employee_linked'])
+        self.assertEqual(data['cases'], [])
+        su = make_user('su_wb', superuser=True)
+        self.assertEqual(self.get(su).status_code, 403)
+
+
+class ChecklistReceiveTests(WorkFixture, TestCase):
+    def setUp(self):
+        super().setUp()
+        import shutil
+        import tempfile
+
+        from django.core.files.base import ContentFile
+        from django.test import override_settings
+
+        from apps.cases.models import CaseChecklistItem
+        from apps.documents.models import Document
+
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, True)
+        self.override = override_settings(MEDIA_ROOT=self.media)
+        self.override.enable()
+        self.addCleanup(self.override.disable)
+        self.item = CaseChecklistItem.objects.create(case=self.case_a, name='課税証明書')
+        self.doc = Document(case=self.case_a, title='課税証明', file_name='kazei.pdf', file_path='')
+        self.doc.file.save('kazei.pdf', ContentFile(b'%PDF'), save=True)
+        other_case = Case.objects.create(case_type='x', case_type_master=self.case_type, application_category=self.category,
+                                         status=Case.STATUS_COLLECTING_DOCUMENTS, customer=self.customer,
+                                         responsible_employee=self.emp_a)
+        self.other_doc = Document.objects.create(case=other_case, title='別案件', file_name='x.pdf', file_path='')
+
+    def receive(self, user, body):
+        self.client.force_login(user)
+        return self.client.post(f'/api/case-checklist-items/{self.item.id}/receive/', body, content_type='application/json')
+
+    def test_receive_links_document_and_records_timeline(self):
+        response = self.receive(self.staff_a, {'document': self.doc.id, 'received_on': '2026-09-20', 'complete': True})
+        self.assertEqual(response.status_code, 200, response.content)
+        data = response.json()
+        self.assertEqual(data['document'], self.doc.id)
+        self.assertEqual(data['document_title'], '課税証明')
+        self.assertEqual(data['received_at'], '2026-09-20')
+        self.assertTrue(data['is_completed'])
+        events = set(Timeline.objects.filter(case=self.case_a).values_list('event_type', flat=True))
+        self.assertTrue({Timeline.EVENT_DOCUMENT_RECEIVED, Timeline.EVENT_CHECKLIST_COMPLETED} <= events)
+        self.assertTrue(AuditLog.objects.filter(action='checklist_item_received').exists())
+
+    def test_document_must_belong_to_same_case_and_be_visible(self):
+        self.assertEqual(self.receive(self.staff_a, {'document': self.other_doc.id}).status_code, 400)
+        self.assertEqual(self.receive(self.staff_b, {'document': self.doc.id}).status_code, 404)
+        self.assertEqual(self.receive(self.jiao, {}).status_code, 403)
+
+    def test_generic_patch_cannot_link_document(self):
+        self.client.force_login(self.staff_a)
+        self.client.patch(f'/api/case-checklist-items/{self.item.id}/', {'document': self.other_doc.id},
+                          content_type='application/json')
+        self.item.refresh_from_db()
+        self.assertIsNone(self.item.document_id)
+
+    def test_document_upload_records_timeline(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.staff_a)
+        response = self.client.post('/api/documents/', {'case': self.case_a.id, 'title': '在職証明',
+                                                        'file': SimpleUploadedFile('zaishoku.pdf', b'%PDF')})
+        self.assertEqual(response.status_code, 201, response.content)
+        event = Timeline.objects.get(case=self.case_a, event_type=Timeline.EVENT_DOCUMENT_UPLOADED)
+        self.assertEqual(event.metadata['document_id'], response.json()['id'])
+
+
+class AccountingLinkTimelineTests(WorkFixture, TestCase):
+    def test_tax_renewal_record_linked_to_case_records_timeline_only(self):
+        self.client.force_login(self.li)
+        response = self.client.post('/api/accounting/tax-renewal-records/', {
+            'title': '更新用', 'category': 'renewal', 'case': self.case_a.id,
+        }, content_type='application/json')
+        self.assertEqual(response.status_code, 201, response.content)
+        event = Timeline.objects.get(case=self.case_a, event_type=Timeline.EVENT_ACCOUNTING_LINKED)
+        self.assertEqual(event.metadata['module'], 'accounting.tax_renewal')
