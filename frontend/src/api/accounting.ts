@@ -1,5 +1,7 @@
 import http from '../services/http'
 import type {
+  CaseAccountingSummary,
+  ExpenseCategorySuggestions,
   AccountingDashboard,
   AccountingListParams,
   AccountingPaginatedResponse,
@@ -572,4 +574,21 @@ export const downloadTaxRenewalNumberedSample = async (templateKey: string) => {
     contentDisposition: response.headers['content-disposition'] as string | undefined,
     fieldIndex: response.headers['x-field-index'] as string | undefined,
   }
+}
+
+
+// --- P2：カテゴリ入力支援（本人の履歴のみ）・案件の会計要約 ---
+export const getExpenseCategorySuggestions = async (params: {
+  q?: string
+  place?: string
+  expense_target?: string
+  note?: string
+}) => {
+  const response = await http.get<ExpenseCategorySuggestions>('/accounting/expenses/category-suggestions/', { params })
+  return response.data
+}
+
+export const getCaseAccountingSummary = async (caseId: number) => {
+  const response = await http.get<CaseAccountingSummary>(`/cases/${caseId}/accounting-summary/`)
+  return response.data
 }

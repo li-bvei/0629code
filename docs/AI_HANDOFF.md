@@ -320,6 +320,8 @@ Case
 - 入金只写 Timeline（`payment_received`，metadata 中 `accounting_record_created=false`），不创建任何会计数据。
 - 后端 213 项测试、前端单元测试 6 项全部通过；前端 build 通过。**浏览器实测尚未完成**（与 P0 同样的阻断项）。
 
+**P2 会计（分支 `codex/p2-accounting`，基于 P1 `dde7e4f`）**：Income/Expense 可以选择关联 Customer/Company/Case（`accounting/0016`）；案件侧显示会计摘要，会计侧可以跳回案件；支出分类支持搜索、手动输入、规范名建议和本人历史推荐，建议不会自动改写数据；报销仍是简单登记，owner 隔离不变。详见 `docs/CHANGELOG_2026-09-28_p2_accounting.md`。Visa 分支 `codex/p2-visa-import` 从本分支创建，文件分支 `codex/p2-documents` 独立推进。
+
 原计划清单（保留作对照）：
 
 1. Case Workspace Action Bar：対応記録、資料受領、タスク、ファイル、入金、待機、完了。

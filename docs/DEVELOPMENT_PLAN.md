@@ -47,14 +47,14 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| P2-C1 | Income/Expense 增加 customer/company/case 可选外键 | ⬜ |
-| P2-C2 | 从 Case 查看账务、从账务回到 Case | ⬜ |
+| P2-C1 | Income/Expense 增加 customer/company/case 可选外键 | ✅（本地，分支 `codex/p2-accounting`） | 关联案件需要该案件的「变更」权限；只指定案件时自动带出顾客/公司 |
+| P2-C2 | 从 Case 查看账务、从账务回到 Case | ✅（本地） | `cases/{id}/accounting-summary/`（按会计权限范围）、支出一览的关联案件列、`?case=` 筛选 |
 | P2-C3 | 归档完善（`archived_by`、理由、恢复、审计） | ⬜ |
 | P2-C4 | 全局搜索 `/api/search/?q=` | ⬜ |
 | P2-C5 | 关联案件创建、公司详情扩展 | ⬜ |
 | P2-C6 | 前端路由级 lazy loading | ⬜ |
-| P2-C7 | 支出分类手动输入、规范化与本人历史推荐 | ⬜ |
-| P2-C8 | 个人报销按 owner 隔离并保持简单登记 | ⬜ | 不新增审核、支付或入账流程 |
+| P2-C7 | 支出分类手动输入、规范化与本人历史推荐 | ✅（本地） | `expenses/category-suggestions/`；只用本人历史；只做建议，不改写旧数据 |
+| P2-C8 | 个人报销按 owner 隔离并保持简单登记 | ✅（本地） | 维持 P0 的 owner 隔离；没有新增任何审批/支付/入账状态（有测试确认） |
 | P2-C9 | Checklist/Document 现有系统文件管理 | ⬜ | 不连接或迁移 Google Drive；第一阶段不做完整版本管理 |
 | P2-C10 | Visa CSV/XLSX 导入、校验与批量 PDF | ⬜ |
 | P2-C11 | 报价/契约/请求/领收帐票分别完善 | ⬜ |

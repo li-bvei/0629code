@@ -211,3 +211,13 @@ Portal 相关数据应支持：
 - 上述字段在通用序列化器中为只读，只能通过 `apps/cases/work_service.py` 修改（事务 + Timeline + AuditLog）。
 - 均为加法 migration，不写入数据；旧代码可以在新表结构上运行。
 - Timeline 新增事件常量：`document_received`、`accounting_linked`（`event_type` 是自由 CharField，不涉及 migration）。
+
+
+### 11.4 P2 会计关联（2026-09-28 本地已实现，分支 `codex/p2-accounting`；生产未部署）
+
+| 对象 | 字段 | migration | 说明 |
+|---|---|---|---|
+| `accounting_expenses`、`accounting_income_sources` | `customer_id`、`company_id`、`case_id`（均为可空 FK，`SET_NULL`） | `accounting/0016_income_expense_party_links` | 关联案件需要对该案件有「变更」权限，顾客/公司需要在本人可见范围内；关联或解除关联时，只在案件 Timeline 记录日期和分类（不记金额，不记所有者） |
+
+- `Expense.category` 仍是自由文本；分类建议（`category_suggestions.py`）只读取本人的历史记录，不写入数据。
+- Visa 分支从本分支的最新提交创建，Visa 的 migration 编号接在 `0016` 之后。

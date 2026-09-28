@@ -66,6 +66,20 @@ class Expense(models.Model):
         blank=True,
         related_name='updated_expenses',
     )
+    # 任意の関連（P2）：顧客・会社・案件。関連付けは BusinessAccessPolicy で検査し、
+    # 案件への関連付けは案件の Timeline に「関連付けた事実」だけを残す（会計データは会計側）。
+    customer = models.ForeignKey(
+        'customers.Customer', verbose_name='関連顧客', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    company = models.ForeignKey(
+        'companies.Company', verbose_name='関連会社', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    case = models.ForeignKey(
+        'cases.Case', verbose_name='関連案件', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
     created_at = models.DateTimeField('作成日時', auto_now_add=True)
     updated_at = models.DateTimeField('更新日時', auto_now=True)
 
@@ -91,6 +105,20 @@ class IncomeSource(models.Model):
     amount = models.DecimalField('金額', max_digits=12, decimal_places=0)
     note = models.TextField('備考', blank=True)
     is_exported = models.BooleanField('出力済み', default=False)
+    # 任意の関連（P2）：顧客・会社・案件。関連付けは BusinessAccessPolicy で検査し、
+    # 案件への関連付けは案件の Timeline に「関連付けた事実」だけを残す（会計データは会計側）。
+    customer = models.ForeignKey(
+        'customers.Customer', verbose_name='関連顧客', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    company = models.ForeignKey(
+        'companies.Company', verbose_name='関連会社', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    case = models.ForeignKey(
+        'cases.Case', verbose_name='関連案件', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
     created_at = models.DateTimeField('作成日時', auto_now_add=True)
     updated_at = models.DateTimeField('更新日時', auto_now=True)
 

@@ -9,6 +9,9 @@ import {
   updateAccountingIncomeSource,
 } from '../../api/accounting'
 import type { IncomeSourcePayload } from '../../types/accounting'
+import RemoteCaseSelect from '../../components/RemoteCaseSelect.vue'
+import RemoteCompanySelect from '../../components/RemoteCompanySelect.vue'
+import RemoteCustomerSelect from '../../components/RemoteCustomerSelect.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,7 +26,11 @@ const form = ref<IncomeSourcePayload>({
   amount: '',
   note: '',
   is_exported: false,
+  customer: null,
+  company: null,
+  case: null,
 })
+const caseInitial = ref<{ value: number, label: string } | null>(null)
 
 const rules: FormRules<IncomeSourcePayload> = {
   source_date: [{ required: true, message: '日付を入力してください。', trigger: 'change' }],
@@ -39,7 +46,13 @@ const fetchIncomeSource = async () => {
     amount: incomeSource.amount,
     note: incomeSource.note,
     is_exported: false,
+    customer: incomeSource.customer ?? null,
+    company: incomeSource.company ?? null,
+    case: incomeSource.case ?? null,
   }
+  caseInitial.value = incomeSource.case
+    ? { value: incomeSource.case, label: incomeSource.case_number || `#${incomeSource.case}` }
+    : null
 }
 
 const submit = async () => {
@@ -101,6 +114,17 @@ onMounted(async () => {
           </el-form-item>
           <el-form-item label="金額" prop="amount">
             <el-input v-model="form.amount" inputmode="numeric" />
+          </el-form-item>
+        </div>
+        <div class="form-grid">
+          <el-form-item label="関連案件（任意）" prop="case">
+            <RemoteCaseSelect v-model="form.case" :initial-option="caseInitial" />
+          </el-form-item>
+          <el-form-item label="関連顧客（任意）" prop="customer">
+            <RemoteCustomerSelect v-model="form.customer" />
+          </el-form-item>
+          <el-form-item label="関連会社（任意）" prop="company">
+            <RemoteCompanySelect v-model="form.company" />
           </el-form-item>
         </div>
         <el-form-item label="備考" prop="note">

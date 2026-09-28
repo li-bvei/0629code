@@ -4,7 +4,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { saveAs } from 'file-saver'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   createAccountingExpense,
   deleteAccountingExpense,
@@ -31,6 +31,7 @@ interface BatchExpenseRow {
 }
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const errorMessage = ref('')
 const expenses = ref<Expense[]>([])
@@ -45,6 +46,8 @@ const filters = ref<AccountingListParams>({
   category: '',
   payment_method: '',
   is_reimbursed: '',
+  // 案件の会計要約から来た場合は、その案件に関連付いた支出だけを表示する
+  case: typeof route.query.case === 'string' ? route.query.case : undefined,
 })
 
 const addDialogVisible = ref(false)
@@ -456,6 +459,12 @@ onMounted(() => {
         <el-table-column prop="payment_method" label="支払方法" min-width="130" />
         <el-table-column prop="expense_target" label="費用対象" min-width="160" />
         <el-table-column prop="note" label="備考" min-width="220" show-overflow-tooltip />
+        <el-table-column label="関連案件" min-width="150">
+          <template #default="{ row }">
+            <router-link v-if="row.case" class="text-link" :to="`/cases/${row.case}`">{{ row.case_number }}</router-link>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="summary.expenseScope === 'all'" label="所有者" min-width="110">
           <template #default="{ row }">{{ row.owner_name || row.owner_username || '未設定' }}</template>
         </el-table-column>

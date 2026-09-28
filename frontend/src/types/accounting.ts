@@ -1,6 +1,8 @@
 import type { PaginatedResponse } from './api'
 
 export interface AccountingListParams {
+  // 関連案件で絞り込み（P2）
+  case?: number | string
   page?: number
   page_size?: number
   search?: string
@@ -56,6 +58,13 @@ export interface Expense {
   owner?: number | null
   owner_username?: string
   owner_name?: string
+  // 任意の関連（P2）
+  customer?: number | null
+  company?: number | null
+  case?: number | null
+  case_number?: string
+  customer_name?: string
+  company_name?: string
   created_at?: string
   updated_at?: string
 }
@@ -70,6 +79,9 @@ export interface ExpensePayload {
   note?: string
   is_reimbursed: boolean
   is_exported: boolean
+  customer?: number | null
+  company?: number | null
+  case?: number | null
 }
 
 export interface ExpenseSummary {
@@ -120,6 +132,13 @@ export interface IncomeSource {
   amount: string | number
   note: string
   is_exported: boolean
+  // 任意の関連（P2）
+  customer?: number | null
+  company?: number | null
+  case?: number | null
+  case_number?: string
+  customer_name?: string
+  company_name?: string
   created_at?: string
   updated_at?: string
 }
@@ -130,6 +149,9 @@ export interface IncomeSourcePayload {
   amount: string | number
   note?: string
   is_exported: boolean
+  customer?: number | null
+  company?: number | null
+  case?: number | null
 }
 
 export interface VehicleUsage {
@@ -729,3 +751,21 @@ export interface VisaReturnApplicationPayload {
 }
 
 export type AccountingPaginatedResponse<T> = PaginatedResponse<T>
+
+// --- P2：カテゴリ入力支援・案件の会計要約 ---
+export interface ExpenseCategorySuggestions {
+  query: string
+  matches: Array<{ name: string; source: 'master' | 'history'; count: number }>
+  normalized: { input: string; suggestion: string; reason: string } | null
+  recommendations: Array<{ name: string; reason: string; score: number }>
+  source_scope: 'own_history'
+}
+
+export interface CaseAccountingSummary {
+  case_id: number
+  expense: { visible: boolean; scope?: 'own' | 'all'; count?: number; total?: number
+    recent?: Array<{ id: number; expense_date: string; category: string; amount: number; is_reimbursed: boolean; is_own: boolean }> }
+  income: { visible: boolean; count?: number; total?: number
+    recent?: Array<{ id: number; source_date: string; source_target: string; amount: number }> }
+  tax_renewal: { visible: boolean; count?: number; recent?: Array<{ id: number; title: string; status: string }> }
+}

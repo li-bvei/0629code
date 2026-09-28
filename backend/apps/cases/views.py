@@ -231,6 +231,15 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         customer_id = self.request.query_params.get('customer')
         if customer_id:
             queryset = queryset.filter(customer_id=customer_id)
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            from django.db.models import Q
+
+            # 案件選択（RemoteSelect）用：案件番号・顧客名・会社名。範囲は Mixin で限定済み。
+            queryset = queryset.filter(
+                Q(case_number__icontains=search) | Q(customer__name__icontains=search)
+                | Q(customer__name_kana__icontains=search) | Q(company__name__icontains=search)
+            )
         company_id = self.request.query_params.get('company')
         if company_id:
             queryset = queryset.filter(company_id=company_id)
@@ -429,6 +438,58 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         except CaseWorkError as exc:
             return self._work_error(exc)
         return self._work_response(case)
+
+    @action(detail=True, methods=['get'], url_path='accounting-summary')
+    def accounting_summary(self, request, pk=None):
+        """案件に関連付いた会計記録の要約。各会計記録は利用者の会計権限の範囲だけを数える
+        （支出は本人分／expense_view_all、収入・税務証明は各モジュール権限）。"""
+        from django.db.models import Count, Sum
+
+        case = self.get_object()
+        policy = self.business_policy
+
+        def block(resource, rows_fn):
+            if not policy.module_allowed(resource, 'list'):
+                return {'visible': False}
+            qs = policy.queryset(resource, 'list').filter(case=case)
+            return {'visible': True, **rows_fn(qs)}
+
+        def expense_rows(qs):
+            agg = qs.aggregate(count=Count('id'), total=Sum('amount'))
+            return {
+                'scope': 'all' if policy.has('accounting.expense_view_all') else 'own',
+                'count': agg['count'] or 0,
+                'total': int(agg['total'] or 0),
+                'recent': [
+                    {'id': e.id, 'expense_date': e.expense_date, 'category': e.category, 'amount': int(e.amount),
+                     'is_reimbursed': e.is_reimbursed, 'is_own': e.owner_id == policy.user_id}
+                    for e in qs.order_by('-expense_date', '-id')[:10]
+                ],
+            }
+
+        def income_rows(qs):
+            agg = qs.aggregate(count=Count('id'), total=Sum('amount'))
+            return {
+                'count': agg['count'] or 0,
+                'total': int(agg['total'] or 0),
+                'recent': [
+                    {'id': i.id, 'source_date': i.source_date, 'source_target': i.source_target, 'amount': int(i.amount)}
+                    for i in qs.order_by('-source_date', '-id')[:10]
+                ],
+            }
+
+        def tax_rows(qs):
+            return {
+                'count': qs.count(),
+                'recent': [{'id': t.id, 'title': t.title, 'status': t.status} for t in qs.order_by('-updated_at')[:10]],
+            }
+
+        return Response({
+            'case_id': case.id,
+            'expense': block('expense', expense_rows),
+            'income': block('income', income_rows),
+            'tax_renewal': block('tax_renewal', tax_rows),
+        })
 
     @action(detail=True, methods=['post'], url_path='payment-note')
     def payment_note(self, request, pk=None):

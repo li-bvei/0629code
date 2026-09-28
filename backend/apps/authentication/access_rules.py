@@ -76,6 +76,55 @@ class DiagnosticsRule(Rule):
         return bool(getattr(policy.user, 'is_superuser', False)) and policy.has(self.view_code)
 
 
+# --- 会計：顧客・会社・案件への任意関連（P2） -----------------------------------------
+
+def check_accounting_links(policy, data, instance=None):
+    """会計記録（支出・収入）の顧客・会社・案件への関連付けを検査し、補完値を返す。
+
+    - 案件：その案件を「変更」できること（案件の Timeline に記録を残すため）。
+    - 顧客・会社：利用者が見られる範囲（最小識別情報のみの対象は不可）。
+    - 案件だけ指定された場合は、案件の顧客・会社を補完する。
+    会計記録そのものの所有者分離（owner）は各規則が別途行う。
+    """
+    extra = {}
+
+    def changed(field):
+        if field not in data:
+            return False
+        obj = data[field]
+        if instance is None:
+            return obj is not None
+        return (obj.pk if obj is not None else None) != getattr(instance, f'{field}_id')
+
+    if changed('case'):
+        case = data['case']
+        if case is not None and CASE_RULE.object_decision(policy, case, 'change') != ALLOW:
+            raise PermissionDenied('この案件に会計記録を関連付ける権限がありません。')
+        if case is not None:
+            if data.get('customer') is None and not (instance and instance.customer_id):
+                extra['customer'] = case.customer
+            if data.get('company') is None and not (instance and instance.company_id) and case.company_id:
+                extra['company'] = case.company
+    for field, rule, label in (('customer', CUSTOMER_RULE_REF, '顧客'), ('company', COMPANY_RULE_REF, '会社')):
+        if changed(field) and data[field] is not None:
+            if rule().level(policy, data[field]) not in VISIBLE_LEVELS:
+                raise PermissionDenied(f'この{label}に会計記録を関連付ける権限がありません。')
+    return extra
+
+
+class IncomeRule(Rule):
+    """収入（モジュール権限のみ。P0 では記録単位の所有者分離なし）＋任意関連の検査。"""
+
+    view_code = 'accounting.use_income'
+    model_label = 'accounting.IncomeSource'
+
+    def prepare_create(self, policy, data):
+        return check_accounting_links(policy, data)
+
+    def prepare_update(self, policy, instance, data):
+        return check_accounting_links(policy, data, instance)
+
+
 # --- 会計：支出（報銷） ---------------------------------------------------------
 
 class ExpenseRule(Rule):
@@ -110,10 +159,12 @@ class ExpenseRule(Rule):
 
     def prepare_create(self, policy, data):
         # 所有者は必ずリクエストしたユーザー。フロントから送られた owner は無視する。
-        return {'owner': policy.user, 'created_by': policy.user, 'updated_by': policy.user}
+        extra = check_accounting_links(policy, data)
+        return {**extra, 'owner': policy.user, 'created_by': policy.user, 'updated_by': policy.user}
 
     def prepare_update(self, policy, instance, data):
-        return {'updated_by': policy.user}
+        extra = check_accounting_links(policy, data, instance)
+        return {**extra, 'updated_by': policy.user}
 
     def via_permission(self, policy, action, obj=None):
         if obj is not None and obj.owner_id == policy.user_id:
@@ -533,13 +584,13 @@ RULES = {
     # 会計
     'expense': ExpenseRule(),
     'expense_category': ExpenseCategoryRule(),
-    'income': ModuleRule('accounting.use_income', model_label='accounting.IncomeSource'),
+    'income': IncomeRule(),
     'vehicle': ModuleRule('accounting.use_vehicle', model_label='accounting.VehicleUsage'),
     'project': ModuleRule('accounting.use_project'),
     'voucher': ModuleRule('accounting.use_voucher'),
     'visa': ModuleRule('accounting.use_visa'),
     'seifu': ModuleRule('accounting.use_seifu'),
-    'tax_renewal': ModuleRule('accounting.use_tax_renewal'),
+    'tax_renewal': ModuleRule('accounting.use_tax_renewal', model_label='accounting.TaxRenewalVoucherRecord'),
     # 案件
     'case': CASE_RULE,
     'case_checklist_item': CaseChildRule('case'),
