@@ -312,6 +312,16 @@ Case
 
 ### P1：完成案件工作台
 
+**2026-09-28 本地已实现**：分支 `codex/p1-case-workspace`（独立 worktree `../0629code-p1`，基于 P0 最新提交 `be0e419`，未推送、未部署）。详见 `docs/CHANGELOG_2026-09-28_p1_case_workspace.md`。要点：
+
+- Case 新增 `work_status`（active/waiting，**与 13 个进捗 status 相互独立**）、`waiting_*`，以及 `next_action_assignee`、`next_action_blocked_reason`、`next_action_completed_at/by`（migration `cases/0018`）；Checklist 新增 `received_at`、`document`（`cases/0019`）。
+- 这些字段只能通过 `apps/cases/work_service.py` 修改（`select_for_update` 事务 + Timeline + AuditLog），通用 PATCH 下为只读；接口为 `cases/{id}/next-action/`、`next-action/complete/`、`waiting/start/`、`waiting/end/`、`payment-note/`、`case-checklist-items/{id}/receive/`、`GET /api/workbench/today/`。
+- 权限沿用 P0 的 BusinessAccessPolicy：专用动作都按「变更」判定；Next Action 的负责人必须能查看该案件；作业台的全体视图需要 `case_view_all`。
+- 入金只写 Timeline（`payment_received`，metadata 中 `accounting_record_created=false`），不创建任何会计数据。
+- 后端 213 项测试、前端单元测试 6 项全部通过；前端 build 通过。**浏览器实测尚未完成**（与 P0 同样的阻断项）。
+
+原计划清单（保留作对照）：
+
 1. Case Workspace Action Bar：対応記録、資料受領、タスク、ファイル、入金、待機、完了。
 2. 统一 Next Action：负责人、期限、状态、完成、snooze、阻塞原因。
 3. Waiting 机制：`work_status`、原因、开始日、预计恢复日。
@@ -479,6 +489,7 @@ backend/apps/documents/migrations/0003_alter_document_options.py
 | `docs/CHANGELOG_2026-09-27_p0_access_design_v2.md` | 2026-09-27 P0 方案第 2 版修订记录 | 核对 Q1～Q11 决定与技术修正 |
 | `docs/CHANGELOG_2026-09-27_p0_docs_sync.md` | 2026-09-27 需求/DATABASE/README 同步与 ProtectedAccount 两阶段启用 | 核对本次文档变更 |
 | `docs/CHANGELOG_2026-09-28_p0_access_control.md` | P0 访问控制本地实现（唯一最终 CHANGELOG） | 审查 P0 实现、migration、测试、部署与回滚 |
+| `docs/CHANGELOG_2026-09-28_p1_case_workspace.md` | P1 案件工作台本地实现（P1 阶段唯一 CHANGELOG） | 审查 P1 字段、接口、Timeline/AuditLog、测试 |
 | `docs/PROJECT_AUDIT_2026-09.md` | 2026-09 审查报告 | 查看数据与风险背景 |
 
 ## 13. AI 修改规则

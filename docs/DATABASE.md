@@ -198,3 +198,16 @@ Portal 相关数据应支持：
 - 本地开发库 `gyoseishoshi_erp` **未应用**上述 migration（为了不改动现有数据）。验证使用 Django 测试库，以及独立的预览库 `gyoseishoshi_erp_p0_preview`。
 - 本地开发库账号现状（2026-09-27 只读核对）：4 个 User 全部 `is_superuser=True`、`is_staff=True`，没有 Group；3 个 Employee 与 User 无关联。
 - 生产库尚未核对（D1）。
+
+
+### 11.3 P1 案件工作台字段（2026-09-28 本地已实现，分支 `codex/p1-case-workspace`；生产未部署）
+
+| 对象 | 字段 | migration | 说明 |
+|---|---|---|---|
+| `cases` | `work_status`（`active`/`waiting`，默认 `active`）、`waiting_reason`（`customer_documents`/`immigration_review`/`third_party`/`payment`/`other`）、`waiting_note`、`waiting_since`、`waiting_until` | `cases/0018_case_work_status_next_action` | 作业状态，**不改变 13 个进捗 `status`**；案件进入完了/取下/不许可时自动解除待机 |
+| `cases` | `next_action_assignee_id`（FK Employee，`SET_NULL`）、`next_action_blocked_reason`、`next_action_completed_at`、`next_action_completed_by_id`（FK User，`SET_NULL`） | 同上 | 与既有的 `next_action`、`next_action_due_at` 一起构成 Next Action；负责人必须能查看该案件 |
+| `case_checklist_items` | `received_at`（DateField）、`document_id`（FK Document，`SET_NULL`，只能是同一案件的文件） | `cases/0019_checklist_item_document_link` | 资料受领；文件仍然只能经受保护下载访问 |
+
+- 上述字段在通用序列化器中为只读，只能通过 `apps/cases/work_service.py` 修改（事务 + Timeline + AuditLog）。
+- 均为加法 migration，不写入数据；旧代码可以在新表结构上运行。
+- Timeline 新增事件常量：`document_received`、`accounting_linked`（`event_type` 是自由 CharField，不涉及 migration）。

@@ -35,13 +35,13 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| P1-B1 | Case Workspace Action Bar（対応記録/資料受領/タスク/ファイル/入金/待機/完了） | ⬜ |
-| P1-B2 | 统一 Next Action（负责人/期限/状态/完成/snooze/阻塞原因） | ⬜ |
-| P1-B3 | Waiting 机制（`work_status`、原因、开始日、预计恢复日） | ⬜ |
-| P1-B4 | 今日作业台（我的作业 / 全体，支持直接操作） | ⬜ |
-| P1-B5 | Timeline 自动化剩余（文件、入金、支出、PDF、完了、再开） | 🚧 | 已接入：受付创建案件、状态变更、登记状态变更、进度信息变更、Checklist 完成 |
-| P1-B6 | Checklist 与资料受领联动 | ⬜ |
-| P1-B7 | RemoteSelect 请求竞态 / 错误状态 / 初始值测试 | ⬜ |
+| P1-B1 | Case Workspace Action Bar（対応記録/資料受領/タスク/ファイル/入金/待機/完了） | ✅（本地，分支 `codex/p1-case-workspace`） | `components/case/CaseActionBar.vue`；只用 Dialog/Drawer；「タスク」未单独做（历史 Task 模块保持隐藏），用「次の対応」代替 |
+| P1-B2 | 统一 Next Action（负责人/期限/状态/完成/snooze/阻塞原因） | ✅（本地） | Case 字段 + `work_service`；snooze 用「改期限」代替，未单独实现 |
+| P1-B3 | Waiting 机制（`work_status`、原因、开始日、预计恢复日） | ✅（本地） | Dashboard `waiting` 改为按 work_status 统计 |
+| P1-B4 | 今日作业台（我的作业 / 全体，支持直接操作） | ✅（本地） | `/api/workbench/today/`、`/workbench` |
+| P1-B5 | Timeline 自动化剩余（文件、入金、支出、PDF、完了、再开） | ✅（本地） | 文件登记/替换、资料受领、Waiting、Next Action、完了/再开、入金记录、税务证明关联/PDF；支出（Expense）无 case 外键，未接入（P2-C1） |
+| P1-B6 | Checklist 与资料受领联动 | ✅（本地） | `received_at`、`document`（同一案件）、`receive` action |
+| P1-B7 | RemoteSelect 请求竞态 / 错误状态 / 初始值测试 | ✅（本地） | `npm run test:unit`（esbuild + node:test，无新依赖）+ 后端权限范围测试 |
 
 ### P2 — 数据与财务闭环
 

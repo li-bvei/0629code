@@ -140,7 +140,7 @@ api                         → 聚合各模块，不被领域模块依赖
 
 - **ViewSet / 视图**：解析请求，声明 `access_resource`，调用 service，返回响应。不写权限判断逻辑，不直接用 `Model.objects` 读取受控模型。
 - **access_rules / BusinessAccessPolicy**：唯一的权限和数据范围来源。
-- **service**（如 `status_service.py`、`audit.services`）：业务规则、事务和 Timeline/AuditLog 写入。
+- **service**（如 `status_service.py`、`work_service.py`、`audit.services`）：业务规则、事务和 Timeline/AuditLog 写入。案件的作业状态（Next Action、待机）、资料受领、入金记录只能经 `apps/cases/work_service.py` 修改；入金记录只写 Timeline，不创建会计数据（会计仍是独立模块）。
 - **serializer**：字段契约和校验；敏感字段遮罩按策略传入的上下文决定，不自行判断权限。
 - **导出和渲染函数**（如 `excel.py`、`pdf.py`）：只接收已经缩小范围的 queryset 或数据，不自行查询受控模型。
 - API 围绕资源命名，内部 API 与 Portal API 分开，列表保持分页。
