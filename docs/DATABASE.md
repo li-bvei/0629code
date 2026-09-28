@@ -211,3 +211,22 @@ Portal 相关数据应支持：
 - 上述字段在通用序列化器中为只读，只能通过 `apps/cases/work_service.py` 修改（事务 + Timeline + AuditLog）。
 - 均为加法 migration，不写入数据；旧代码可以在新表结构上运行。
 - Timeline 新增事件常量：`document_received`、`accounting_linked`（`event_type` 是自由 CharField，不涉及 migration）。
+
+
+### 11.4 P2 会计关联（2026-09-28 本地已实现，分支 `codex/p2-accounting`；生产未部署）
+
+| 对象 | 字段 | migration | 说明 |
+|---|---|---|---|
+| `accounting_expenses`、`accounting_income_sources` | `customer_id`、`company_id`、`case_id`（均为可空 FK，`SET_NULL`） | `accounting/0016_income_expense_party_links` | 关联案件需要对该案件有「变更」权限，顾客/公司需要在本人可见范围内；关联或解除关联时，只在案件 Timeline 记录日期和分类（不记金额，不记所有者） |
+
+- `is_reimbursed`（精算済み）是历史兼容字段：当前 UI 已废止（新增、编辑、列表、筛选、仪表盘统计均不再显示，前端不再发送），不构成报销流程；模型字段、数据库列和历史数据保持不变，后端 API 暂时保留兼容（省略时新建为默认 False，更新时保留原值）。
+- `Expense.category` 仍是自由文本；分类建议（`category_suggestions.py`）只读取本人的历史记录，不写入数据。
+- Visa 分支从本分支的最新提交创建，Visa 的 migration 编号接在 `0016` 之后。
+
+
+### 11.5 P2 Visa 一括导入（2026-09-28 本地已实现，分支 `codex/p2-visa-import`；生产未部署）
+
+| 对象 | 字段 | migration | 说明 |
+|---|---|---|---|
+| `accounting_visa_import_batches`（VisaImportBatch） | 文件名、SHA-256、工作表、字符编码、列映射、创建方式、状态、行数/成功/错误/跳过件数、`results`（逐行结果）、已处理 `request_id` | `accounting/0017_visa_import_batch`（接在会计分支 0016 之后） | 不保存行数据本身；只保存错误行的字段、原值和错误原因（供修正用） |
+| `accounting_visa_return_applications` | `import_batch_id`（可空 FK，`SET_NULL`）、`import_row_number` | 同上 | 标记由哪个导入批次、第几行创建 |

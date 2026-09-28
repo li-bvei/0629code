@@ -66,6 +66,20 @@ class Expense(models.Model):
         blank=True,
         related_name='updated_expenses',
     )
+    # 任意の関連（P2）：顧客・会社・案件。関連付けは BusinessAccessPolicy で検査し、
+    # 案件への関連付けは案件の Timeline に「関連付けた事実」だけを残す（会計データは会計側）。
+    customer = models.ForeignKey(
+        'customers.Customer', verbose_name='関連顧客', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    company = models.ForeignKey(
+        'companies.Company', verbose_name='関連会社', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    case = models.ForeignKey(
+        'cases.Case', verbose_name='関連案件', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
     created_at = models.DateTimeField('作成日時', auto_now_add=True)
     updated_at = models.DateTimeField('更新日時', auto_now=True)
 
@@ -91,6 +105,20 @@ class IncomeSource(models.Model):
     amount = models.DecimalField('金額', max_digits=12, decimal_places=0)
     note = models.TextField('備考', blank=True)
     is_exported = models.BooleanField('出力済み', default=False)
+    # 任意の関連（P2）：顧客・会社・案件。関連付けは BusinessAccessPolicy で検査し、
+    # 案件への関連付けは案件の Timeline に「関連付けた事実」だけを残す（会計データは会計側）。
+    customer = models.ForeignKey(
+        'customers.Customer', verbose_name='関連顧客', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    company = models.ForeignKey(
+        'companies.Company', verbose_name='関連会社', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
+    case = models.ForeignKey(
+        'cases.Case', verbose_name='関連案件', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='%(class)s_links',
+    )
     created_at = models.DateTimeField('作成日時', auto_now_add=True)
     updated_at = models.DateTimeField('更新日時', auto_now=True)
 
@@ -389,6 +417,12 @@ class VisaReturnApplication(models.Model):
     guarantor_snapshot = models.JSONField('保証人スナップショット', default=dict, blank=True)
     form_data = models.JSONField('表单数据', default=dict, blank=True)
     note = models.TextField('備考', blank=True)
+    # CSV/XLSX 一括取込で作られた場合の取込元（P2）
+    import_batch = models.ForeignKey(
+        'VisaImportBatch', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='applications', verbose_name='取込バッチ',
+    )
+    import_row_number = models.PositiveIntegerField('取込元の行番号', null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -411,6 +445,58 @@ class VisaReturnApplication(models.Model):
 
     def __str__(self):
         return self.applicant_name or f'返签visa表 {self.pk}'
+
+
+class VisaImportBatch(models.Model):
+    """返签 visa 表の CSV/XLSX 一括取込の記録（重複取込の検出・再試行・監査の単位）。
+
+    行データの本体は保存しない。結果（行番号・状態・作成した申請 ID・誤り）だけを残す。
+    誤り行は利用者が修正できるよう、項目名・誤り内容・元の値を errors に保持する。
+    """
+
+    MODE_VALID_ONLY = 'valid_only'
+    MODE_ALL_OR_NOTHING = 'all_or_nothing'
+    MODE_CHOICES = [
+        (MODE_VALID_ONLY, '有効な行だけ作成し、誤り行は報告'),
+        (MODE_ALL_OR_NOTHING, 'すべて正しい場合だけ作成'),
+    ]
+    STATUS_PARSED = 'parsed'
+    STATUS_PARTIAL = 'partial'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CHOICES = [
+        (STATUS_PARSED, '読込済み'),
+        (STATUS_PARTIAL, '一部作成'),
+        (STATUS_COMPLETED, '作成完了'),
+    ]
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='visa_import_batches', verbose_name='作成者',
+    )
+    file_name = models.CharField('ファイル名', max_length=255)
+    file_sha256 = models.CharField('ファイルハッシュ', max_length=64, db_index=True)
+    sheet_name = models.CharField('シート名', max_length=100, blank=True)
+    encoding = models.CharField('文字コード', max_length=30, blank=True)
+    column_mapping = models.JSONField('列の対応付け', default=dict, blank=True)
+    mode = models.CharField('作成方式', max_length=20, choices=MODE_CHOICES, default=MODE_VALID_ONLY)
+    status = models.CharField('状態', max_length=20, choices=STATUS_CHOICES, default=STATUS_PARSED)
+    row_count = models.PositiveIntegerField('行数', default=0)
+    success_count = models.PositiveIntegerField('作成件数', default=0)
+    error_count = models.PositiveIntegerField('誤り件数', default=0)
+    skipped_count = models.PositiveIntegerField('重複スキップ件数', default=0)
+    results = models.JSONField('行ごとの結果', default=dict, blank=True)
+    committed_request_ids = models.JSONField('処理済み request_id', default=list, blank=True)
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_visa_import_batches'
+        verbose_name = '返签visa表 一括取込'
+        verbose_name_plural = '返签visa表 一括取込'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.file_name} ({self.created_at:%Y-%m-%d})'
 
 
 class VisaGuarantorTemplate(models.Model):

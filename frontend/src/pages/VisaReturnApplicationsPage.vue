@@ -25,6 +25,7 @@ import type {
 } from '../types/accounting'
 import { formatDate } from '../utils/date'
 import VisaReturnBatchDrawer from '../components/VisaReturnBatchDrawer.vue'
+import VisaImportDrawer from '../components/VisaImportDrawer.vue'
 import './accounting/accounting.css'
 
 type VisaReturnForm = VisaReturnApplicationPayload & {
@@ -38,6 +39,8 @@ const dialogVisible = ref(false)
 const detailVisible = ref(false)
 const templateDrawerVisible = ref(false)
 const batchDrawerVisible = ref(false)
+// CSV/XLSX 一括取込（主な入口）。既存の「多人一括作成」（顧客選択＋TSV 貼付）は補助入口として残す。
+const importDrawerVisible = ref(false)
 const applications = ref<VisaReturnApplication[]>([])
 const guarantorTemplates = ref<VisaGuarantorTemplate[]>([])
 const selectedApplication = ref<VisaReturnApplication | null>(null)
@@ -610,7 +613,8 @@ onMounted(() => {
         <div class="accounting-toolbar">
           <el-button @click="openTemplateDrawer">在日担保人模板管理</el-button>
           <el-button @click="openCreateDialog">1名を詳細入力</el-button>
-          <el-button type="primary" @click="openBatchDrawer">多人一括作成</el-button>
+          <el-button @click="openBatchDrawer">多人一括作成（貼付）</el-button>
+          <el-button type="primary" @click="importDrawerVisible = true">CSV / Excel から一括作成</el-button>
         </div>
       </div>
     </div>
@@ -931,6 +935,7 @@ onMounted(() => {
       </template>
     </el-dialog>
 
+    <VisaImportDrawer v-model="importDrawerVisible" @imported="fetchApplications(1)" />
     <VisaReturnBatchDrawer
       v-model="batchDrawerVisible"
       :guarantor-templates="guarantorTemplates"

@@ -25,6 +25,7 @@ from .models import (
     VisaReturnApplication,
     VoucherItemTemplate,
 )
+from .category_suggestions import build_suggestions
 from .excel import expenses_excel_response, project_excel_response
 from .pdf import voucher_pdf_response
 from .serializers import (
@@ -183,6 +184,29 @@ def build_project_expense_category_chart(projects):
     return [{'name': item['name'], 'amount': decimal_to_number(item['amount'])} for item in items]
 
 
+def record_accounting_case_link(request, instance, previous_case, *, kind):
+    """会計記録と案件の関連付け／解除を案件の Timeline に残す。
+
+    金額や所有者などの会計データは載せない（報銷の分離を保つため、案件を見られる人に
+    他人の支出額を見せない）。会計データ自体は会計モジュールにだけ置く。
+    """
+    label = '支出' if kind == 'expense' else '収入'
+    event_type = Timeline.EVENT_EXPENSE_RECORDED if kind == 'expense' else Timeline.EVENT_ACCOUNTING_LINKED
+    date_value = getattr(instance, 'expense_date', None) or getattr(instance, 'source_date', None)
+    detail = f'日付：{date_value}' + (f' / カテゴリ：{instance.category}' if kind == 'expense' else '')
+    current_case = instance.case
+    if previous_case is not None and (current_case is None or current_case.pk != previous_case.pk):
+        record_case_event(previous_case, event_type, f'{label}の関連付けを解除', description=detail,
+                          actor=request.user, metadata={'module': f'accounting.{kind}', 'record_id': instance.pk,
+                                                        'linked': False})
+    if current_case is not None and (previous_case is None or current_case.pk != previous_case.pk):
+        record_case_event(current_case, event_type, f'{label}を関連付け', description=detail,
+                          actor=request.user, metadata={'module': f'accounting.{kind}', 'record_id': instance.pk,
+                                                        'linked': True})
+        record(module='accounting', action=f'{kind}_case_linked', request=request, obj=instance,
+               extra={'case_id': current_case.pk})
+
+
 class ExpenseCategoryViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     access_resource = 'expense_category'
     queryset = ExpenseCategory.objects.all()
@@ -205,8 +229,8 @@ class ExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     expense_change_all で他人分の変更／expense_export_all で他人分の出力。"""
 
     access_resource = 'expense'
-    access_action_map = {'excel': 'export', 'summary': 'list'}
-    queryset = Expense.objects.select_related('owner', 'owner__employee')
+    access_action_map = {'excel': 'export', 'summary': 'list', 'category_suggestions': 'list'}
+    queryset = Expense.objects.select_related('owner', 'owner__employee', 'case', 'customer', 'company')
     serializer_class = ExpenseSerializer
 
     def _audit_cross_user_view(self, queryset):
@@ -231,10 +255,30 @@ class ExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
                    via_permission='accounting.expense_view_all')
         return Response(self.get_serializer(instance).data)
 
+    def after_create(self, instance):
+        record_accounting_case_link(self.request, instance, None, kind='expense')
+
+    def perform_update(self, serializer):
+        previous_case = serializer.instance.case
+        super().perform_update(serializer)
+        record_accounting_case_link(self.request, serializer.instance, previous_case, kind='expense')
+
     def after_update(self, instance):
         if instance.owner_id != self.business_policy.user_id:
             record(module='accounting', action='expense_change_other', request=self.request, obj=instance,
                    via_permission='accounting.expense_change_all')
+
+    @action(detail=False, methods=['get'], url_path='category-suggestions')
+    def category_suggestions(self, request):
+        """カテゴリ入力支援。検索・規範名提案・推薦はすべて本人の履歴だけを使う（他人の報銷は読まない）。"""
+        params = request.query_params
+        return Response(build_suggestions(
+            request.user,
+            query=params.get('q', ''),
+            place=params.get('place', ''),
+            expense_target=params.get('expense_target', ''),
+            note=params.get('note', ''),
+        ))
 
     def perform_destroy(self, instance):
         if instance.owner_id != self.business_policy.user_id:
@@ -246,6 +290,8 @@ class ExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         queryset = super().get_queryset()
         params = self.request.query_params
 
+        if params.get('case'):
+            queryset = queryset.filter(case_id=params['case'])
         if params.get('start_date'):
             queryset = queryset.filter(expense_date__gte=params['start_date'])
         if params.get('end_date'):
@@ -371,13 +417,23 @@ class ExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
 
 class IncomeSourceViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     access_resource = 'income'
-    queryset = IncomeSource.objects.all()
+    queryset = IncomeSource.objects.select_related('case', 'customer', 'company')
+
+    def after_create(self, instance):
+        record_accounting_case_link(self.request, instance, None, kind='income')
+
+    def perform_update(self, serializer):
+        previous_case = serializer.instance.case
+        super().perform_update(serializer)
+        record_accounting_case_link(self.request, serializer.instance, previous_case, kind='income')
     serializer_class = IncomeSourceSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
         params = self.request.query_params
 
+        if params.get('case'):
+            queryset = queryset.filter(case_id=params['case'])
         if params.get('start_date'):
             queryset = queryset.filter(source_date__gte=params['start_date'])
         if params.get('end_date'):
@@ -690,6 +746,7 @@ class VisaReturnApplicationViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
         application = self.get_object()
+        record(module='accounting', action='visa_pdf_export', request=request, obj=application)
         return visa_return_pdf_response(application)
 
 

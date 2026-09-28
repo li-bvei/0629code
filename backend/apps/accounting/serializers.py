@@ -32,6 +32,9 @@ class ExpenseCategorySerializer(serializers.ModelSerializer):
 
 class ExpenseSerializer(serializers.ModelSerializer):
     owner_username = serializers.CharField(source='owner.username', read_only=True, default='')
+    case_number = serializers.CharField(source='case.case_number', read_only=True, default='')
+    customer_name = serializers.CharField(source='customer.name', read_only=True, default='')
+    company_name = serializers.CharField(source='company.name', read_only=True, default='')
     owner_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -51,6 +54,10 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
 
 class IncomeSourceSerializer(serializers.ModelSerializer):
+    case_number = serializers.CharField(source='case.case_number', read_only=True, default='')
+    customer_name = serializers.CharField(source='customer.name', read_only=True, default='')
+    company_name = serializers.CharField(source='company.name', read_only=True, default='')
+
     class Meta:
         model = IncomeSource
         fields = '__all__'

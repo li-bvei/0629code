@@ -62,6 +62,7 @@ import {
 import type { CaseStageDisplay } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 import CaseActionBar from '../components/case/CaseActionBar.vue'
+import CaseAccountingSummary from '../components/case/CaseAccountingSummary.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1375,6 +1376,7 @@ onMounted(() => {
         <el-card shadow="never">
           <template #header>関連レコード</template>
           <div class="case-related-links"><router-link class="text-link" :to="`/customers/${caseDetail?.customer}`">顧客詳細を開く</router-link><router-link v-if="caseDetail?.company" class="text-link" :to="`/companies/${caseDetail.company}`">会社詳細を開く</router-link><el-button text type="primary" @click="openRegistrationStatusDialog">登録状態を変更</el-button></div>
+          <CaseAccountingSummary :case-id="caseDetail.id" class="case-sidebar-accounting" />
         </el-card>
       </aside>
       </div>
@@ -2258,6 +2260,12 @@ onMounted(() => {
   gap: 16px;
   position: sticky;
   top: 82px;
+}
+
+.case-sidebar-accounting {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .case-sidebar-fields {

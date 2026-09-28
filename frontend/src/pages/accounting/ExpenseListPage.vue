@@ -4,7 +4,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { saveAs } from 'file-saver'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   createAccountingExpense,
   deleteAccountingExpense,
@@ -31,6 +31,7 @@ interface BatchExpenseRow {
 }
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const errorMessage = ref('')
 const expenses = ref<Expense[]>([])
@@ -44,7 +45,8 @@ const filters = ref<AccountingListParams>({
   end_date: null,
   category: '',
   payment_method: '',
-  is_reimbursed: '',
+  // 案件の会計要約から来た場合は、その案件に関連付いた支出だけを表示する
+  case: typeof route.query.case === 'string' ? route.query.case : undefined,
 })
 
 const addDialogVisible = ref(false)
@@ -58,7 +60,6 @@ const addForm = ref<ExpensePayload>({
   payment_method: '',
   expense_target: '',
   note: '',
-  is_reimbursed: false,
   is_exported: false,
 })
 
@@ -82,10 +83,6 @@ const summary = ref({
 })
 
 const paymentMethodOptions = ['现金', '信用卡', '银行转账', 'PayPay', 'ICOCA', '公司账户', '个人垫付', '其他']
-const boolOptions = [
-  { label: 'はい', value: 'true' },
-  { label: 'いいえ', value: 'false' },
-]
 
 const addRules: FormRules<ExpensePayload> = {
   expense_date: [{ required: true, message: '日付を入力してください。', trigger: 'change' }],
@@ -95,8 +92,6 @@ const addRules: FormRules<ExpensePayload> = {
 
 const validBatchRows = computed(() => batchRows.value.filter((row) => !row.errors.length))
 const invalidBatchRows = computed(() => batchRows.value.filter((row) => row.errors.length))
-
-const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ')
 
 const downloadFileName = (contentDisposition?: string) => {
   const fallback = '支出記録.xlsx'
@@ -115,7 +110,6 @@ const createEmptyExpenseForm = (): ExpensePayload => ({
   payment_method: '',
   expense_target: '',
   note: '',
-  is_reimbursed: false,
   is_exported: false,
 })
 
@@ -191,7 +185,6 @@ const clearFilters = () => {
     end_date: null,
     category: '',
     payment_method: '',
-    is_reimbursed: '',
   }
   loadExpensesWithSummary(1)
 }
@@ -318,7 +311,6 @@ const submitBatch = async () => {
         payment_method: row.payment_method,
         expense_target: row.expense_target,
         note: row.note,
-        is_reimbursed: false,
         is_exported: false,
       })
       successCount += 1
@@ -408,9 +400,6 @@ onMounted(() => {
           <el-select v-model="filters.payment_method" clearable placeholder="支払方法" class="accounting-filter-select">
             <el-option v-for="method in paymentMethodOptions" :key="method" :label="method" :value="method" />
           </el-select>
-          <el-select v-model="filters.is_reimbursed" clearable placeholder="精算済み" class="accounting-filter-select">
-            <el-option v-for="option in boolOptions" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
           <div class="accounting-filter-actions">
             <el-button type="primary" @click="searchExpenses">検索</el-button>
             <el-button @click="clearFilters">クリア</el-button>
@@ -456,11 +445,14 @@ onMounted(() => {
         <el-table-column prop="payment_method" label="支払方法" min-width="130" />
         <el-table-column prop="expense_target" label="費用対象" min-width="160" />
         <el-table-column prop="note" label="備考" min-width="220" show-overflow-tooltip />
+        <el-table-column label="関連案件" min-width="150">
+          <template #default="{ row }">
+            <router-link v-if="row.case" class="text-link" :to="`/cases/${row.case}`">{{ row.case_number }}</router-link>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="summary.expenseScope === 'all'" label="所有者" min-width="110">
           <template #default="{ row }">{{ row.owner_name || row.owner_username || '未設定' }}</template>
-        </el-table-column>
-        <el-table-column label="精算済み" width="110">
-          <template #default="{ row }">{{ formatBoolean(row.is_reimbursed) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
@@ -526,9 +518,6 @@ onMounted(() => {
           </el-form-item>
           <el-form-item label="備考" prop="note" class="accounting-dialog-full">
             <el-input v-model="addForm.note" type="textarea" :rows="3" />
-          </el-form-item>
-          <el-form-item class="accounting-dialog-full">
-            <el-checkbox v-model="addForm.is_reimbursed">精算済み</el-checkbox>
           </el-form-item>
         </div>
       </el-form>

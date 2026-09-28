@@ -14,6 +14,7 @@ from .zei_pdf_position_debug import (
     zei_pdf_position_templates,
     zei_pdf_position_test_pdf,
 )
+from .visa_import_views import VisaImportViewSet
 from .views import (
     AccountingProjectExpenseViewSet,
     AccountingProjectIncomeViewSet,
@@ -44,6 +45,7 @@ router.register('project-expenses', AccountingProjectExpenseViewSet, basename='a
 router.register('vouchers', AccountingVoucherViewSet, basename='accounting-voucher')
 router.register('voucher-item-templates', VoucherItemTemplateViewSet, basename='accounting-voucher-item-template')
 router.register('visa-return-applications', VisaReturnApplicationViewSet, basename='visa-return-application')
+router.register('visa-imports', VisaImportViewSet, basename='visa-import')
 router.register('visa-guarantor-templates', VisaGuarantorTemplateViewSet, basename='visa-guarantor-template')
 router.register('seifu-notice-records', SeifuNoticePdfRecordViewSet, basename='seifu-notice-record')
 router.register('tax-renewal-records', TaxRenewalVoucherRecordViewSet, basename='tax-renewal-record')

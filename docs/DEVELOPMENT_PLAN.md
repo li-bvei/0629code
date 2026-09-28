@@ -47,16 +47,16 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| P2-C1 | Income/Expense 增加 customer/company/case 可选外键 | ⬜ |
-| P2-C2 | 从 Case 查看账务、从账务回到 Case | ⬜ |
+| P2-C1 | Income/Expense 增加 customer/company/case 可选外键 | ✅（本地，分支 `codex/p2-accounting`） | 关联案件需要该案件的「变更」权限；只指定案件时自动带出顾客/公司 |
+| P2-C2 | 从 Case 查看账务、从账务回到 Case | ✅（本地） | `cases/{id}/accounting-summary/`（按会计权限范围）、支出一览的关联案件列、`?case=` 筛选 |
 | P2-C3 | 归档完善（`archived_by`、理由、恢复、审计） | ⬜ |
 | P2-C4 | 全局搜索 `/api/search/?q=` | ⬜ |
 | P2-C5 | 关联案件创建、公司详情扩展 | ⬜ |
 | P2-C6 | 前端路由级 lazy loading | ⬜ |
-| P2-C7 | 支出分类手动输入、规范化与本人历史推荐 | ⬜ |
-| P2-C8 | 个人报销按 owner 隔离并保持简单登记 | ⬜ | 不新增审核、支付或入账流程 |
+| P2-C7 | 支出分类手动输入、规范化与本人历史推荐 | ✅（本地） | `expenses/category-suggestions/`；只用本人历史；只做建议，不改写旧数据 |
+| P2-C8 | 个人报销按 owner 隔离并保持简单登记 | ✅（本地） | 维持 P0 的 owner 隔离；没有新增任何审批/支付/入账状态（有测试确认） |
 | P2-C9 | Checklist/Document 现有系统文件管理 | ⬜ | 不连接或迁移 Google Drive；第一阶段不做完整版本管理 |
-| P2-C10 | Visa CSV/XLSX 导入、校验与批量 PDF | ⬜ |
+| P2-C10 | Visa CSV/XLSX 导入、校验与批量 PDF | ✅（本地，分支 `codex/p2-visa-import`，基于会计分支） | `accounting/visa-imports/*`；导出全部写审计 |
 | P2-C11 | 报价/契约/请求/领收帐票分别完善 | ⬜ |
 
 ### P3 — 不动产业务模块
@@ -196,7 +196,7 @@
 
 - P2-C1/C2：先补 Accounting 与 Customer/Company/Case 的可选关系，再从各记录工作台展示只读摘要和跳转；不把会计明细复制进 Case。
 - P2-C7：分类输入改为可搜索历史分类、可手输、同义词规范化建议、可按本人历史推荐，优先本地规则；推荐必须由用户确认。第一阶段保留 `Expense.category` 自由文本，不改外键、不批量清洗；保留原始输入，不自动重写历史 Expense。
-- P2-C8：每条个人报销具有 owner，普通用户仅限本人；现有 Expense 全部归当前用户。保持当前简单登记，不新增提交、审核、批准、支付、入账或退回状态。会计管理员的 `view_all`、`change_all`、`export_all` 分别控制。
+- P2-C8：每条个人报销具有 owner，普通用户仅限本人；现有 Expense 全部归当前用户。保持当前简单登记，不新增提交、审核、批准、支付、入账或退回状态。会计管理员的 `view_all`、`change_all`、`export_all` 分别控制。「精算済み」UI 已于 2026-09-29 废止；`is_reimbursed` 仅作历史兼容字段保留（不删字段/列/数据，不做 migration），不构成报销流程。
 - P2-C9：扩展现有 Checklist/Document，完成系统内上传、下载、分类、案件/清单关联、文件元数据（原始名/存储名/MIME/大小/哈希/上传人/上传时间）、替换/归档/删除审计、后端权限和备份恢复规则；不建设 Google Drive 集成，也不迁移现有 Drive 文件。第一阶段不做版本树、版本比较、版本恢复。
 - P2-C10：Visa 采用 CSV/XLSX 上传、工作表选择、列映射、预览、逐行校验、幂等生成、ZIP 与错误报告；保留现有模块位置。
 - P2-C11：报价、契约、请求、领收分别维护状态和编号，但可共用帐票基础设施及统一导航入口。

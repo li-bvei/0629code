@@ -21,7 +21,6 @@ const dashboard = ref<AccountingDashboard>({
   monthly_expense_total: 0,
   monthly_income_source_total: 0,
   monthly_vehicle_km_total: 0,
-  monthly_unreimbursed_total: 0,
   total_expense_amount: 0,
   total_income_source_amount: 0,
   current_balance: 0,
@@ -34,7 +33,6 @@ const dashboard = ref<AccountingDashboard>({
 
 const formatCurrency = (value: number | string) => formatAccountingNumber(value)
 const formatDistance = (value: number | string) => `${Number(value || 0).toLocaleString()} km`
-const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ')
 
 const balanceValue = computed(() => Number(dashboard.value.current_balance || 0))
 const getChartTotal = (items: ExpenseTargetChartItem[]) =>
@@ -68,7 +66,6 @@ const summaryCards = computed<SummaryCard[]>(() => {
   if (d.vehicle_visible) {
     cards.push({ label: '本月用車公里数', value: formatDistance(d.monthly_vehicle_km_total ?? 0) })
   }
-  cards.push({ label: '本月未精算金額', value: formatCurrency(d.monthly_unreimbursed_total) })
   if (d.balance_visible) {
     cards.push({
       label: '账面剩余金额',
@@ -175,9 +172,6 @@ onMounted(() => {
               <template #default="{ row }">{{ formatCurrency(row.amount) }}</template>
             </el-table-column>
             <el-table-column prop="expense_target" label="費用対象" min-width="130" />
-            <el-table-column label="精算" width="80">
-              <template #default="{ row }">{{ formatBoolean(row.is_reimbursed) }}</template>
-            </el-table-column>
           </el-table>
           <p v-else class="empty-text">データがありません</p>
         </el-card>
