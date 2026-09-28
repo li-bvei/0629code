@@ -18,6 +18,7 @@ VIEW_FILES = [
     'api/workbench.py',
     'api/health.py',
     'apps/accounting/views.py',
+    'apps/accounting/visa_import_views.py',
     'apps/accounting/seifu_notice_pdf.py',
     'apps/accounting/visa_form_fields.py',
     'apps/accounting/visa_position_debug.py',

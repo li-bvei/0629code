@@ -746,6 +746,7 @@ class VisaReturnApplicationViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
         application = self.get_object()
+        record(module='accounting', action='visa_pdf_export', request=request, obj=application)
         return visa_return_pdf_response(application)
 
 

@@ -56,7 +56,7 @@
 | P2-C7 | 支出分类手动输入、规范化与本人历史推荐 | ✅（本地） | `expenses/category-suggestions/`；只用本人历史；只做建议，不改写旧数据 |
 | P2-C8 | 个人报销按 owner 隔离并保持简单登记 | ✅（本地） | 维持 P0 的 owner 隔离；没有新增任何审批/支付/入账状态（有测试确认） |
 | P2-C9 | Checklist/Document 现有系统文件管理 | ⬜ | 不连接或迁移 Google Drive；第一阶段不做完整版本管理 |
-| P2-C10 | Visa CSV/XLSX 导入、校验与批量 PDF | ⬜ |
+| P2-C10 | Visa CSV/XLSX 导入、校验与批量 PDF | ✅（本地，分支 `codex/p2-visa-import`，基于会计分支） | `accounting/visa-imports/*`；导出全部写审计 |
 | P2-C11 | 报价/契约/请求/领收帐票分别完善 | ⬜ |
 
 ### P3 — 不动产业务模块
