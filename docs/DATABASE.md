@@ -268,3 +268,11 @@ Portal 相关数据应支持：
 | `real_estate_profit_distributions` | 分配对象（名称/担当）、`method`（fixed/ratio）、`base_amount`、`ratio_percent`、`fixed_amount`、`amount`（自动计算）、`status`（draft/settled）、`settled_at`、备注 | 同上 | 不进入法定台账 |
 | `real_estate_import_runs` | 文件名、SHA-256、工作表、`summary`、`report`（行号・原值・规范化・错误・候选） | `real_estate/0002_import_runs` | 仅 dry-run 履历，不创建交易 |
 
+### 11.9 P2 平台能力收尾（2026-09-29 本地已实现，分支 `codex/p2-platform-completion`；生产未部署）
+
+| 对象 | 字段 | migration | 说明 |
+|---|---|---|---|
+| `office_settings`（OfficeSettings，单例 pk=1） | `fiscal_year_end_month`（1～12）、`updated_by_id`、`updated_at` | `office/0001_office_settings` | 不插入初始行；无行时用环境变量 `OFFICE_FISCAL_YEAR_END_MONTH`（兼容 `REAL_ESTATE_FISCAL_YEAR_END_MONTH`）→ 默认 3；权限 `office.manage_office_settings` |
+| `real_estate_legal_ledgers` | `fiscal_year_end_month`（决算月快照，可空） | `real_estate/0003_ledger_fiscal_month_snapshot` | 创建・年度关闭时保存；关闭后冻结；既有行为空，不回填 |
+| `cases` | `archived_by_id`、`archive_reason`、`restored_at`、`restored_by_id` | `cases/0020_case_archive_metadata` | `archived_at` 沿用；复原时清空 `archived_*`，旧值留在 Timeline/AuditLog；既有行不回填 |
+

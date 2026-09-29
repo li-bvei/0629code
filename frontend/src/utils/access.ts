@@ -7,6 +7,8 @@ const ROUTE_PERMISSIONS: Array<[string, string]> = [
   ['/vouchers/visa-return', 'accounting.use_visa'],
   ['/vouchers/tax-renewal', 'accounting.use_tax_renewal'],
   ['/vouchers/seifu-notice', 'accounting.use_seifu'],
+  ['/vouchers/estimates', 'accounting.use_estimate'],
+  ['/vouchers/contracts', 'accounting.use_contract'],
   ['/vouchers', 'accounting.use_voucher'],
   ['/reports', 'accounting.use_voucher'],
   ['/dashboard', 'cases.use_cases'],
@@ -21,6 +23,8 @@ const ROUTE_PERMISSIONS: Array<[string, string]> = [
   ['/reminders', 'cases.use_cases'],
   ['/timelines', 'cases.use_cases'],
   ['/documents', 'cases.use_cases'],
+  ['/real-estate/import', 'real_estate.real_estate_change_all'],
+  ['/real-estate', 'real_estate.use_real_estate'],
 ]
 
 export const requiredPermissionFor = (path: string): string | null => {

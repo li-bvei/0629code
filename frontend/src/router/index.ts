@@ -1,47 +1,48 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue'
-import AccountingDashboardPage from '../pages/accounting/AccountingDashboardPage.vue'
-import AccountingProjectDetailPage from '../pages/accounting/AccountingProjectDetailPage.vue'
-import AccountingProjectFormPage from '../pages/accounting/AccountingProjectFormPage.vue'
-import AccountingProjectListPage from '../pages/accounting/AccountingProjectListPage.vue'
-import AccountingVouchersPage from '../pages/AccountingVouchersPage.vue'
-import ExpenseCategoryFormPage from '../pages/accounting/ExpenseCategoryFormPage.vue'
-import ExpenseCategoryListPage from '../pages/accounting/ExpenseCategoryListPage.vue'
-import ExpenseFormPage from '../pages/accounting/ExpenseFormPage.vue'
-import ExpenseListPage from '../pages/accounting/ExpenseListPage.vue'
-import IncomeSourceFormPage from '../pages/accounting/IncomeSourceFormPage.vue'
-import IncomeSourceListPage from '../pages/accounting/IncomeSourceListPage.vue'
-import VehicleUsageFormPage from '../pages/accounting/VehicleUsageFormPage.vue'
-import VehicleUsageListPage from '../pages/accounting/VehicleUsageListPage.vue'
-import CaseDetailPage from '../pages/CaseDetailPage.vue'
-import CaseChecklistTemplatesPage from '../pages/CaseChecklistTemplatesPage.vue'
-import CasesPage from '../pages/CasesPage.vue'
-import CompanyDetailPage from '../pages/CompanyDetailPage.vue'
-import CompaniesPage from '../pages/CompaniesPage.vue'
-import CustomerDetailPage from '../pages/CustomerDetailPage.vue'
-import CustomersPage from '../pages/CustomersPage.vue'
-import DashboardPage from '../pages/DashboardPage.vue'
-import DocumentsPage from '../pages/DocumentsPage.vue'
-import EmployeesPage from '../pages/EmployeesPage.vue'
+const AccountingDashboardPage = () => import('../pages/accounting/AccountingDashboardPage.vue')
+const AccountingProjectDetailPage = () => import('../pages/accounting/AccountingProjectDetailPage.vue')
+const AccountingProjectFormPage = () => import('../pages/accounting/AccountingProjectFormPage.vue')
+const AccountingProjectListPage = () => import('../pages/accounting/AccountingProjectListPage.vue')
+const AccountingVouchersPage = () => import('../pages/AccountingVouchersPage.vue')
+const ExpenseCategoryFormPage = () => import('../pages/accounting/ExpenseCategoryFormPage.vue')
+const ExpenseCategoryListPage = () => import('../pages/accounting/ExpenseCategoryListPage.vue')
+const ExpenseFormPage = () => import('../pages/accounting/ExpenseFormPage.vue')
+const ExpenseListPage = () => import('../pages/accounting/ExpenseListPage.vue')
+const IncomeSourceFormPage = () => import('../pages/accounting/IncomeSourceFormPage.vue')
+const IncomeSourceListPage = () => import('../pages/accounting/IncomeSourceListPage.vue')
+const VehicleUsageFormPage = () => import('../pages/accounting/VehicleUsageFormPage.vue')
+const VehicleUsageListPage = () => import('../pages/accounting/VehicleUsageListPage.vue')
+const CaseDetailPage = () => import('../pages/CaseDetailPage.vue')
+const CaseChecklistTemplatesPage = () => import('../pages/CaseChecklistTemplatesPage.vue')
+const CasesPage = () => import('../pages/CasesPage.vue')
+const CompanyDetailPage = () => import('../pages/CompanyDetailPage.vue')
+const CompaniesPage = () => import('../pages/CompaniesPage.vue')
+const CustomerDetailPage = () => import('../pages/CustomerDetailPage.vue')
+const CustomersPage = () => import('../pages/CustomersPage.vue')
+const DashboardPage = () => import('../pages/DashboardPage.vue')
+const DocumentsPage = () => import('../pages/DocumentsPage.vue')
+const EmployeesPage = () => import('../pages/EmployeesPage.vue')
 import LoginPage from '../pages/LoginPage.vue'
-import PlaceholderPage from '../pages/PlaceholderPage.vue'
-import ReceptionNewPage from '../pages/ReceptionNewPage.vue'
-import RemindersPage from '../pages/RemindersPage.vue'
-import SeifuNoticePdfTextPage from '../pages/SeifuNoticePdfTextPage.vue'
-import SettingsPage from '../pages/SettingsPage.vue'
-import TasksPage from '../pages/TasksPage.vue'
-import TaxRenewalVouchersPage from '../pages/TaxRenewalVouchersPage.vue'
-import TimelinesPage from '../pages/TimelinesPage.vue'
-import VisaReturnApplicationsPage from '../pages/VisaReturnApplicationsPage.vue'
-import VoucherPlaceholderPage from '../pages/VoucherPlaceholderPage.vue'
-import ContractsPage from '../pages/vouchers/ContractsPage.vue'
-import RealEstateDetailPage from '../pages/real-estate/RealEstateDetailPage.vue'
-import RealEstateImportPage from '../pages/real-estate/RealEstateImportPage.vue'
-import RealEstateListPage from '../pages/real-estate/RealEstateListPage.vue'
-import EstimatesPage from '../pages/vouchers/EstimatesPage.vue'
-import TodayWorkbenchPage from '../pages/TodayWorkbenchPage.vue'
+const PlaceholderPage = () => import('../pages/PlaceholderPage.vue')
+const ReceptionNewPage = () => import('../pages/ReceptionNewPage.vue')
+const RemindersPage = () => import('../pages/RemindersPage.vue')
+const SeifuNoticePdfTextPage = () => import('../pages/SeifuNoticePdfTextPage.vue')
+const SettingsPage = () => import('../pages/SettingsPage.vue')
+const TasksPage = () => import('../pages/TasksPage.vue')
+const TaxRenewalVouchersPage = () => import('../pages/TaxRenewalVouchersPage.vue')
+const TimelinesPage = () => import('../pages/TimelinesPage.vue')
+const VisaReturnApplicationsPage = () => import('../pages/VisaReturnApplicationsPage.vue')
+const VoucherPlaceholderPage = () => import('../pages/VoucherPlaceholderPage.vue')
+const ContractsPage = () => import('../pages/vouchers/ContractsPage.vue')
+const RealEstateDetailPage = () => import('../pages/real-estate/RealEstateDetailPage.vue')
+const RealEstateImportPage = () => import('../pages/real-estate/RealEstateImportPage.vue')
+const RealEstateListPage = () => import('../pages/real-estate/RealEstateListPage.vue')
+const EstimatesPage = () => import('../pages/vouchers/EstimatesPage.vue')
+const TodayWorkbenchPage = () => import('../pages/TodayWorkbenchPage.vue')
 import { landingPath, requiredPermissionFor } from '../utils/access'
 import { useAuthStore } from '../stores/auth'
+import { handleChunkLoadError } from './chunkError'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -329,5 +330,9 @@ router.beforeEach(async (to) => {
 
   return true
 })
+
+// 分割した画面の読み込みに失敗した場合（再デプロイ後の古いファイル参照・通信断など）に明確に知らせる。
+// 認証状態・権限判定は beforeEach のまま変えない。
+router.onError((error, to) => handleChunkLoadError(error, to?.fullPath))
 
 export default router
