@@ -418,14 +418,33 @@ def change_case_registration_status(case, new_status, changed_by, change_date=No
         locked_case.registration_status = new_status
         update_fields = ['registration_status', 'updated_at']
         detail_lines = []
-        if new_status == Case.REGISTRATION_STATUS_ARCHIVED and not locked_case.archived_at:
+        title = '登録状態変更'
+        event_type = Timeline.EVENT_REGISTRATION_STATUS_CHANGED
+        archiving = new_status == Case.REGISTRATION_STATUS_ARCHIVED and previous_status != new_status
+        restoring = previous_status == Case.REGISTRATION_STATUS_ARCHIVED and new_status != previous_status
+        if archiving:
             locked_case.archived_at = change_date_value
-            update_fields.append('archived_at')
+            locked_case.archived_by = changed_by if getattr(changed_by, 'is_authenticated', False) else None
+            locked_case.archive_reason = note[:500]
+            update_fields += ['archived_at', 'archived_by', 'archive_reason']
             detail_lines.append(f'アーカイブ日：{_format_date(change_date_value)}')
+            event_type = Timeline.EVENT_CASE_ARCHIVED  # 題名は従来どおり「登録状態変更」
+        elif restoring:
+            # 復元：案件は削除せず、状態を戻して通常どおり権限・進捗に従って扱えるようにする
+            detail_lines.append(f'アーカイブ日：{_format_date(locked_case.archived_at) if locked_case.archived_at else "-"}')
+            if locked_case.archive_reason:
+                detail_lines.append(f'アーカイブ理由：{locked_case.archive_reason}')
+            locked_case.archived_at = None
+            locked_case.archived_by = None
+            locked_case.archive_reason = ''
+            locked_case.restored_at = timezone.now()
+            locked_case.restored_by = changed_by if getattr(changed_by, 'is_authenticated', False) else None
+            update_fields += ['archived_at', 'archived_by', 'archive_reason', 'restored_at', 'restored_by']
+            event_type = Timeline.EVENT_CASE_RESTORED
         locked_case.save(update_fields=update_fields)
         timeline = _create_timeline(
             locked_case,
-            '登録状態変更',
+            title,
             REGISTRATION_STATUS_LABELS.get(previous_status, previous_status),
             REGISTRATION_STATUS_LABELS.get(new_status, new_status),
             changed_by,
@@ -434,7 +453,7 @@ def change_case_registration_status(case, new_status, changed_by, change_date=No
             force,
             source,
             detail_lines,
-            event_type=Timeline.EVENT_REGISTRATION_STATUS_CHANGED,
+            event_type=event_type,
         )
         event = {
             'event_type': 'case_registration_status_changed',

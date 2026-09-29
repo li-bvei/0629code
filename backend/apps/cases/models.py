@@ -194,6 +194,13 @@ class Case(models.Model):
     withdrawn_at = models.DateField('取下げ日', blank=True, null=True)
     completed_at = models.DateField('完了日', blank=True, null=True)
     archived_at = models.DateField('アーカイブ日', blank=True, null=True)
+    # アーカイブの実行者・理由（P2）。復元時はここを空にし、経過（Timeline）と監査に旧値を残す。
+    archived_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='アーカイブ実行者', on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='+')
+    archive_reason = models.CharField('アーカイブ理由', max_length=500, blank=True)
+    restored_at = models.DateTimeField('最終復元日時', null=True, blank=True)
+    restored_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='最終復元者', on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='+')
     status_changed_at = models.DateField('進捗変更日', blank=True, null=True)
     next_action = models.TextField('次の対応', blank=True)
     next_action_due_at = models.DateField('対応期限', blank=True, null=True)

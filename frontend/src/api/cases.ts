@@ -191,6 +191,17 @@ export const changeCaseRegistrationStatus = async (id: number, payload: CaseStat
   return response.data
 }
 
+// アーカイブ（理由必須。進捗が終わっていない案件は force で確認済みとして送る）と復元
+export const archiveCase = async (id: number, payload: { reason: string; force?: boolean }) => {
+  const response = await http.post<CaseStatusChangeResponse>(`/cases/${id}/archive/`, payload)
+  return response.data
+}
+
+export const restoreCase = async (id: number, reason = '') => {
+  const response = await http.post<CaseStatusChangeResponse>(`/cases/${id}/restore/`, { reason })
+  return response.data
+}
+
 export const updateCaseProgressInfo = async (
   id: number,
   payload: CaseStatusPayload & { note?: string },

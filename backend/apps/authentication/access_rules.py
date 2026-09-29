@@ -309,6 +309,10 @@ class CaseRule(Rule):
 CASE_RULE = CaseRule()
 
 
+def _is_archived_case(case):
+    return getattr(case, 'registration_status', None) == 'archived'
+
+
 class CaseChildRule(Rule):
     """Case にぶら下がる資源（Checklist・Timeline・Task・Reminder・Document）。"""
 
@@ -335,6 +339,8 @@ class CaseChildRule(Rule):
 
     def object_decision(self, policy, obj, action):
         case = self.parent(obj)
+        if case is not None and action not in READ_ACTIONS and _is_archived_case(case):
+            return FORBIDDEN  # アーカイブ済み案件の子資源は変更できない（復元が必要）
         if case is None:
             if not self.can_view_all(policy):
                 return NOT_FOUND
@@ -354,6 +360,8 @@ class CaseChildRule(Rule):
             return  # 必須チェックはシリアライザに任せる
         if CASE_RULE.object_decision(policy, case, 'change') != ALLOW:
             raise PermissionDenied('この案件への書き込み権限がありません。')
+        if _is_archived_case(case):
+            raise PermissionDenied('アーカイブ済みの案件には追加・変更できません。先に復元してください。')
 
     def prepare_create(self, policy, data):
         self._check_parent_writable(policy, data.get(self.parent_field))

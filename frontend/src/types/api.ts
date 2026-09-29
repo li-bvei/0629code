@@ -300,6 +300,9 @@ export interface Case {
   withdrawn_at: string | null
   completed_at: string | null
   archived_at: string | null
+  archived_by_name?: string
+  archive_reason?: string
+  restored_at?: string | null
   status_changed_at: string | null
   next_action: string
   next_action_due_at: string | null

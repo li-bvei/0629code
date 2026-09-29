@@ -8,6 +8,8 @@ import {
   applyCaseChecklistTemplate,
   cancelCase,
   changeCaseRegistrationStatus,
+  archiveCase,
+  restoreCase,
   changeCaseStatus,
   createCaseChecklistItem,
   deleteCaseChecklistItem,
@@ -576,6 +578,68 @@ const openCorrectionDialog = () => {
     completed_at: caseDetail.value.completed_at,
   }
   correctionDialogVisible.value = true
+}
+
+const isArchived = computed(() => caseDetail.value?.registration_status === 'archived')
+
+const archiveErrorResponse = (error: unknown) =>
+  (error as { response?: { status?: number; data?: { detail?: string; requires_force?: boolean; warnings?: { message: string }[]; reason?: string[] } } })?.response
+
+const archiveCurrentCase = async () => {
+  if (!caseDetail.value) return
+  let reason = ''
+  try {
+    reason = (await ElMessageBox.prompt('アーカイブの理由（必須）。案件と履歴は削除されず、復元するまで変更できなくなります。', '案件をアーカイブ', {
+      confirmButtonText: 'アーカイブ', cancelButtonText: 'キャンセル', inputPattern: /\S/, inputErrorMessage: '理由を入力してください',
+    })).value
+  } catch {
+    return
+  }
+  const send = async (force: boolean) => {
+    await archiveCase(caseId.value, { reason, force })
+    ElMessage.success('アーカイブしました。')
+    await fetchCaseDetail()
+  }
+  try {
+    await send(false)
+  } catch (error) {
+    const response = archiveErrorResponse(error)
+    if (response?.data?.requires_force) {
+      const warnings = (response.data.warnings ?? []).map((w) => w.message).join('\n')
+      try {
+        await ElMessageBox.confirm(`${warnings}\nこのままアーカイブしますか？`, '確認', { type: 'warning' })
+      } catch {
+        return
+      }
+      try {
+        await send(true)
+      } catch (retryError) {
+        ElMessage.error(archiveErrorResponse(retryError)?.data?.detail || 'アーカイブできませんでした。')
+      }
+      return
+    }
+    ElMessage.error(response?.status === 403 ? 'この操作の権限がありません。' : response?.data?.detail || 'アーカイブできませんでした。')
+  }
+}
+
+const restoreCurrentCase = async () => {
+  if (!caseDetail.value) return
+  let reason = ''
+  try {
+    reason = (await ElMessageBox.prompt('復元の理由（任意）。復元後は通常どおり権限と進捗に従って変更できます。', '案件を復元', {
+      confirmButtonText: '復元', cancelButtonText: 'キャンセル',
+    })).value || ''
+  } catch {
+    return
+  }
+  try {
+    await restoreCase(caseId.value, reason)
+    ElMessage.success('復元しました。')
+    await fetchCaseDetail()
+  } catch (error) {
+    const response = archiveErrorResponse(error)
+    ElMessage.error(response?.status === 403 ? 'この操作の権限がありません。' : response?.data?.detail || '復元できませんでした。')
+  }
 }
 
 const openRegistrationStatusDialog = () => {
@@ -1303,11 +1367,18 @@ onMounted(() => {
           </div>
         </div>
         <div class="case-record-actions">
-          <el-button @click="openBasicInfoDialog">基本情報を編集</el-button>
-          <el-button type="primary" @click="openProgressUpdateDialog()">進捗を更新</el-button>
-          <el-button v-if="canCancelCase" type="danger" plain @click="openCancelDialog">案件を中止</el-button>
+          <template v-if="!isArchived">
+            <el-button @click="openBasicInfoDialog">基本情報を編集</el-button>
+            <el-button type="primary" @click="openProgressUpdateDialog()">進捗を更新</el-button>
+            <el-button v-if="canCancelCase" type="danger" plain @click="openCancelDialog">案件を中止</el-button>
+            <el-button plain @click="archiveCurrentCase">アーカイブ</el-button>
+          </template>
+          <el-button v-else type="primary" @click="restoreCurrentCase">復元</el-button>
         </div>
       </div>
+      <el-alert v-if="isArchived" type="warning" :closable="false" show-icon class="case-archived-alert"
+                :title="`アーカイブ済み（${caseDetail.archived_at || '-'}・${caseDetail.archived_by_name || '-'}）：${caseDetail.archive_reason || '理由なし'}`"
+                description="案件と履歴は保存されています。変更するには「復元」してください。" />
       <div class="case-record-meta">
         <router-link class="text-link" :to="`/customers/${caseDetail.customer}`">顧客 {{ caseDetail.customer_name }}</router-link>
         <router-link v-if="caseDetail.company" class="text-link" :to="`/companies/${caseDetail.company}`">会社 {{ caseDetail.company_name }}</router-link>

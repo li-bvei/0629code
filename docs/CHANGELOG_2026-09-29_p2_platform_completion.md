@@ -13,3 +13,13 @@
   - 年度关闭时确定快照和保存期限（只有没有快照的旧行才用当时的设置补上），关闭后的台账冻结：以后修改系统决算月、甚至更正取引日，都不改变其决算月、事业年度和保存期限；重复关闭不变。
   - 租赁仍默认保存 5 年；sale 仍只保留字段。
   - 工作台显示「事業年度：2027（3 月決算・快照）」。
+
+## 切片 2：Case 归档完善（migration `cases/0020_case_archive_metadata`，只加结构）
+
+- 新增列：`archived_by`、`archive_reason`、`restored_at`、`restored_by`（`archived_at` 沿用既有列）。既有案件不回填。
+- `POST /api/cases/{id}/archive/`：理由必填；进度未到完成/许可/不许可/取下げ时沿用既有「需要确认」规则（`requires_force`→确认后 `force`）；写 Timeline（`event_type=case_archived`，标题沿用「登録状態変更」）和 AuditLog（`case_archived`，含理由）。
+- `POST /api/cases/{id}/restore/`：登记状态回到「有効」，清空 `archived_*` 并记录 `restored_at/by`；旧的归档日期・理由写入 Timeline（`case_restored`）和 AuditLog（`case_restored`，`extra.previous_archive`）。复原后按原有权限和进度正常工作。
+- 既有 `change-registration-status` 进入/离开「アーカイブ」时同样记录实行者・理由・复原信息，并新增 AuditLog `case_registration_status_changed`。
+- 归档中的案件：可以查看；基本信息修改、进度变更、Next Action 等变更类 action 返回 400（提示先复原）；Checklist・Task・Reminder・Timeline 手动记录・Document 等子资源的新增/修改由 BusinessAccessPolicy 拒绝（403）。只有 archive/restore/registration-status 允许执行。
+- 不删除任何案件、子资源或历史；权限不变（担当外不可见、业务管理员不可改他人担当案件）。
+- 前端：案件详情头部「アーカイブ」「復元」按钮、归档说明横幅；归档中隐藏编辑类按钮。

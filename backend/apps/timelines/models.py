@@ -27,6 +27,8 @@ class Timeline(models.Model):
     EVENT_DOCUMENT_ARCHIVED = 'document_archived'
     EVENT_DOCUMENT_RESTORED = 'document_restored'
     EVENT_ACCOUNTING_LINKED = 'accounting_linked'
+    EVENT_CASE_ARCHIVED = 'case_archived'
+    EVENT_CASE_RESTORED = 'case_restored'
 
     case = models.ForeignKey(
         'cases.Case',

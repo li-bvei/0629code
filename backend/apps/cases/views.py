@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -207,6 +208,18 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         'responsible_employee',
     ).prefetch_related('tasks__responsible_employee')
     serializer_class = CaseSerializer
+    # アーカイブ済みの案件でも実行できる変更系 action（それ以外の変更は復元が必要）
+    ARCHIVED_ALLOWED_ACTIONS = {'archive', 'restore', 'change_registration_status'}
+
+    def get_object(self):
+        obj = super().get_object()
+        if (
+            obj.registration_status == Case.REGISTRATION_STATUS_ARCHIVED
+            and self.get_access_action() not in ('list', 'view', 'export', 'download')
+            and self.action not in self.ARCHIVED_ALLOWED_ACTIONS
+        ):
+            raise ValidationError({'detail': 'アーカイブ済みの案件は変更できません。変更する場合は先に復元してください。'})
+        return obj
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -550,6 +563,52 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
             if isinstance(exc, CaseStatusChangeError):
                 return self._status_change_error_response(exc)
             return Response({'detail': '変更日が正しくありません。'}, status=status.HTTP_400_BAD_REQUEST)
+        record(module='cases', action='case_registration_status_changed', request=request, obj=case,
+               reason=request.data.get('note') or '',
+               changes={'registration_status': [result.previous_status, result.new_status]})
+        return self._status_change_response(result)
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        """アーカイブ（削除しない）。理由は必須。進捗が終わっていない案件は確認（force）が必要。"""
+        case = self.get_object()
+        reason = (request.data.get('reason') or '').strip()
+        if not reason:
+            return Response({'reason': ['アーカイブの理由を入力してください。']}, status=status.HTTP_400_BAD_REQUEST)
+        if case.registration_status == Case.REGISTRATION_STATUS_ARCHIVED:
+            return Response({'detail': '既にアーカイブされています。'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = change_case_registration_status(
+                case, Case.REGISTRATION_STATUS_ARCHIVED, changed_by=request.user,
+                change_date=request.data.get('change_date'), note=reason, force=bool(request.data.get('force')),
+                source='archive',
+            )
+        except (CaseStatusChangeError, ValueError) as exc:
+            if isinstance(exc, CaseStatusChangeError):
+                return self._status_change_error_response(exc)
+            return Response({'detail': '変更日が正しくありません。'}, status=status.HTTP_400_BAD_REQUEST)
+        record(module='cases', action='case_archived', request=request, obj=case, reason=reason,
+               extra={'previous': result.previous_status, 'forced': result.forced})
+        return self._status_change_response(result)
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        """復元：登録状態を有効に戻し、以後は通常どおり権限と進捗に従って扱う。"""
+        case = self.get_object()
+        if case.registration_status != Case.REGISTRATION_STATUS_ARCHIVED:
+            return Response({'detail': 'アーカイブされていない案件です。'}, status=status.HTTP_400_BAD_REQUEST)
+        reason = (request.data.get('reason') or '').strip()
+        previous = {'archived_at': str(case.archived_at or ''), 'archive_reason': case.archive_reason,
+                    'archived_by': case.archived_by.get_username() if case.archived_by else ''}
+        try:
+            result = change_case_registration_status(
+                case, Case.REGISTRATION_STATUS_ACTIVE, changed_by=request.user, note=reason, source='restore',
+            )
+        except CaseStatusChangeError as exc:
+            return self._status_change_error_response(exc)
+        record(module='cases', action='case_restored', request=request, obj=case, reason=reason,
+               changes={'registration_status': [Case.REGISTRATION_STATUS_ARCHIVED, Case.REGISTRATION_STATUS_ACTIVE]},
+               extra={'previous_archive': previous})
         return self._status_change_response(result)
 
     @action(detail=True, methods=['post'], url_path='progress-info')

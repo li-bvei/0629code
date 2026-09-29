@@ -94,6 +94,7 @@ class CaseSerializer(serializers.ModelSerializer):
     )
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     registration_status_display = serializers.CharField(source='get_registration_status_display', read_only=True)
+    archived_by_name = serializers.CharField(source='archived_by.username', read_only=True, default='')
     case_type_master_name = serializers.CharField(source='case_type_master.name', read_only=True)
     case_type_number_abbreviation = serializers.CharField(source='case_type_master.number_abbreviation', read_only=True)
     application_category_name = serializers.CharField(source='application_category.name', read_only=True)
@@ -172,6 +173,9 @@ class CaseSerializer(serializers.ModelSerializer):
             'withdrawn_at',
             'completed_at',
             'archived_at',
+            'archived_by_name',
+            'archive_reason',
+            'restored_at',
             'status_changed_at',
             'next_action',
             'next_action_due_at',
@@ -223,6 +227,11 @@ class CaseSerializer(serializers.ModelSerializer):
             'registration_status_display',
             'status',
             'status_display',
+            # アーカイブ関連は専用 action（archive / restore）でのみ変更する。
+            'archived_at',
+            'archived_by_name',
+            'archive_reason',
+            'restored_at',
             # 次の対応・待機も専用 action（work_service：事務・Timeline・AuditLog）でのみ変更する。
             'next_action',
             'next_action_due_at',
