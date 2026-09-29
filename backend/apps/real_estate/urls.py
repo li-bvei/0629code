@@ -1,5 +1,6 @@
 from apps.authentication.drf import BusinessRouter
 
+from .import_views import RealEstateImportViewSet
 from .views import (
     InternalProfitDistributionViewSet,
     LegalLedgerViewSet,
@@ -16,5 +17,7 @@ router.register('ledgers', LegalLedgerViewSet, basename='real-estate-ledger')
 router.register('files', RealEstateFileViewSet, basename='real-estate-file')
 router.register('accounting-links', RealEstateAccountingLinkViewSet, basename='real-estate-accounting-link')
 router.register('profit-distributions', InternalProfitDistributionViewSet, basename='real-estate-profit')
+
+router.register('imports', RealEstateImportViewSet, basename='real-estate-import')
 
 urlpatterns = router.urls

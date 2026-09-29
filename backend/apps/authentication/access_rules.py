@@ -839,6 +839,8 @@ RULES = {
     'real_estate_accounting_link': RealEstateAccountingLinkRule('real_estate.RealEstateAccountingLink'),
     'real_estate_profit': RealEstateChildRule('real_estate.InternalProfitDistribution',
                                               extra_code=RealEstateRule.PROFIT),
+    # LIST.xlsx 等の dry-run：全件変更権限者のみ（取引は作らない）
+    'real_estate_import': ModuleRule(RealEstateRule.CHANGE_ALL, model_label='real_estate.RealEstateImportRun'),
     # システム
     'diagnostics': DiagnosticsRule(),
 }

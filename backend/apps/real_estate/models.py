@@ -302,3 +302,19 @@ class InternalProfitDistribution(models.Model):
     def save(self, *args, **kwargs):
         self.amount = self.compute_amount()
         super().save(*args, **kwargs)
+
+
+class RealEstateImportRun(models.Model):
+    """LIST.xlsx 等の dry-run 実行履歴（取引は作らない。報告と元の値を保持して再確認できるようにする）。"""
+
+    file_name = models.CharField('ファイル名', max_length=255)
+    file_sha256 = models.CharField('SHA-256', max_length=64, db_index=True)
+    sheet = models.CharField('シート', max_length=100)
+    summary = models.JSONField('集計', default=dict)
+    report = models.JSONField('報告（行ごとの元の値・規範化・誤り・候補）', default=dict)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'real_estate_import_runs'
+        ordering = ['-created_at', '-id']
