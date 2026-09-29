@@ -13,6 +13,7 @@ import {
   listAccountingExpenseCategories,
   listAccountingExpenses,
 } from '../../api/accounting'
+import ExpenseFormFields from '../../components/accounting/ExpenseFormFields.vue'
 import type { AccountingListParams, Expense, ExpenseCategory, ExpensePayload } from '../../types/accounting'
 import { formatAccountingNumber } from '../../utils/accountingFormat'
 import { formatDate } from '../../utils/date'
@@ -61,6 +62,9 @@ const addForm = ref<ExpensePayload>({
   expense_target: '',
   note: '',
   is_exported: false,
+  customer: null,
+  company: null,
+  case: null,
 })
 
 const batchDialogVisible = ref(false)
@@ -111,6 +115,9 @@ const createEmptyExpenseForm = (): ExpensePayload => ({
   expense_target: '',
   note: '',
   is_exported: false,
+  customer: null,
+  company: null,
+  case: null,
 })
 
 const isValidDate = (value: string) => {
@@ -218,8 +225,10 @@ const submitAddExpense = async () => {
     ElMessage.success('支出記録を作成しました。')
     addDialogVisible.value = false
     await loadExpensesWithSummary(1)
-  } catch {
-    ElMessage.error('支出記録の作成に失敗しました。')
+  } catch (error) {
+    // 関連付けの権限（案件の変更権限・顧客/会社の閲覧範囲）は後端が判定し、理由を返す
+    const response = (error as { response?: { status?: number; data?: { detail?: string } } })?.response
+    ElMessage.error(response?.status === 403 && response.data?.detail ? response.data.detail : '支出記録の作成に失敗しました。')
   } finally {
     submitting.value = false
   }
@@ -484,42 +493,10 @@ onMounted(() => {
       </div>
     </el-card>
 
-    <el-dialog v-model="addDialogVisible" title="支出記録を追加" width="720px" class="accounting-expense-dialog">
+    <el-dialog v-model="addDialogVisible" title="支出記録を追加" width="760px" class="accounting-expense-dialog">
       <el-form ref="addFormRef" :model="addForm" :rules="addRules" label-position="top">
-        <div class="accounting-dialog-form">
-          <el-form-item label="日付" prop="expense_date">
-            <el-date-picker
-              v-model="addForm.expense_date"
-              type="date"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              placeholder="YYYY-MM-DD"
-              class="form-control"
-            />
-          </el-form-item>
-          <el-form-item label="場所" prop="place">
-            <el-input v-model="addForm.place" />
-          </el-form-item>
-          <el-form-item label="カテゴリ" prop="category">
-            <el-select v-model="addForm.category" placeholder="選択してください" class="form-control">
-              <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.name" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="金額" prop="amount">
-            <el-input v-model="addForm.amount" inputmode="numeric" />
-          </el-form-item>
-          <el-form-item label="支払方法" prop="payment_method">
-            <el-select v-model="addForm.payment_method" clearable placeholder="選択してください" class="form-control">
-              <el-option v-for="method in paymentMethodOptions" :key="method" :label="method" :value="method" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="費用対象" prop="expense_target">
-            <el-input v-model="addForm.expense_target" />
-          </el-form-item>
-          <el-form-item label="備考" prop="note" class="accounting-dialog-full">
-            <el-input v-model="addForm.note" type="textarea" :rows="3" />
-          </el-form-item>
-        </div>
+        <!-- 完全な新規ページと同じ入力欄（カテゴリ支援・案件/顧客/会社の関連付け） -->
+        <ExpenseFormFields v-if="addDialogVisible" v-model="addForm" :categories="categories" compact />
       </el-form>
       <template #footer>
         <el-button @click="addDialogVisible = false">キャンセル</el-button>

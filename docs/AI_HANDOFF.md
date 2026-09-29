@@ -330,6 +330,8 @@ Case
 
 **P2-C11 帐票（分支 `codex/p2-c11-vouchers`，基于集成分支，2026-09-29）**：見積書・契約書新表（`accounting/0018`），請求書・領収書沿用既有表但状态列分开（`invoice_status`/`receipt_status`），四种帐票各自的状态、编号、发行快照和 PDF；共用的只有编号、金额计算、快照/迁移执行与审计。既有請求書・領収書状态保持为空（旧数据），不批量回填。从帐票创建另一帐票只复制为下書き，不联动状态。新增权限 `use_estimate`/`use_contract`（加入 accounting_admin，部署后需 `setup_access_roles --apply --yes`）。案件/顾客/公司详情有帳票卡片。后端 260 项、前端单元 10 项、构建通过；浏览器实测未做。详见 `docs/CHANGELOG_2026-09-29_p2_c11_vouchers.md`。
 
+**P2 收尾（分支 `codex/p2-polish`）**：支出快捷录入与完整新增页共用 `ExpenseFormFields`（分类支援＋Case/Customer/Company 关联，选 Case 自动带出顾客/公司），后端权限检查不变，不恢复精算，无 migration。P2 预览：后端 `127.0.0.1:8021`、前端 `127.0.0.1:5191`，库 `gyoseishoshi_erp_p2_preview`（从 P1 预览库克隆，演示数据只在此库）。详见 `docs/CHANGELOG_2026-09-29_p2_integration.md`「P2 收尾」。
+
 原计划清单（保留作对照）：
 
 1. Case Workspace Action Bar：対応記録、資料受領、タスク、ファイル、入金、待機、完了。
