@@ -276,3 +276,25 @@ Portal 相关数据应支持：
 | `real_estate_legal_ledgers` | `fiscal_year_end_month`（决算月快照，可空） | `real_estate/0003_ledger_fiscal_month_snapshot` | 创建・年度关闭时保存；关闭后冻结；既有行为空，不回填 |
 | `cases` | `archived_by_id`、`archive_reason`、`restored_at`、`restored_by_id` | `cases/0020_case_archive_metadata` | `archived_at` 沿用；复原时清空 `archived_*`，旧值留在 Timeline/AuditLog；既有行不回填 |
 
+### 11.10 发布硬化：旧代码兼容的数据库默认值（2026-09-30 本地已实现，分支 `codex/release-hardening`；生产未部署）
+
+P1～P3 追加的 NOT NULL 列中，以下 9 列原本没有数据库级默认值（Django 4.2 添加列后会去掉默认值），P0 之前的旧代码 INSERT 时会报 MySQL 1364。follow-up migration 只设置数据库默认值，不改列类型、不写数据：
+
+| 表.列 | 数据库默认值 | migration | 选择理由 |
+|---|---|---|---|
+| `cases.work_status` | `'active'` | `cases/0021_db_defaults_for_rollback_compat` | 新代码按值筛选（对応中/待機中）；NULL 会让旧代码新建的案件从工作台消失，所以用业务默认值 |
+| `cases.waiting_reason` | `''` | 同上 | 空＝未待机，与新代码一致 |
+| `cases.archive_reason` | `''` | 同上 | 空＝未归档 |
+| `case_documents.category` | `'other'` | `documents/0005_db_defaults_for_rollback_compat` | 新代码的「その他」 |
+| `case_documents.is_archived` | `0` | 同上 | 默认列表按 `is_archived=False` 筛选，NULL 会让旧代码上传的书类消失 |
+| `case_documents.sha256` | `''` | 同上 | 空＝未计算（旧代码上传） |
+| `case_documents.archive_reason` | `''` | 同上 | 空＝未归档 |
+| `accounting_vouchers.invoice_status` | `''` | `accounting/0019_db_defaults_for_rollback_compat` | 空＝「状態未設定（旧データ）」，正是旧代码创建的含义 |
+| `accounting_vouchers.receipt_status` | `''` | 同上 | 同上 |
+
+- 未选择「允许 NULL」：上述列都被新代码按值筛选或判断（`is_archived=False`、`work_status`、帳票状态），改为可空需要在所有查询中特殊处理 NULL，风险更大；数据库默认值与新代码的模型默认值一致，新旧代码读写结果相同。
+- 已有表达式默认值（MySQL 8.0.13+ 由 Django 保留）：`cases.waiting_note`・`next_action_blocked_reason`（`''`）、`accounting_vouchers.issued_snapshot`（`{}`）。
+- 其余新增列均可空或属于旧代码不写入的新表（P0 的 `owner` 等、各关联 FK、OfficeSettings、不动产、帳票新表）。
+- 以后若 `AlterField` 这些列，Django 会去掉默认值；`apps/cases/tests_db_defaults.py` 会失败，需在新 migration 中用 `apps.common.db_defaults` 重新设置。
+- 旧代码删除被新表（見積書・契約書・不動産・审计日志等）引用的父记录时会被外键拒绝（`scripts/rollback_compat/inventory.py` 列出全部此类外键）。
+

@@ -368,6 +368,8 @@ Case
 
 **本地发布验证（分支 `codex/release-local-validation`，基线 `f97df6b`，2026-09-29）**：在 `gyoseishoshi_erp_platform_preview` 用李・焦・周・员工・无业务 Group 的 superuser 做了真实浏览器验证；Docker 隔离环境完成 compose config・镜像构建・全新库 migrate・`nginx -t`・`/media/` 404・X-Accel 下载。修复 3 个 bug（归档案件仍显示 Action Bar、不动产年度关闭/台账导出无界面入口、支出导出审计 via_permission 错记）。生产 D1～D12 清单、migration 顺序、回滚（含 NOT NULL 列导致不能只回滚代码的限制）、李确认事项、LIST 待确认字段见 `docs/RELEASE_LOCAL_VALIDATION_2026-09-29.md`。
 
+**发布硬化（分支 `codex/release-hardening`，基线 `00e8d49`，2026-09-30）**：修复「migrate 后回滚到 P0 之前旧代码会因 NOT NULL 新列失败」。新增 follow-up migration `accounting/0019`・`cases/0021`・`documents/0005`，为 9 个 NOT NULL 列设置数据库默认值（不改旧 migration、不写数据）。新增固定回归 `backend/scripts/rollback_compat/run.sh`（旧基线 `de95411` 在最新表结构上实际创建 Case・Document・請求書・領収書等，最新代码读取更新；专用临时库 `gyoseishoshi_erp_rollback_compat_preview`）和单元测试 `apps/cases/tests_db_defaults.py`。DEPLOY.md 回滚分为「代码镜像回滚（无需恢复数据库）」与「数据操作需专用回滚/整体恢复」，并补充 migrate 前后验证命令。详见 `docs/CHANGELOG_2026-09-30_release_hardening.md`。
+
 ### 明确暂缓或等待业务决策
 
 - 税务证明剩余 6 份 PDF 正式字段映射。

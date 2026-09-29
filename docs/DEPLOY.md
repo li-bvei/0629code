@@ -180,7 +180,30 @@ docker compose --env-file .env.prod exec backend python manage.py migrate
 | `accounting/0015_expense_owner_and_business_permissions` | `accounting_expenses.owner_id/created_by_id/updated_by_id`（可空），以及会计各模块权限 |
 | `cases/0017`、`customers/0009`、`customers/0010_party_link_permissions`、`documents/0003` | 只新增自定义 Permission（含 `customer_link_all`、`company_link_all`），不改表结构 |
 
-旧代码可以在新表结构上运行（新增列都可空），所以代码回滚不需要反向 migration。
+本次合并发布（P0～P3＋平台收尾＋发布硬化）的完整 migration 列表与顺序见 `docs/RELEASE_LOCAL_VALIDATION_2026-09-29.md` §6。P1～P3 新增了若干 NOT NULL 列；发布硬化的 follow-up migration（`accounting/0019`、`cases/0021`、`documents/0005`，只设置数据库级默认值、不写数据）让 P0 之前的旧代码在最新表结构上仍能创建 Case・Document・請求書・領収書等。因此**代码镜像回滚不需要反向 migration**，前提是发布前的「旧代码兼容性检查」通过（见下节）。
+
+### 发布前固定回归：旧代码兼容性检查
+
+每次发布前（含本次）必须执行，结果保存到 `p0_ops/`。检查内容：用最新代码 migrate 到最新表结构 → 用 P0 之前的旧代码（基线 `de95411`）列出会阻止旧代码 INSERT 的列并实际写入 Case・Document（创建・更新・替换）・請求書・領収書・Expense・Timeline・Task → 用最新代码读取并更新这些记录。
+
+本地（专用临时库 `gyoseishoshi_erp_rollback_compat_preview`，脚本拒绝连接其他库）：
+
+```bash
+git worktree add --detach ../0629code-baseline-de95411 de95411      # 旧代码（依赖与现行 requirements 相同）
+backend/scripts/rollback_compat/run.sh ../0629code-baseline-de95411/backend --recreate
+# 期望：inventory 的 blocking/missing 为空；old_writer failures 为空；new_reader failures 为空
+```
+
+容器（mysql:8.0，与生产相同的镜像构成；在隔离的 compose 项目中执行，不要对生产执行）：
+
+```bash
+docker build -t <项目>-old-backend <de95411 的 git archive>/backend
+docker run --rm --network <项目>_default --env-file .env.prod -e MYSQL_HOST=db -e ROLLBACK_COMPAT_DB=<该隔离库名> \
+  -v <项目>_media_volume:/app/media -v $PWD/backend/scripts/rollback_compat:/rc:ro -w /app <项目>-old-backend python /rc/inventory.py
+#（同样执行 /rc/old_code_writer.py，再用新 backend 镜像执行 /rc/new_code_reader.py <writer 输出>）
+```
+
+常规测试 `apps/cases/tests_db_defaults.py` 会检查这些数据库默认值是否存在（如果以后的 `AlterField` 把默认值去掉，测试会失败，需在新 migration 中用 `apps.common.db_defaults` 重新设置）。
 
 ### 关于新旧代码交接
 
@@ -240,16 +263,28 @@ docker compose --env-file .env.prod build backend
 docker compose --env-file .env.prod stop backend
 ```
 
-**5. migrate --plan**（确认只包含上表列出的 migration）
+**5. migrate 前的验证**（确认只包含 `RELEASE_LOCAL_VALIDATION_2026-09-29.md` §6 列出的 migration；发布前的旧代码兼容性检查已通过）
 
 ```bash
+$RUN check | tee p0_ops/check_before.txt                      # System check identified no issues
+$RUN showmigrations --plan | grep '\[ \]' | tee p0_ops/migrate_pending.txt   # 待执行的 migration 一览
 $RUN migrate --plan | tee p0_ops/migrate_plan.txt
 ```
 
-**6. migrate**
+**6. migrate 与 migrate 后的验证**
 
 ```bash
 $RUN migrate | tee p0_ops/migrate.txt
+$RUN migrate --check && echo "no unapplied migrations"         # 未执行的 migration 为 0（非 0 退出则停止）
+$RUN shell -c "
+from django.db import connection
+from apps.common.db_defaults import ROLLBACK_COMPAT_DEFAULTS
+with connection.cursor() as c:
+    for items in ROLLBACK_COMPAT_DEFAULTS.values():
+        for t, col, lit in items:
+            c.execute('SELECT column_default FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=%s AND column_name=%s', [t, col])
+            print(t, col, 'default=', c.fetchone()[0])
+" | tee p0_ops/db_defaults_after.txt                           # 9 列全部有默认值（None 则停止）
 $RUN check_access_config            # 阶段 A：保护账号为空时只输出 WARNING
 ```
 
@@ -366,17 +401,30 @@ $RUN shell -c "from django.contrib.auth.models import User; print(User.objects.f
 
 ### 回滚
 
+回滚分为两类。**代码镜像回滚不再以数据库整体恢复为唯一手段**：发布硬化后，旧代码可以在最新表结构上运行（由「旧代码兼容性检查」保证），所以只要没有做过下面第 2 类的数据操作，退回旧镜像即可。
+
+**1. 兼容性修正后可执行的代码镜像回滚（不需要反向 migration，不需要恢复数据库）**
+
 | 对象 | 方法 |
 |---|---|
-| 第 5～9 步失败（新后端尚未对用户开放） | 停止操作；`docker compose up -d backend` 用第 4 步之前的镜像（见 `p0_ops/images_before_p0.txt`）或上线前的提交重新 build。新增列和新表可以保留，不影响旧代码 |
-| backend 代码 | 回到上线前的提交，`build backend && up -d backend`；不需要反向 migration |
-| frontend + nginx | 回到上线前的提交或旧镜像，`build frontend && up -d frontend`（docker-compose 的 media 挂载一起恢复） |
+| 第 5～9 步失败（新后端尚未对用户开放） | 停止操作；`docker compose up -d backend` 用第 4 步之前的镜像（见 `p0_ops/images_before_p0.txt`）或上线前的提交重新 build。新表・新列（含数据库默认值）保留 |
+| backend 代码 | 回到上线前的提交或旧镜像，`build backend && up -d backend`；新表・新列保留。回退后用 `$RUN check`、`curl .../health/` 确认，并由操作人员新建一条测试案件・书类后删除（旧代码下若有关联到新表的数据，删除会被外键拒绝，见下方注意） |
+| frontend + nginx | 回到上线前的提交或旧镜像，`build frontend && up -d frontend`（docker-compose 的 media 挂载一起恢复。注意：旧 nginx 配置会重新公开 `/media/`，应同时评估） |
 | 阶段 B | `DJANGO_PROTECTED_ADMIN_ENFORCEMENT=False`，重启 backend |
-| 账号、Group、superuser | `$RUN restore_access_snapshot /ops/<snapshot>.json`（先看差异，再加 `--apply --yes`；可以用 `--user` 限定账号） |
-| Expense 回填 | `$RUN backfill_expense_owner --rollback /ops/<csv>`（先看差异，再加 `--apply --yes`） |
-| 反向 migration（仅在必须删除新表/新列时） | `migrate accounting 0014`、`migrate employees 0001`、`migrate authentication zero`、`migrate audit zero`（会丢失 owner、关联、审计数据，须先备份并批准） |
 | 李无法登录 | `$RUN changepassword zbry6947@gmail.com`、`$RUN axes_reset_username zbry6947@gmail.com`、`$RUN protect_account --username zbry6947@gmail.com --apply --yes`、`$RUN restore_access_snapshot /ops/<file> --user zbry6947@gmail.com --apply --yes` |
-| 数据整体恢复 | 用第 3 步的 SQL 和媒体卷备份恢复（须批准） |
+
+注意（旧代码在新表结构上的已知限制）：旧代码不认识 P1～P3 的新表（見積書・契約書・不動産・监查日志等）。如果新代码运行期间已经有新表数据引用了某个案件、顾客、公司、书类或用户，旧代码删除该记录时会被数据库外键拒绝（不会产生不一致，只是删除失败）。日常请用归档而非删除。新代码运行期间写入的新表数据在回滚期间保留，重新上线新代码后恢复可见。
+
+**2. 代码回滚不能撤销、需要专用回滚命令或数据库整体恢复的情况**
+
+| 对象 | 方法 |
+|---|---|
+| 账号、Group、superuser（D2～D7、D11） | `$RUN restore_access_snapshot /ops/<snapshot>.json`（先看差异，再加 `--apply --yes`；可以用 `--user` 限定账号）。代码回滚本身不会恢复权限变更 |
+| Expense 回填（D8，真实数据写入） | `$RUN backfill_expense_owner --rollback /ops/<csv>`（先看差异，再加 `--apply --yes`）；CSV 丢失时只能整体恢复 |
+| localdev 停用（D12） | 由李确认后手动恢复 `is_active` |
+| 正式 Excel（LIST.xlsx）导入（尚未实现，将来执行时） | 必须先有专用回滚手段；否则只能用导入前的备份整体恢复 |
+| 反向 migration（仅在必须删除新表/新列时） | 须先备份并批准；会丢失 owner、关联、审计、帳票、不动产等数据。一般不需要 |
+| 数据整体恢复（误操作、数据损坏） | 用第 3 步的 SQL 和媒体卷备份恢复（须批准，先在测试环境演练） |
 
 
 ## 案件文件的备份与恢复（P2 文件管理）

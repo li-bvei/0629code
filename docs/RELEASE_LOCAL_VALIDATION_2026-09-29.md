@@ -3,6 +3,7 @@
 - 基线：`codex/p2-platform-completion` `f97df6b`；验证分支：`codex/release-local-validation`（包含 P0→P1→P2→P2-C11→P2 收尾→P3→平台收尾的全部提交，是一条线性历史）。
 - 未推送、未部署、未连接生产、未执行正式 LIST.xlsx 导入、未删除任何预览库。
 - 本报告同时作为本验证分支的变更记录（只修复实际发现的 bug，无新功能）。
+- 2026-09-30 发布硬化（分支 `codex/release-hardening`）更新了 §6 migration 顺序、§7 回滚和 §8 待确认事项。
 
 ## 1. 实际浏览器验证结果
 
@@ -129,31 +130,44 @@
 20. **D12** localdev：按 D1 结果，经批准只停用（`is_active=False`）不删除；`DJANGO_LOCALDEV_CHECK_MODE=enforce`。
 21. 退出维护模式后，由李在「設定」确认并保存事业年度末月（见第 8 节）。
 
-## 6. migration 顺序（`migrate --plan` 期望的新增项）
+## 6. migration 顺序（`migrate --plan` 实际输出，2026-09-30 发布硬化后更新）
 
-依赖由 Django 解析，`--plan` 输出顺序以实际为准；新增内容如下（除 `0017_alter_case_options` 等仅权限/选项外，均为加列或建表，不写数据）：
+从 P0 之前的基线表结构（`de95411` 的 migration 全部执行后）出发，最新代码 `migrate --plan` 的实际顺序如下（共 22 个；除标注外均为加列/建表/权限，不写业务数据）：
 
-- P0：`audit.0001_initial`、`authentication.0001_initial`、`employees.0002_employee_user`、`accounting.0015_expense_owner_and_business_permissions`、`cases.0017_alter_case_options`、`customers.0009_alter_customer_options`、`customers.0010_party_link_permissions`、`documents.0003_alter_document_options`
-- P1：`cases.0018_case_work_status_next_action`、`cases.0019_checklist_item_document_link`
-- P2：`accounting.0016_income_expense_party_links`、`accounting.0017_visa_import_batch`、`documents.0004_document_metadata_archive_replacements`、`accounting.0018_business_documents_c11`
-- P3：`real_estate.0001_initial`、`real_estate.0002_import_runs`
-- 平台收尾：`cases.0020_case_archive_metadata`、`office.0001_office_settings`、`real_estate.0003_ledger_fiscal_month_snapshot`
+1. `customers.0009_alter_customer_options`（权限）
+2. `customers.0010_party_link_permissions`（权限）
+3. `documents.0003_alter_document_options`（权限）
+4. `employees.0002_employee_user`
+5. `cases.0017_alter_case_options`（权限）
+6. `cases.0018_case_work_status_next_action`
+7. `cases.0019_checklist_item_document_link`
+8. `accounting.0015_expense_owner_and_business_permissions`
+9. `accounting.0016_income_expense_party_links`
+10. `accounting.0017_visa_import_batch`
+11. `accounting.0018_business_documents_c11`
+12. `accounting.0019_db_defaults_for_rollback_compat`（发布硬化：只设数据库默认值）
+13. `audit.0001_initial`
+14. `authentication.0001_initial`
+15. `cases.0020_case_archive_metadata`
+16. `cases.0021_db_defaults_for_rollback_compat`（发布硬化）
+17. `documents.0004_document_metadata_archive_replacements`
+18. `documents.0005_db_defaults_for_rollback_compat`（发布硬化）
+19. `office.0001_office_settings`
+20. `real_estate.0001_initial`
+21. `real_estate.0002_import_runs`
+22. `real_estate.0003_ledger_fiscal_month_snapshot`
 
-本地全新库上一次性执行上述全部 migration 已成功（Docker 验证）。
+验证：①全新库一次执行全部 migration（本地 MySQL 9.7、容器 mysql:8.0.46）；②从基线表结构升级（本地）；③在已执行到 `00e8d49` 的容器库上增量执行 12/16/18 三个硬化 migration，均成功。
 
-## 7. 回滚步骤
+## 7. 回滚步骤（2026-09-30 发布硬化后更新）
 
-| 场景 | 方法 |
-|---|---|
-| 第 5～9 步失败（新后端未对用户开放） | 停止；用第 3 步记录的旧镜像 `up -d backend`。**注意下方 NOT NULL 限制** |
-| 新后端上线后需回滚代码 | 只能回到本发布线上的提交（同一 migration 水位）。回到 P0 之前的旧代码，需先用第 3 步的备份恢复数据库（须批准） |
-| frontend + nginx | 旧镜像或旧提交 `build frontend && up -d frontend`（media 挂载一起恢复） |
-| D5 阶段 B | `DJANGO_PROTECTED_ADMIN_ENFORCEMENT=False`，重启 |
-| 账号・Group・superuser | `restore_access_snapshot /ops/<file>`（先 dry-run 再 `--apply --yes`，可 `--user`） |
-| Expense 回填 | `backfill_expense_owner --rollback /ops/<csv>` |
-| 数据整体恢复 | 第 3 步 SQL＋media 备份（须批准，先在测试环境演练） |
+发布硬化后，P0 之前的旧代码可以在最新表结构上创建 Case・Document（创建・更新・替换文件）・請求書・領収書・Expense・Timeline・Task，并由最新代码正确读取（见 `docs/CHANGELOG_2026-09-30_release_hardening.md`）。因此：
 
-**NOT NULL 限制（本次验证新发现，DEPLOY.md「旧代码可在新表结构上运行」只对 P0 成立）**：以下列为 NOT NULL，Django 添加后会去掉数据库级默认值，旧代码在插入对应行时会失败：`cases.work_status`・`waiting_reason`・`waiting_note`・`next_action_blocked_reason`・`archive_reason`、`case_documents.category`・`is_archived`・`sha256`・`archive_reason`、`accounting_vouchers.invoice_status`・`receipt_status`・`issued_snapshot`。因此 migrate 之后**不要只回滚代码**；需要回到旧版本时，用第 3 步的备份整体恢复数据库和 media。
+- **代码镜像回滚**（backend/frontend 回到旧镜像或旧提交）不需要反向 migration，也不需要恢复数据库。旧代码删除被新表数据引用的记录时会被外键拒绝（不产生不一致），期间请用归档代替删除。
+- **需要专用回滚命令或数据库整体恢复**的是数据操作：权限/账号变更（`restore_access_snapshot`）、Expense 回填（`backfill_expense_owner --rollback`）、localdev 停用、将来的正式 Excel 导入（须先有专用回滚）、误操作或数据损坏（第 3 步备份整体恢复，须批准）。
+- 详细步骤见 `docs/DEPLOY.md`「回滚」（已分为上述两类），发布前必须执行 `backend/scripts/rollback_compat/run.sh`。
+
+~~NOT NULL 限制~~：2026-09-29 发现的限制（`cases.work_status` 等 9 列没有数据库默认值，旧代码 INSERT 会报 1364）已由发布硬化的 follow-up migration 解决；`waiting_note`・`next_action_blocked_reason`・`issued_snapshot` 在 MySQL 8.0.13+ 上本来就保留了表达式默认值（容器 mysql:8.0.46 上确认）。
 
 ## 8. 必须由李确认的操作
 
@@ -166,6 +180,7 @@
 7. D12 localdev 账号停用。
 8. 上线后在「設定」确认公司实际事业年度末月（默认 3 月；年度关闭前确认）。
 9. 是否授予利润分配权限给李以外的人员（默认只有 accounting_admin）。
+10. 发布前「旧代码兼容性检查」（`backend/scripts/rollback_compat/run.sh`）的结果；上线后若需回滚，代码镜像回滚可由操作人员按 DEPLOY 执行，权限・回填・数据库整体恢复须李批准。
 
 ## 9. 正式 LIST.xlsx 导入仍待确认的字段
 

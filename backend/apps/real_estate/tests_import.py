@@ -105,9 +105,12 @@ class ListDryRunTests(RealEstateFixture, TestCase):
         self.assertEqual(rows[7]['values']['transaction_type'], 'sale')
 
     def test_repeatable_existing_duplicates_and_error_report(self):
-        first = self.dry_run(self.li).json()
+        # 同じファイル（同じバイト列）を 2 回実行する。openpyxl は保存時刻を埋め込むため、毎回生成すると
+        # 秒の境目をまたいだときに SHA-256 が変わってしまう（full suite でのみ起きた不安定の原因）。
+        content = workbook_bytes(ROWS)
+        first = self.dry_run(self.li, content).json()
         self.create_tx(user=self.li, party_name='王 一郎', property_name='サンライズ天王寺', room_number='301')
-        second = self.dry_run(self.li).json()
+        second = self.dry_run(self.li, content).json()
         self.assertEqual(second['previous_runs'], [first['id']])
         self.assertEqual(second['results'][0]['duplicate_existing'][0]['number'][:3], 'RE-')
         self.client.force_login(self.li)
