@@ -19,6 +19,7 @@ VIEW_FILES = [
     'api/health.py',
     'apps/accounting/views.py',
     'apps/accounting/visa_import_views.py',
+    'apps/accounting/voucher_views.py',
     'apps/accounting/seifu_notice_pdf.py',
     'apps/accounting/visa_form_fields.py',
     'apps/accounting/visa_position_debug.py',
@@ -32,6 +33,7 @@ VIEW_FILES = [
     'apps/reminders/views.py',
     'apps/tasks/views.py',
     'apps/timelines/views.py',
+    'apps/real_estate/views.py',
 ]
 
 # 受控モデル：ビューでは policy.queryset()/scope() を通す。直接参照が必要な行（権限確認済みの
@@ -40,6 +42,9 @@ VIEW_FILES = [
 CONTROLLED_MODELS = {
     'Expense', 'Case', 'CaseChecklistItem', 'Timeline', 'Task', 'Reminder', 'Document',
     'Customer', 'FamilyMember', 'Company', 'CompanyStaff', 'IncomeSource', 'VehicleUsage',
+    'AccountingVoucher', 'Estimate', 'Contract',
+    'RealEstateTransaction', 'TransactionParty', 'LegalLedger', 'RealEstateFile', 'RealEstateAccountingLink',
+    'InternalProfitDistribution',
 }
 FORBIDDEN_CALLS = {'has_perm', 'has_perms', 'get_all_permissions', 'get_group_permissions', 'get_user_permissions'}
 

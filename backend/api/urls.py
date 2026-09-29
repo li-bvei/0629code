@@ -56,6 +56,7 @@ urlpatterns = [
     path('auth/', include('apps.authentication.urls')),
     *router.urls,
     path('accounting/', include('apps.accounting.urls')),
+    path('real-estate/', include('apps.real_estate.urls')),
     path('case-checklist-deletion-history/', case_checklist_deletion_history, name='case-checklist-deletion-history'),
     path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard-summary'),
     path('dashboard/deadlines/', DashboardDeadlinesView.as_view(), name='dashboard-deadlines'),

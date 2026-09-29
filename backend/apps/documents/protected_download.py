@@ -18,12 +18,13 @@ DOCUMENT_SUBDIR = 'case_documents'
 INLINE_MIME_TYPES = {'application/pdf', 'image/png', 'image/jpeg'}
 
 
-def resolve_document_path(document):
-    """(実パス, MEDIA_ROOT からの相対パス) を返す。範囲外・不在は例外。"""
+def resolve_document_path(document, subdir=DOCUMENT_SUBDIR):
+    """(実パス, MEDIA_ROOT からの相対パス) を返す。範囲外・不在は例外。
+    subdir は保存先の許可ディレクトリ（案件書類は case_documents、不動産ファイルは real_estate_files）。"""
     if not document.file or not document.file.name:
         raise FileNotFoundError('ファイルが登録されていません。')
     media_root = os.path.realpath(settings.MEDIA_ROOT)
-    allowed_root = os.path.join(media_root, DOCUMENT_SUBDIR)
+    allowed_root = os.path.join(media_root, subdir)
     real = os.path.realpath(os.path.join(media_root, document.file.name))
     if not real.startswith(allowed_root + os.sep):
         raise SuspiciousFileOperation('受控ストレージ外のファイルです。')

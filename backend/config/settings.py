@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     'apps.timelines',
     'apps.documents',
     'apps.accounting',
+    'apps.real_estate',
     'apps.audit',
     'api',
 ]

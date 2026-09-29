@@ -620,6 +620,182 @@ class PartyChildRule(Rule):
         return {}
 
 
+# --- 不動産（P3） ---------------------------------------------------------------
+
+class RealEstateRule(Rule):
+    """不動産取引：本人担当（担当者＝自分の Employee）／全件閲覧／全件変更。案件と同じ考え方。"""
+
+    view_code = 'real_estate.use_real_estate'
+    model_label = 'real_estate.RealEstateTransaction'
+    VIEW_ALL = 'real_estate.real_estate_view_all'
+    CHANGE_ALL = 'real_estate.real_estate_change_all'
+    LEDGER_MANAGE = 'real_estate.manage_legal_ledger'
+    PROFIT = 'real_estate.manage_profit_distribution'
+
+    def module_allowed(self, policy, action):
+        return policy.has_any(self.view_code, self.VIEW_ALL, self.CHANGE_ALL)
+
+    def can_view_all(self, policy):
+        return policy.has_any(self.VIEW_ALL, self.CHANGE_ALL)
+
+    def assigned_q(self, policy, prefix=''):
+        if policy.employee_id is None:
+            return _none_q(prefix)
+        return Q(**{f'{prefix}responsible_employee_id': policy.employee_id})
+
+    def is_assigned(self, policy, tx):
+        return tx is not None and policy.employee_id is not None and tx.responsible_employee_id == policy.employee_id
+
+    def scope(self, policy, queryset, action):
+        if action in READ_ACTIONS and self.can_view_all(policy):
+            return queryset
+        if action not in READ_ACTIONS and policy.has(self.CHANGE_ALL):
+            return queryset
+        return queryset.filter(self.assigned_q(policy))
+
+    def object_decision(self, policy, obj, action):
+        assigned = self.is_assigned(policy, obj)
+        if not (assigned or self.can_view_all(policy)):
+            return NOT_FOUND
+        if action in READ_ACTIONS or assigned or policy.has(self.CHANGE_ALL):
+            return ALLOW
+        return FORBIDDEN
+
+    def can_manage_ledger(self, policy):
+        return policy.has(self.LEDGER_MANAGE)
+
+    def can_manage_profit(self, policy):
+        return policy.has(self.PROFIT)
+
+    def _check_links(self, policy, data, instance=None):
+        for field, rule, label in (('customer', CUSTOMER_RULE_REF(), 'customer'),
+                                   ('management_company', COMPANY_RULE_REF(), 'management_company')):
+            if field not in data:
+                continue
+            obj = data[field]
+            if obj is None or (instance is not None and getattr(instance, f'{field}_id') == obj.pk):
+                continue
+            rule.check_link(policy, obj, via=f'real_estate.{label}')
+
+    def prepare_create(self, policy, data):
+        responsible = data.get('responsible_employee')
+        if responsible is None:
+            if policy.employee is None:
+                raise ValidationError({'responsible_employee': ['担当を選択してください。']})
+            responsible = policy.employee
+        elif not policy.has(self.CHANGE_ALL) and responsible.pk != policy.employee_id:
+            raise PermissionDenied('他の担当者の不動産記録は作成できません。')
+        self._check_links(policy, data)
+        return {'responsible_employee': responsible, 'created_by': policy.user, 'updated_by': policy.user}
+
+    def prepare_update(self, policy, instance, data):
+        if 'responsible_employee' in data:
+            new = data['responsible_employee']
+            if (new.pk if new else None) != instance.responsible_employee_id and not policy.has(self.CHANGE_ALL):
+                raise PermissionDenied('担当者を変更する権限がありません。')
+        self._check_links(policy, data, instance)
+        return {'updated_by': policy.user}
+
+    def via_permission(self, policy, action, obj=None):
+        if obj is not None and self.is_assigned(policy, obj):
+            return 'assigned'
+        return self.VIEW_ALL if action in READ_ACTIONS else self.CHANGE_ALL
+
+
+REAL_ESTATE_RULE = RealEstateRule()
+
+
+class RealEstateChildRule(Rule):
+    """不動産取引にぶら下がる資源（当事者・台帳・ファイル・会計参照・利益配分）。判定は親取引に従う。"""
+
+    view_code = 'real_estate.use_real_estate'
+
+    def __init__(self, model_label, parent_field='transaction', extra_code=None):
+        self.model_label = model_label
+        self.parent_field = parent_field
+        self.extra_code = extra_code  # 追加で必要な権限（利益配分など）
+
+    def module_allowed(self, policy, action):
+        if self.extra_code and not policy.has(self.extra_code):
+            return False
+        return REAL_ESTATE_RULE.module_allowed(policy, action)
+
+    def module_code(self, action):
+        return self.extra_code or self.view_code
+
+    def scope(self, policy, queryset, action):
+        if action in READ_ACTIONS and REAL_ESTATE_RULE.can_view_all(policy):
+            return queryset
+        if action not in READ_ACTIONS and policy.has(RealEstateRule.CHANGE_ALL):
+            return queryset
+        return queryset.filter(REAL_ESTATE_RULE.assigned_q(policy, prefix=f'{self.parent_field}__'))
+
+    def object_decision(self, policy, obj, action):
+        if self.extra_code and not policy.has(self.extra_code):
+            return NOT_FOUND
+        return REAL_ESTATE_RULE.object_decision(policy, getattr(obj, self.parent_field), action)
+
+    def _check_parent(self, policy, tx):
+        if tx is not None and REAL_ESTATE_RULE.object_decision(policy, tx, 'change') != ALLOW:
+            raise PermissionDenied('この不動産記録への書き込み権限がありません。')
+
+    def prepare_create(self, policy, data):
+        self._check_parent(policy, data.get(self.parent_field))
+        return {}
+
+    def prepare_update(self, policy, instance, data):
+        if self.parent_field in data and data[self.parent_field] != getattr(instance, self.parent_field):
+            self._check_parent(policy, data[self.parent_field])
+        return {}
+
+
+class RealEstatePartyRule(RealEstateChildRule):
+    def _links(self, policy, data, instance=None):
+        for field, rule in (('customer', CUSTOMER_RULE_REF()), ('company', COMPANY_RULE_REF())):
+            obj = data.get(field)
+            if obj is None or (instance is not None and getattr(instance, f'{field}_id') == obj.pk):
+                continue
+            rule.check_link(policy, obj, via=f'real_estate_party.{field}')
+
+    def prepare_create(self, policy, data):
+        super().prepare_create(policy, data)
+        self._links(policy, data)
+        return {}
+
+    def prepare_update(self, policy, instance, data):
+        super().prepare_update(policy, instance, data)
+        self._links(policy, data, instance)
+        return {}
+
+
+class RealEstateAccountingLinkRule(RealEstateChildRule):
+    """会計参照：取引への書き込み権限に加え、参照先の会計モジュール権限が必要。"""
+
+    def _check_accounting(self, policy, data):
+        if data.get('income_source') is not None and not policy.module_allowed('income', 'view'):
+            raise PermissionDenied('収入を参照する権限がありません。')
+        if data.get('voucher') is not None and not policy.module_allowed('voucher', 'view'):
+            raise PermissionDenied('請求書・領収書を参照する権限がありません。')
+
+    def prepare_create(self, policy, data):
+        super().prepare_create(policy, data)
+        self._check_accounting(policy, data)
+        return {'created_by': policy.user}
+
+
+class RealEstateFileRule(RealEstateChildRule):
+    def prepare_create(self, policy, data):
+        super().prepare_create(policy, data)
+        document = data.get('document')
+        if document is not None and DOCUMENT_RULE_REF().object_decision(policy, document, 'view') != ALLOW:
+            raise PermissionDenied('この案件書類を参照する権限がありません。')
+        return {'uploaded_by': policy.user}
+
+
+def DOCUMENT_RULE_REF():
+    return RULES['document']
+
+
 # --- 規則表 -------------------------------------------------------------------
 
 CASE_SETTINGS_RULE = ModuleRule('cases.use_cases', 'cases.manage_case_settings')
@@ -655,6 +831,14 @@ RULES = {
     'company': COMPANY_RULE,
     'company_staff': PartyChildRule(COMPANY_RULE, 'company', model_label='companies.CompanyStaff',
                                     link_field='customer'),
+    # 不動産（P3）
+    'real_estate': REAL_ESTATE_RULE,
+    'real_estate_party': RealEstatePartyRule('real_estate.TransactionParty'),
+    'real_estate_ledger': RealEstateChildRule('real_estate.LegalLedger'),
+    'real_estate_file': RealEstateFileRule('real_estate.RealEstateFile'),
+    'real_estate_accounting_link': RealEstateAccountingLinkRule('real_estate.RealEstateAccountingLink'),
+    'real_estate_profit': RealEstateChildRule('real_estate.InternalProfitDistribution',
+                                              extra_code=RealEstateRule.PROFIT),
     # システム
     'diagnostics': DiagnosticsRule(),
 }

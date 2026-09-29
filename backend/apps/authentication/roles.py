@@ -24,8 +24,11 @@ ROLE_PERMISSIONS = {
         'customers.customer_link_all',
         'customers.company_link_all',
         'documents.document_download_all',
+        'real_estate.real_estate_change_all',
+        'real_estate.manage_legal_ledger',
     ],
     ACCOUNTING_ADMIN: [
+        'real_estate.manage_profit_distribution',
         'accounting.use_expense',
         'accounting.expense_view_all',
         'accounting.expense_change_all',
@@ -46,6 +49,8 @@ ROLE_PERMISSIONS = {
         'cases.case_view_all',
         'customers.customer_view_all',
         'documents.document_view_all',
+        'real_estate.use_real_estate',
+        'real_estate.real_estate_view_all',
     ],
     EXPENSE_VIEWER: [
         'accounting.use_expense',
@@ -54,6 +59,7 @@ ROLE_PERMISSIONS = {
     STAFF: [
         'cases.use_cases',
         'accounting.use_expense',
+        'real_estate.use_real_estate',
     ],
 }
 
