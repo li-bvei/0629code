@@ -26,6 +26,7 @@ ROLE_PERMISSIONS = {
         'documents.document_download_all',
         'real_estate.real_estate_change_all',
         'real_estate.manage_legal_ledger',
+        'office.manage_office_settings',
     ],
     ACCOUNTING_ADMIN: [
         'real_estate.manage_profit_distribution',

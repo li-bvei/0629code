@@ -81,6 +81,7 @@ export interface LegalLedger {
   special_terms: string
   contract_date: string | null
   fiscal_year: number | null
+  fiscal_year_end_month: number | null
   fiscal_year_closed_at: string | null
   retention_years: number
   retention_until: string | null

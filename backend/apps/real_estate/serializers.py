@@ -107,7 +107,7 @@ class LegalLedgerSerializer(serializers.ModelSerializer):
         model = LegalLedger
         fields = '__all__'
         read_only_fields = (
-            'transaction', 'fiscal_year', 'fiscal_year_closed_at', 'retention_until', 'legal_hold',
+            'transaction', 'fiscal_year', 'fiscal_year_end_month', 'fiscal_year_closed_at', 'retention_until', 'legal_hold',
             'legal_hold_reason', 'is_locked', 'locked_at', 'locked_by', 'locked_snapshot', 'version',
             'created_at', 'updated_at',
         )

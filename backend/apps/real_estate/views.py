@@ -190,7 +190,7 @@ class LegalLedgerViewSet(TransactionFilterMixin, BusinessScopedViewSetMixin, Mod
         super().perform_update(serializer)
         ledger = serializer.instance
         ledger_service.refresh_derived(ledger)
-        ledger.save(update_fields=['fiscal_year', 'retention_until', 'updated_at'])
+        ledger.save(update_fields=['fiscal_year', 'fiscal_year_end_month', 'retention_until', 'updated_at'])
         _audit(self.request, ledger, 'ledger_updated', object_repr=ledger.transaction.transaction_number)
 
     @action(detail=True, methods=['post'])

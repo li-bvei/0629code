@@ -177,6 +177,8 @@ class LegalLedger(models.Model):
     special_terms = models.TextField('特約', blank=True)
     contract_date = models.DateField('取引（契約）日', null=True, blank=True)
     fiscal_year = models.PositiveIntegerField('事業年度', null=True, blank=True)
+    # 計算に使った事業年度末月の快照（作成時・年度締め時に保存。以後の事務所設定変更で遡って変えない）
+    fiscal_year_end_month = models.PositiveSmallIntegerField('事業年度末月（快照）', null=True, blank=True)
     fiscal_year_closed_at = models.DateTimeField('年度締め日時', null=True, blank=True)
     retention_years = models.PositiveSmallIntegerField('保存年数', default=5)
     retention_until = models.DateField('保存期限', null=True, blank=True)

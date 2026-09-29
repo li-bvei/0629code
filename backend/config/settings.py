@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     'apps.documents',
     'apps.accounting',
     'apps.real_estate',
+    'apps.office',
     'apps.audit',
     'api',
 ]

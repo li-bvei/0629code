@@ -1,7 +1,6 @@
 """法定台帳の操作（ロック・更正・年度締め・保存期限）。権限判定は access_rules、ここは業務規則と監査だけ。"""
 from datetime import date
 
-from django.conf import settings
 from django.db import transaction as db_transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -11,8 +10,6 @@ from apps.audit.services import record
 from .models import LegalLedger, LegalLedgerCorrection
 
 AUDIT_MODULE = 'real_estate'
-# 事業年度の末月（既定 3 月）。会社の事業年度に合わせて設定で変える（本番前に確認する）。
-FISCAL_YEAR_END_MONTH = getattr(settings, 'REAL_ESTATE_FISCAL_YEAR_END_MONTH', 3)
 
 LEDGER_FIELDS = (
     'transaction_form', 'transaction_type', 'property_location', 'property_name', 'room_number', 'area_sqm',
@@ -21,24 +18,31 @@ LEDGER_FIELDS = (
 )
 
 
-def fiscal_year_of(day):
+def office_fiscal_year_end_month():
+    """事務所設定の事業年度末月（データベース優先、未設定なら環境変数→既定 3 月）。"""
+    from apps.office.services import fiscal_year_end_month
+
+    return fiscal_year_end_month()
+
+
+def fiscal_year_of(day, end_month):
     """事業年度（末日の属する暦年で表す）。例：3 月決算なら 2026-04-01〜2027-03-31 は 2027 年度。"""
     if day is None:
         return None
-    return day.year if day.month <= FISCAL_YEAR_END_MONTH else day.year + 1
+    return day.year if day.month <= end_month else day.year + 1
 
 
-def fiscal_year_end(year):
+def fiscal_year_end(year, end_month):
     import calendar
 
-    return date(year, FISCAL_YEAR_END_MONTH, calendar.monthrange(year, FISCAL_YEAR_END_MONTH)[1])
+    return date(year, end_month, calendar.monthrange(year, end_month)[1])
 
 
 def retention_until(ledger):
     """保存期限＝事業年度末日から保存年数（期限到来でも自動削除しない。到期復核の目安）。"""
-    if not ledger.fiscal_year:
+    if not ledger.fiscal_year or not ledger.fiscal_year_end_month:
         return None
-    end = fiscal_year_end(ledger.fiscal_year)
+    end = fiscal_year_end(ledger.fiscal_year, ledger.fiscal_year_end_month)
     try:
         return end.replace(year=end.year + ledger.retention_years)
     except ValueError:
@@ -46,7 +50,16 @@ def retention_until(ledger):
 
 
 def refresh_derived(ledger):
-    ledger.fiscal_year = fiscal_year_of(ledger.contract_date)
+    """事業年度と保存期限を計算する。
+
+    - 年度締め済みの台帳は凍結：事業年度・末月快照・保存期限を二度と変えない。
+    - 未締めの台帳は自分の末月快照で計算する（快照が無い旧行だけ、現在の事務所設定を快照として保存）。
+    """
+    if ledger.fiscal_year_closed_at:
+        return
+    if not ledger.fiscal_year_end_month:
+        ledger.fiscal_year_end_month = office_fiscal_year_end_month()
+    ledger.fiscal_year = fiscal_year_of(ledger.contract_date, ledger.fiscal_year_end_month)
     ledger.retention_until = retention_until(ledger)
 
 
@@ -65,6 +78,7 @@ def ledger_snapshot(ledger):
     return {
         **{f: _value(getattr(ledger, f)) for f in LEDGER_FIELDS},
         'fiscal_year': ledger.fiscal_year,
+        'fiscal_year_end_month': ledger.fiscal_year_end_month,
         'retention_until': _value(ledger.retention_until),
         'parties': [
             {'role': p.get_role_display(), 'name': p.name, 'address': p.address, 'license_number': p.license_number}
@@ -133,12 +147,15 @@ def close_fiscal_year(year, queryset, request):
     now = timezone.now()
     locked = 0
     for ledger in rows:
+        if ledger.fiscal_year_closed_at:
+            continue  # 締め済みは凍結（快照・保存期限を変えない）
+        # 締める時点の末月快照と保存期限を確定させる（快照の無い旧行だけ現在の設定で補う）
+        refresh_derived(ledger)
         if not ledger.is_locked:
-            refresh_derived(ledger)
             ledger.is_locked, ledger.locked_at, ledger.locked_by = True, now, request.user
-            ledger.locked_snapshot = ledger_snapshot(ledger)
             locked += 1
-        ledger.fiscal_year_closed_at = ledger.fiscal_year_closed_at or now
+        ledger.fiscal_year_closed_at = now
+        ledger.locked_snapshot = ledger_snapshot(ledger)
         ledger.save()
     record(module=AUDIT_MODULE, action='ledger_fiscal_year_closed', request=request,
            object_type='real_estate.legalledger', object_id=str(year), object_repr=f'{year} 年度',

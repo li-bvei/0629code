@@ -35,6 +35,7 @@ VIEW_FILES = [
     'apps/timelines/views.py',
     'apps/real_estate/views.py',
     'apps/real_estate/import_views.py',
+    'apps/office/views.py',
 ]
 
 # 受控モデル：ビューでは policy.queryset()/scope() を通す。直接参照が必要な行（権限確認済みの

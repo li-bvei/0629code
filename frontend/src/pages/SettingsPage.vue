@@ -12,6 +12,7 @@ import {
   updateUser,
 } from '../api/users'
 import { useAuthStore } from '../stores/auth'
+import OfficeSettingsCard from '../components/OfficeSettingsCard.vue'
 import type { SystemUser, SystemUserCreatePayload } from '../types/api'
 import { formatDateTime } from '../utils/date'
 
@@ -233,6 +234,8 @@ onMounted(() => {
     <div class="page-header">
       <h1>設定</h1>
     </div>
+
+    <OfficeSettingsCard />
 
     <el-card shadow="never" class="settings-card">
       <template #header>パスワードを変更</template>

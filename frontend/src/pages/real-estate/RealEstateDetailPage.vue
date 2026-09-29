@@ -437,7 +437,7 @@ onMounted(async () => {
             <div class="ledger-head">
               <el-tag v-if="ledger.is_locked" type="success">ロック済み（第 {{ ledger.version }} 版）</el-tag>
               <el-tag v-else>編集中</el-tag>
-              <span>事業年度：{{ ledger.fiscal_year ?? '-' }}<span v-if="ledger.fiscal_year_closed_at">（締め済み）</span></span>
+              <span>事業年度：{{ ledger.fiscal_year ?? '-' }}<span v-if="ledger.fiscal_year_end_month">（{{ ledger.fiscal_year_end_month }} 月決算・快照）</span><span v-if="ledger.fiscal_year_closed_at">（締め済み）</span></span>
               <span>保存：{{ ledger.retention_years }} 年・期限 {{ ledger.retention_until ? formatDate(ledger.retention_until) : '-' }}</span>
               <el-tag v-if="ledger.retention_due" type="danger">到期復核（自動削除はしません）</el-tag>
               <el-tag v-if="ledger.legal_hold" type="warning">legal hold：{{ ledger.legal_hold_reason }}</el-tag>
