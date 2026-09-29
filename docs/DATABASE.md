@@ -253,3 +253,18 @@ Portal 相关数据应支持：
 
 - 离开下書き时写入 `issued_snapshot`，之后宛先・金额等锁定（只可改备注和关联案件），不可删除。
 - 状态迁移、创建、更新、删除、PDF 下载写 AuditLog（`module='voucher'`）。
+
+### 11.8 P3 不动产（2026-09-29 本地已实现，分支 `codex/p3-real-estate`；生产未部署）
+
+| 对象 | 主要字段 | migration | 说明 |
+|---|---|---|---|
+| `real_estate_transactions` | `transaction_number`（RE-YYYYMM-NNNN）、`transaction_type`（rental/sale）、`stage`、`party_name`＋`customer_id`、物件（名称/房间/所在地/种类/面积）、`management_company_name`＋`management_company_id`、`responsible_employee_id`（PROTECT）、`transaction_date`、`rent_or_price`・`brokerage_fee`・`advertising_fee`・`handling_fee`、`source_billed_to_sunrise_amount`・`source_billed_to_client_amount`・`source_sunrise_invoice_amount`（分别保存，不合并）、`payment_status`/`payment_date`/`transfer_status`、`source_file`/`source_sheet`/`source_row`/`source_values`、`created_by`/`updated_by` | `real_estate/0001_initial` | 权限：`use_real_estate`・`real_estate_view_all`・`real_estate_change_all`・`manage_legal_ledger`・`manage_profit_distribution` |
+| `real_estate_number_sequences` | `key`（RE-YYYYMM）、`last_number` | 同上 | 加锁取号 |
+| `real_estate_transaction_parties` | `role`（贷主/借主/卖主/买主/代理人/媒介业者/共同宅建业者）、姓名、住所、免许番号、`customer_id`/`company_id` | 同上 | 台账锁定后不可增删改 |
+| `real_estate_legal_ledgers` | 1:1 交易（PROTECT）；取引态样、类型、所在地/名称/房间/面积/建物概要、赁料/价格、报酬、广告费、手续费、特约、取引日、`fiscal_year`、`fiscal_year_closed_at`、`retention_years`（默认 5）、`retention_until`、`legal_hold`/理由、`is_locked`/`locked_at`/`locked_by`/`locked_snapshot`、`version` | 同上 | 无删除 API；到期只标记复核 |
+| `real_estate_legal_ledger_corrections` | `ledger_id`（PROTECT）、`version`、`changes`（旧→新）、`reason`、`corrected_by`、时间 | 同上 | 更正历史 |
+| `real_estate_files` | `transaction_id`、`kind`、`title`、`file`（`real_estate_files/YYYY/MM/<uuid>`）、原文件名/大小/MIME/SHA-256、`document_id`（参照案件书类）、`uploaded_by` | 同上 | 复用 Document 上传检查与受保护下载 |
+| `real_estate_accounting_links` | `transaction_id`、`income_source_id`、`voucher_id`、备注 | 同上 | 只引用，不复制会计数据 |
+| `real_estate_profit_distributions` | 分配对象（名称/担当）、`method`（fixed/ratio）、`base_amount`、`ratio_percent`、`fixed_amount`、`amount`（自动计算）、`status`（draft/settled）、`settled_at`、备注 | 同上 | 不进入法定台账 |
+| `real_estate_import_runs` | 文件名、SHA-256、工作表、`summary`、`report`（行号・原值・规范化・错误・候选） | `real_estate/0002_import_runs` | 仅 dry-run 履历，不创建交易 |
+

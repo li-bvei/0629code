@@ -19,6 +19,7 @@ import {
   Reading,
   Setting,
   Tickets,
+  Upload,
   User,
   Van,
 } from '@element-plus/icons-vue'
@@ -172,6 +173,21 @@ const handleLogout = async () => {
             <el-icon><Document /></el-icon>
             <span>その他帳票</span>
             <el-tag size="small" type="info">準備中</el-tag>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu v-if="auth.canAny('real_estate.use_real_estate', 'real_estate.real_estate_view_all', 'real_estate.real_estate_change_all')" index="real-estate">
+          <template #title>
+            <el-icon><OfficeBuilding /></el-icon>
+            <span>不動産</span>
+          </template>
+          <el-menu-item index="/real-estate">
+            <el-icon><OfficeBuilding /></el-icon>
+            <span>取引一覧</span>
+          </el-menu-item>
+          <el-menu-item v-if="auth.can('real_estate.real_estate_change_all')" index="/real-estate/import">
+            <el-icon><Upload /></el-icon>
+            <span>LIST 取込（dry-run）</span>
           </el-menu-item>
         </el-sub-menu>
 

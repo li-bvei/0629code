@@ -35,6 +35,9 @@ import TimelinesPage from '../pages/TimelinesPage.vue'
 import VisaReturnApplicationsPage from '../pages/VisaReturnApplicationsPage.vue'
 import VoucherPlaceholderPage from '../pages/VoucherPlaceholderPage.vue'
 import ContractsPage from '../pages/vouchers/ContractsPage.vue'
+import RealEstateDetailPage from '../pages/real-estate/RealEstateDetailPage.vue'
+import RealEstateImportPage from '../pages/real-estate/RealEstateImportPage.vue'
+import RealEstateListPage from '../pages/real-estate/RealEstateListPage.vue'
 import EstimatesPage from '../pages/vouchers/EstimatesPage.vue'
 import TodayWorkbenchPage from '../pages/TodayWorkbenchPage.vue'
 import { landingPath, requiredPermissionFor } from '../utils/access'
@@ -265,6 +268,21 @@ const router = createRouter({
           name: 'voucher-others',
           component: VoucherPlaceholderPage,
           props: { title: 'その他帳票' },
+        },
+        {
+          path: 'real-estate',
+          name: 'real-estate',
+          component: RealEstateListPage,
+        },
+        {
+          path: 'real-estate/import',
+          name: 'real-estate-import',
+          component: RealEstateImportPage,
+        },
+        {
+          path: 'real-estate/:id(\\d+)',
+          name: 'real-estate-detail',
+          component: RealEstateDetailPage,
         },
         {
           path: 'settings',

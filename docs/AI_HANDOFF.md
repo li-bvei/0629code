@@ -362,6 +362,8 @@ Case
 - P3-D4：`LIST.xlsx` 主表 dry-run、人工确认、正式迁移和对账。
 - P3-D5：独立内部利润分配功能，不读取 `强哥` 表，不进入法定台账。
 
+**P3 第一版（分支 `codex/p3-real-estate`，基于 `codex/p2-polish`，2026-09-29）**：独立 app `real_estate`（migration `0001`・`0002` 只加结构）。交易总览＋单笔工作台、首屏 7 项、法定台账（锁定・更正・年度关闭・legal hold・保存期限・CSV 导出，无物理删除）、受保护文件、会计引用、内部利润分配（专用权限、查看审计）、LIST.xlsx/CSV dry-run（只读 `工作表1`，不读 `强哥`，无正式导入接口，生产禁用）。权限：一般用户本人担当、业务管理员看全部改本人、李看改全部并管理台账/利润分配。部署后需 `setup_access_roles --apply --yes`。待确认：公司决算月（`REAL_ESTATE_FISCAL_YEAR_END_MONTH`，默认 3）、三个请求金额的业务含义、正式迁移方案。本地预览：后端 `127.0.0.1:8031`、前端 `http://localhost:5201`（用 localhost 避免与 P2 预览共享 cookie），库 `gyoseishoshi_erp_p3_preview`（从 P2 预览库克隆）。详见 `docs/CHANGELOG_2026-09-29_p3_real_estate.md`。
+
 ### 明确暂缓或等待业务决策
 
 - 税务证明剩余 6 份 PDF 正式字段映射。
