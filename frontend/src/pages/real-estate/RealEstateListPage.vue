@@ -2,9 +2,9 @@
 // 不動産取引の総覧。見える範囲は後端が決める（一般職員は本人担当、業務管理者は全件閲覧）。
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { createTransaction, listTransactions } from '../../api/realEstate'
+import { closeFiscalYear, createTransaction, exportLedgers, listTransactions } from '../../api/realEstate'
 import { listEmployees } from '../../api/employees'
 import RemoteCustomerSelect from '../../components/RemoteCustomerSelect.vue'
 import { useAuthStore } from '../../stores/auth'
@@ -80,6 +80,53 @@ const submit = async () => {
   }
 }
 
+// --- 法定台帳の年度締め・出力（manage_legal_ledger のみ。判定は後端） ---
+const canManageLedger = auth.can('real_estate.manage_legal_ledger')
+const askFiscalYear = async (title: string, message: string) => {
+  const result = await ElMessageBox.prompt(message, title, {
+    inputPattern: /^\d{4}$/, inputErrorMessage: '西暦 4 桁で入力してください', confirmButtonText: '実行', cancelButtonText: 'キャンセル',
+  })
+  return Number(result.value)
+}
+const closeYear = async () => {
+  let year: number
+  try {
+    year = await askFiscalYear('年度締め', '締める事業年度（末日の属する年）を入力してください。該当年度の台帳をすべてロックし、事業年度末月と保存期限を確定します（削除はしません）。')
+  } catch {
+    return
+  }
+  try {
+    const result = await closeFiscalYear(year)
+    ElMessage.success(`${result.fiscal_year} 年度：台帳 ${result.ledgers} 件（新たにロック ${result.newly_locked} 件）を締めました。`)
+    fetchRows()
+  } catch (error) {
+    const status = (error as { response?: { status?: number } })?.response?.status
+    ElMessage.error(status === 403 ? '年度締めの権限がありません。' : '年度締めに失敗しました。')
+  }
+}
+const exportYear = async () => {
+  let year: number | undefined
+  try {
+    const result = await ElMessageBox.prompt('出力する事業年度（空欄ですべて）', '台帳の出力（CSV）', {
+      inputPattern: /^(\d{4})?$/, inputErrorMessage: '西暦 4 桁で入力してください', confirmButtonText: '出力', cancelButtonText: 'キャンセル',
+    })
+    year = result.value ? Number(result.value) : undefined
+  } catch {
+    return
+  }
+  try {
+    const blob = await exportLedgers(year)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `法定台帳_${year ?? 'all'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('出力できませんでした。')
+  }
+}
+
 onMounted(async () => {
   fetchRows(1)
   try {
@@ -97,7 +144,13 @@ onMounted(async () => {
         <h1>不動産取引</h1>
         <p class="sub">賃貸を中心とした取引の総覧です。法定項目は各記録の画面で段階的に補充します。</p>
       </div>
-      <el-button type="primary" @click="openCreate">新規登録</el-button>
+      <div class="header-actions">
+        <template v-if="canManageLedger">
+          <el-button @click="exportYear">台帳 CSV 出力</el-button>
+          <el-button type="warning" plain @click="closeYear">年度締め</el-button>
+        </template>
+        <el-button type="primary" @click="openCreate">新規登録</el-button>
+      </div>
     </div>
 
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
@@ -202,6 +255,12 @@ onMounted(async () => {
   color: var(--el-text-color-secondary);
   font-size: 13px;
   margin: 4px 0 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .filter-card {

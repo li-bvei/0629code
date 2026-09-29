@@ -36,6 +36,7 @@
 - [2026-09-28 P2 文件管理分支](CHANGELOG_2026-09-28_p2_documents.md)
 - [2026-09-29 P2 集成分支](CHANGELOG_2026-09-29_p2_integration.md)
 - [2026-09-29 P2-C11 帐票](CHANGELOG_2026-09-29_p2_c11_vouchers.md)
+- [2026-09-29 本地发布验证报告](RELEASE_LOCAL_VALIDATION_2026-09-29.md)
 - [2026-09 项目审查报告](PROJECT_AUDIT_2026-09.md)
 
 ## 历史上下文

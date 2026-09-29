@@ -366,6 +366,8 @@ Case
 
 **P2 平台能力收尾（分支 `codex/p2-platform-completion`，基于 P3 `1a4c5e3`，2026-09-29）**：事务所「事業年度末月」单例设置（`office/0001`，DB 优先、环境变量仅 fallback、只有 system_admin 可改、写审计），不动产台账保存决算月快照（`real_estate/0003`，关闭后冻结、不追溯）；Case 归档完善（`cases/0020`：实行者・理由・复原、Timeline/AuditLog、归档中只读）；权限感知全局搜索 `/api/search/?q=`（不返回 My Number・证件号・文件路径・金额，搜索审计不记录检索词）；前端路由级 lazy loading 与加载失败提示。部署后需 `setup_access_roles --apply --yes`（新增 `office.manage_office_settings`）。本地预览：后端 `127.0.0.1:8041`、前端 `http://[::1]:5211`（避免与 P2/P3 预览共享 cookie），库 `gyoseishoshi_erp_platform_preview`（从 P3 预览库克隆）。详见 `docs/CHANGELOG_2026-09-29_p2_platform_completion.md`。
 
+**本地发布验证（分支 `codex/release-local-validation`，基线 `f97df6b`，2026-09-29）**：在 `gyoseishoshi_erp_platform_preview` 用李・焦・周・员工・无业务 Group 的 superuser 做了真实浏览器验证；Docker 隔离环境完成 compose config・镜像构建・全新库 migrate・`nginx -t`・`/media/` 404・X-Accel 下载。修复 3 个 bug（归档案件仍显示 Action Bar、不动产年度关闭/台账导出无界面入口、支出导出审计 via_permission 错记）。生产 D1～D12 清单、migration 顺序、回滚（含 NOT NULL 列导致不能只回滚代码的限制）、李确认事项、LIST 待确认字段见 `docs/RELEASE_LOCAL_VALIDATION_2026-09-29.md`。
+
 ### 明确暂缓或等待业务决策
 
 - 税务证明剩余 6 份 PDF 正式字段映射。

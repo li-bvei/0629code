@@ -1385,7 +1385,9 @@ onMounted(() => {
         <span>担当 {{ displayValue(caseDetail.responsible_employee_name) }}</span>
         <span>最終更新 {{ formatDateTime(caseDetail.updated_at) }}</span>
       </div>
+      <!-- アーカイブ中は変更系の操作を出さない（後端でも拒否される。復元してから操作する） -->
       <CaseActionBar
+        v-if="!isArchived"
         :case-detail="caseDetail"
         :checklist-items="checklistItems"
         @refresh="fetchCaseDetail"

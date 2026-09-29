@@ -208,6 +208,10 @@ class ExpenseRule(Rule):
     def via_permission(self, policy, action, obj=None):
         if obj is not None and obj.owner_id == policy.user_id:
             return 'owner'
+        # 全件権限が無い場合の一覧・出力は本人分に限られるため、監査には「owner」と記録する
+        # （持っていない expense_export_all 等を根拠として残さない）
+        if not policy.has(self._all_code(action)):
+            return 'owner'
         return self._all_code(action)
 
     def sees_others(self, policy, action='view'):
