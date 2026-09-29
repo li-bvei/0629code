@@ -17,6 +17,7 @@ VIEW_FILES = [
     'api/views.py',
     'api/workbench.py',
     'api/health.py',
+    'api/search.py',
     'apps/accounting/views.py',
     'apps/accounting/visa_import_views.py',
     'apps/accounting/voucher_views.py',

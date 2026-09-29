@@ -24,6 +24,7 @@ import {
   Van,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import GlobalSearch from '../components/GlobalSearch.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -220,6 +221,7 @@ const handleLogout = async () => {
           <div class="topbar-subtitle">案件を中心に日々の業務を管理します</div>
         </div>
         <div class="topbar-spacer" />
+        <GlobalSearch class="topbar-search" />
         <div class="topbar-user">
           <span>{{ auth.user?.last_name || auth.user?.username }}</span>
           <el-button text type="primary" @click="handleLogout">ログアウト</el-button>

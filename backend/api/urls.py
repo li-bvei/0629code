@@ -2,6 +2,8 @@ from django.conf import settings
 from django.urls import include, path
 
 from apps.office.views import office_settings
+
+from .search import global_search
 from apps.authentication.drf import BusinessRouter
 
 from apps.cases.views import (
@@ -60,6 +62,7 @@ urlpatterns = [
     path('accounting/', include('apps.accounting.urls')),
     path('real-estate/', include('apps.real_estate.urls')),
     path('office-settings/', office_settings, name='office-settings'),
+    path('search/', global_search, name='global-search'),
     path('case-checklist-deletion-history/', case_checklist_deletion_history, name='case-checklist-deletion-history'),
     path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard-summary'),
     path('dashboard/deadlines/', DashboardDeadlinesView.as_view(), name='dashboard-deadlines'),

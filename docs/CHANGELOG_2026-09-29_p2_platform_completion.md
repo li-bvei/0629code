@@ -23,3 +23,14 @@
 - 归档中的案件：可以查看；基本信息修改、进度变更、Next Action 等变更类 action 返回 400（提示先复原）；Checklist・Task・Reminder・Timeline 手动记录・Document 等子资源的新增/修改由 BusinessAccessPolicy 拒绝（403）。只有 archive/restore/registration-status 允许执行。
 - 不删除任何案件、子资源或历史；权限不变（担当外不可见、业务管理员不可改他人担当案件）。
 - 前端：案件详情头部「アーカイブ」「復元」按钮、归档说明横幅；归档中隐藏编辑类按钮。
+
+## 切片 3：权限感知的全局搜索（无 migration）
+
+- `GET /api/search/?q=`（2 字以上，最多 100 字；每类最多 8 条）。资源 `global_search` 本身对业务利用者开放，各类结果仍分别经过 BusinessAccessPolicy（`policy.queryset`）和模块权限：
+  - Case：案件番号・顾客名/カナ・公司名；只返回可见范围内的案件（番号、顾客名、进度、是否归档）。
+  - Customer / Company：只按名称・カナ匹配；只返回 id・名称・カナ・表现级别；范围外（minimal）标记为不可打开、不给链接。
+  - Document：标题・原文件名；返回标题・案件番号・分类・是否归档和案件链接，不返回保存路径、URL 或文件名以外的元数据。
+  - RealEstateTransaction：番号・当事人・物件・房间；按不动产本人担当/全件规则。
+- 不按 My Number、证件号码、住所、电话、邮件、金额搜索，也不返回这些字段或会计金额（测试确认）。
+- 审计：结果含顾客/公司时记录 `search.global_search_personal_results`（各类件数、minimal 件数、检索词长度），**不记录检索词本身**；普通搜索不记录。
+- 前端：顶栏全局搜索框，按类别分组显示，可打开的结果点击跳转；范围外结果显示「範囲外（最小識別情報のみ）」且不可点击。

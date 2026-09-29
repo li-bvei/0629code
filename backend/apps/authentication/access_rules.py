@@ -849,6 +849,8 @@ RULES = {
                                               extra_code=RealEstateRule.PROFIT),
     # LIST.xlsx 等の dry-run：全件変更権限者のみ（取引は作らない）
     'real_estate_import': ModuleRule(RealEstateRule.CHANGE_ALL, model_label='real_estate.RealEstateImportRun'),
+    # 全体検索：利用自体は業務利用者全員（中身は各資源の規則で絞る）
+    'global_search': ModuleRule(None),
     # 事務所設定：参照は業務利用者全員、変更は system_admin の明示権限のみ
     'office_settings': ModuleRule(None, 'office.manage_office_settings'),
     # システム
