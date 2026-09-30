@@ -96,9 +96,16 @@ defineExpose({ summary })
   flex-wrap: wrap;
 }
 
+.line-editor {
+  width: 100%;
+  min-width: 0;
+}
+
 .line-editor-summary {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 16px;
   margin-left: auto;
 }
 </style>

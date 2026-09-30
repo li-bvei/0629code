@@ -35,6 +35,11 @@
   justify-content: flex-end;
 }
 
+.accounting-toolbar .el-button + .el-button,
+.accounting-filter-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
 .accounting-card {
   border: 1px solid rgba(170, 212, 244, 0.58);
   border-radius: 14px;
@@ -424,6 +429,10 @@
   grid-column: 1 / -1;
 }
 
+.accounting-dialog-form > * {
+  min-width: 0;
+}
+
 .voucher-recipient-control {
   display: flex;
   gap: 8px;
@@ -665,7 +674,7 @@
   .accounting-chart-layout,
   .accounting-dialog-form,
   .voucher-line-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .project-bar-row,
@@ -720,6 +729,7 @@
     width: 100vw !important;
     max-width: 100vw !important;
     height: 100vh;
+    max-height: 100vh;
     margin: 0 !important;
     flex-direction: column;
     border-radius: 0;

@@ -14,6 +14,8 @@ import {
 } from '../../api/cases'
 import { createDocument } from '../../api/documents'
 import RemoteStaffSelect from '../RemoteStaffSelect.vue'
+import ResponsiveActionBar from '../layout/ResponsiveActionBar.vue'
+import type { ActionItem } from '../layout/actions'
 import http from '../../services/http'
 import { useAuthStore } from '../../stores/auth'
 import { formatDate } from '../../utils/date'
@@ -221,21 +223,24 @@ const submitPayment = async () => {
   paymentSubmitting.value = false
   if (ok) paymentVisible.value = false
 }
+
+// --- 操作列（広い画面は全部ボタン、640px 未満は主な操作だけボタンで残りは「その他」） ---
+const barActions = computed<ActionItem[]>(() => [
+  { key: 'record', label: '対応記録', collapse: 'never', onClick: () => emit('record') },
+  { key: 'receive', label: '資料受領', disabled: !pendingItems.value.length && !props.checklistItems.length, onClick: openReceiveDrawer },
+  { key: 'files', label: 'ファイル', onClick: openFiles },
+  { key: 'payment', label: '入金', onClick: openPayment },
+  { key: 'next', label: nextActionOpen.value ? '次の対応を変更' : '次の対応', collapse: 'never', onClick: openNextAction },
+  { key: 'next-done', label: '次の対応を完了', type: 'success', plain: true, hidden: !nextActionOpen.value, onClick: completeNextAction },
+  { key: 'wait', label: '待機', hidden: isWaiting.value, disabled: isClosed.value, onClick: openWaiting },
+  { key: 'wait-end', label: '待機解除', type: 'warning', plain: true, hidden: !isWaiting.value, onClick: endWaiting },
+  { key: 'complete', label: '完了', type: 'primary', plain: true, hidden: isCompleted.value, onClick: () => emit('change-status', 'completed') },
+  { key: 'reopen', label: '再開', plain: true, hidden: !isCompleted.value, onClick: () => emit('change-status', 'collecting_documents') },
+])
 </script>
 
 <template>
-  <div class="case-action-bar" role="toolbar" aria-label="案件の操作">
-    <el-button @click="emit('record')">対応記録</el-button>
-    <el-button :disabled="!pendingItems.length && !checklistItems.length" @click="openReceiveDrawer">資料受領</el-button>
-    <el-button @click="openFiles">ファイル</el-button>
-    <el-button @click="openPayment">入金</el-button>
-    <el-button @click="openNextAction">{{ nextActionOpen ? '次の対応を変更' : '次の対応' }}</el-button>
-    <el-button v-if="nextActionOpen" type="success" plain @click="completeNextAction">次の対応を完了</el-button>
-    <el-button v-if="!isWaiting" :disabled="isClosed" @click="openWaiting">待機</el-button>
-    <el-button v-else type="warning" plain @click="endWaiting">待機解除</el-button>
-    <el-button v-if="!isCompleted" type="primary" plain @click="emit('change-status', 'completed')">完了</el-button>
-    <el-button v-else plain @click="emit('change-status', 'collecting_documents')">再開</el-button>
-  </div>
+  <ResponsiveActionBar class="case-action-bar" :actions="barActions" label="案件の操作" />
 
   <div v-if="isWaiting || nextActionOpen" class="case-work-state">
     <el-tag v-if="isWaiting" type="warning" effect="light">
@@ -409,14 +414,7 @@ const submitPayment = async () => {
 
 <style scoped>
 .case-action-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   margin: 12px 0 4px;
-}
-
-.case-action-bar :deep(.el-button + .el-button) {
-  margin-left: 0;
 }
 
 .case-work-state {

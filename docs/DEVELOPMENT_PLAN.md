@@ -69,6 +69,12 @@
 | P3-D4 | `LIST.xlsx` dry-run、人工确认、正式迁移和对账 | 部分：dry-run ✅（本地，分支 `codex/p3-real-estate`） | 正式迁移与对账未做（第一版不允许正式导入） | 保留原文件，可重复执行、可回滚 |
 | P3-D5 | 独立内部利润分配功能 | ✅（本地，分支 `codex/p3-real-estate`） | 仅 `manage_profit_distribution`；查看写审计 | 不读取 `强哥` 表，不进入法定台账 |
 
+### UI — 表单与操作区布局
+
+| # | 任务 | 状态 | 备注 |
+|---|---|---|---|
+| UI-1 | 共享表单与操作区布局组件，修正窄宽度下按钮挤压字段、横向溢出、Dialog/Drawer 操作列 | ✅（本地，分支 `codex/ui-form-layout`） | 只改前端布局；不改 API・权限・数据库・migration。详见 `CHANGELOG_2026-09-30_ui_form_layout.md` |
+
 暂缓（等业务决策，不在本计划范围内推进）：客户 Portal、税务证明剩余 6 份 PDF 字段映射、年金 PDF 被扶养人数据结构、真实数据 Customer 合并、清風合格通知書业务化、通知/邮件/日历/电子签名。Checklist 模板内容审阅已纳入 P2-C9，不再属于完全暂缓项。
 
 ---

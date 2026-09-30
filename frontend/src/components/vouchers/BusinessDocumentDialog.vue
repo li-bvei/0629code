@@ -4,6 +4,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import RemoteCaseSelect from '../RemoteCaseSelect.vue'
+import FormActions from '../layout/FormActions.vue'
 import VoucherLineItemsEditor from './VoucherLineItemsEditor.vue'
 import { saveContract, saveEstimate } from '../../api/accounting'
 import type { AccountingVoucherLineItem, BusinessDocumentPayload, Contract, Estimate } from '../../types/accounting'
@@ -150,8 +151,10 @@ const submit = async () => {
       </div>
     </el-form>
     <template #footer>
-      <el-button @click="visible = false">キャンセル</el-button>
-      <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+      <FormActions>
+        <el-button @click="visible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+      </FormActions>
     </template>
   </el-dialog>
 </template>
@@ -163,6 +166,21 @@ const submit = async () => {
   gap: 8px;
   width: 100%;
   align-items: center;
+  min-width: 0;
+}
+
+.recipient .el-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.period {
+  flex-wrap: wrap;
+}
+
+.period :deep(.el-date-editor) {
+  flex: 1 1 140px;
+  min-width: 0;
 }
 
 .dialog-alert {

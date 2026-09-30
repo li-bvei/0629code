@@ -945,7 +945,6 @@ onMounted(() => {
                 v-for="(item, index) in voucherForm.line_items"
                 :key="index"
                 class="voucher-line-row"
-                style="grid-template-columns: minmax(160px, 1fr) 64px 96px 88px 104px 56px;"
               >
                 <el-form-item label="項目名">
                   <div class="voucher-item-name-control">

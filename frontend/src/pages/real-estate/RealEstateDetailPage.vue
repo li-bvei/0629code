@@ -695,7 +695,7 @@ onMounted(async () => {
 
 .grid-2 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: 12px;
 }
 
@@ -708,7 +708,8 @@ onMounted(async () => {
 
 .fields > div {
   display: grid;
-  grid-template-columns: 150px 1fr;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 8px;
 }
 
 .fields dt {
@@ -716,7 +717,9 @@ onMounted(async () => {
 }
 
 .fields dd {
+  min-width: 0;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .source-amounts {
@@ -740,6 +743,21 @@ onMounted(async () => {
 
 .pre {
   white-space: pre-wrap;
+}
+
+@media (max-width: 639px) {
+  .fields > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .upload-row > * {
+    width: 100% !important;
+  }
 }
 
 @media print {

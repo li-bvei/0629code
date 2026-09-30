@@ -8,6 +8,8 @@ import http from '../services/http'
 import { DOCUMENT_CATEGORY_OPTIONS } from '../types/api'
 import type { Document, DocumentReplacement } from '../types/api'
 import { formatDateTime } from '../utils/date'
+import TableRowActions from '../components/layout/TableRowActions.vue'
+import type { ActionItem } from '../components/layout/actions'
 
 const apiBase = (http.defaults.baseURL || '/api/').replace(/\/$/, '')
 const downloadUrl = (doc: Document) => `${apiBase}/documents/${doc.id}/download/`
@@ -132,6 +134,14 @@ const openHistory = async (doc: Document) => {
 onMounted(() => {
   fetchDocuments()
 })
+
+// 行の操作：差し替えだけボタンで出し、履歴・アーカイブ／復元は「その他」へ（操作列の幅を抑える）
+const rowActions = (doc: Document): ActionItem[] => [
+  { key: 'replace', label: '差し替え', onClick: () => openReplace(doc) },
+  { key: 'history', label: doc.replacement_count ? `履歴（${doc.replacement_count}）` : '履歴', onClick: () => openHistory(doc) },
+  { key: 'archive', label: 'アーカイブ', hidden: doc.is_archived, onClick: () => archive(doc) },
+  { key: 'restore', label: '復元', hidden: !doc.is_archived, onClick: () => restore(doc) },
+]
 </script>
 
 <template>
@@ -144,10 +154,10 @@ onMounted(() => {
 
     <el-card shadow="never">
       <div class="document-filters">
-        <el-select v-model="filters.category" clearable placeholder="分類" style="width: 180px" @change="fetchDocuments(1)">
+        <el-select v-model="filters.category" clearable placeholder="分類" class="document-filter" @change="fetchDocuments(1)">
           <el-option v-for="option in DOCUMENT_CATEGORY_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
-        <el-select v-model="filters.archived" style="width: 180px" @change="fetchDocuments(1)">
+        <el-select v-model="filters.archived" class="document-filter" @change="fetchDocuments(1)">
           <el-option label="通常のファイル" value="" />
           <el-option label="アーカイブ済みのみ" value="only" />
           <el-option label="すべて" value="all" />
@@ -183,12 +193,9 @@ onMounted(() => {
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="openReplace(row)">差し替え</el-button>
-            <el-button size="small" text @click="openHistory(row)">履歴<template v-if="row.replacement_count">（{{ row.replacement_count }}）</template></el-button>
-            <el-button v-if="!row.is_archived" size="small" text type="warning" @click="archive(row)">アーカイブ</el-button>
-            <el-button v-else size="small" text type="success" @click="restore(row)">復元</el-button>
+            <TableRowActions :actions="rowActions(row)" />
           </template>
         </el-table-column>
       </el-table>
@@ -237,6 +244,16 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.document-filter {
+  width: 180px;
+}
+
+@media (max-width: 639px) {
+  .document-filter {
+    width: 100%;
+  }
 }
 
 .sub {

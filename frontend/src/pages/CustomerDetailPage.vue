@@ -14,6 +14,9 @@ import {
 } from '../api/familyMembers'
 import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
 import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
+import RecordFormLayout from '../components/layout/RecordFormLayout.vue'
+import ResponsiveActionBar from '../components/layout/ResponsiveActionBar.vue'
+import type { ActionItem } from '../components/layout/actions'
 import type { CaseApplicationCategory, CasePayload, CaseTypeMaster, CreateCustomerPayload, Customer, CustomerCaseSummary, CustomerDetail, CustomerRelatedCompany, Employee, FamilyMember, FamilyMemberPayload, ResidenceStatusMaster, UpdateCustomerPayload } from '../types/api'
 import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
@@ -552,6 +555,13 @@ onMounted(() => {
   fetchCustomerDetail()
   fetchResidenceStatusOptions()
 })
+
+// 見出しの操作：640px 未満は「案件を追加」だけボタンで残し、他は「その他」へ
+const headerActions = computed<ActionItem[]>(() => [
+  { key: 'back', label: '一覧へ戻る', onClick: () => router.push('/customers') },
+  { key: 'edit', label: '顧客情報を編集', onClick: openEditCustomerDialog },
+  { key: 'case', label: '案件を追加', type: 'primary', collapse: 'never', onClick: openCreateCaseDialog },
+])
 </script>
 
 <template>
@@ -591,11 +601,7 @@ onMounted(() => {
               <span class="customer-id">顧客ID #{{ customer.id }}</span>
             </div>
           </div>
-          <div class="profile-actions">
-            <el-button @click="router.push('/customers')">一覧へ戻る</el-button>
-            <el-button @click="openEditCustomerDialog">顧客情報を編集</el-button>
-            <el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button>
-          </div>
+          <ResponsiveActionBar class="profile-actions" :actions="headerActions" label="顧客の操作" />
         </div>
         <div class="profile-contact-row">
           <button type="button" class="contact-chip" :disabled="!customer.phone" @click="copyText(customer.phone)">
@@ -632,7 +638,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <div v-if="customer" class="customer-workspace">
+      <RecordFormLayout v-if="customer" class="customer-workspace">
         <el-card shadow="never" class="customer-main-card">
           <el-tabs v-model="activeSection" class="customer-tabs">
             <el-tab-pane label="概要" name="overview">
@@ -827,7 +833,7 @@ onMounted(() => {
           </el-tabs>
         </el-card>
 
-        <aside class="customer-sidebar">
+        <template #side>
           <el-card shadow="never">
             <template #header>現在の対応</template>
             <template v-if="primaryCase">
@@ -852,8 +858,8 @@ onMounted(() => {
             </ul>
           </el-card>
           <VoucherLinksCard :customer-id="customerId" />
-        </aside>
-      </div>
+        </template>
+      </RecordFormLayout>
     </div>
 
     <el-dialog
@@ -1059,7 +1065,6 @@ onMounted(() => {
 }
 
 .profile-tags,
-.profile-actions,
 .profile-contact-row,
 .relationship-actions,
 .company-relation-meta,
@@ -1073,7 +1078,6 @@ onMounted(() => {
 
 .profile-actions {
   margin-left: auto;
-  justify-content: flex-end;
 }
 
 .profile-contact-row {
@@ -1134,13 +1138,6 @@ onMounted(() => {
 .summary-tile span {
   color: var(--sunrise-muted);
   font-size: 13px;
-}
-
-.customer-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 16px;
-  align-items: start;
 }
 
 .customer-main-card {
@@ -1358,14 +1355,6 @@ onMounted(() => {
   justify-content: space-between;
 }
 
-.customer-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  position: sticky;
-  top: 82px;
-}
-
 .sidebar-case-number {
   display: block;
   margin-bottom: 10px;
@@ -1442,14 +1431,12 @@ onMounted(() => {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .customer-workspace {
-    grid-template-columns: 1fr;
-  }
+}
 
-  .customer-sidebar {
-    display: grid;
+/* 右列が本文の下へ移ったとき（1100px 未満）は 2 列で並べる */
+@media (min-width: 640px) and (max-width: 1099px) {
+  .customer-workspace :deep(.record-form-side) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    position: static;
   }
 }
 
@@ -1464,12 +1451,10 @@ onMounted(() => {
   .profile-actions {
     width: 100%;
     margin-left: 0;
-    justify-content: flex-start;
   }
 
   .customer-summary-grid,
   .overview-grid,
-  .customer-sidebar,
   .family-info-grid {
     grid-template-columns: 1fr;
   }

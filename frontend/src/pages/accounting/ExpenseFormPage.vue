@@ -10,6 +10,7 @@ import {
   updateAccountingExpense,
 } from '../../api/accounting'
 import ExpenseFormFields from '../../components/accounting/ExpenseFormFields.vue'
+import FormActions from '../../components/layout/FormActions.vue'
 import type { ExpenseCategory, ExpensePayload } from '../../types/accounting'
 
 const route = useRoute()
@@ -121,10 +122,10 @@ onMounted(async () => {
         <ExpenseFormFields v-model="form" :categories="categories" :case-initial="caseInitial" />
       </el-form>
 
-      <div class="form-actions">
+      <FormActions>
         <el-button @click="router.push('/accounting/expenses')">キャンセル</el-button>
         <el-button type="primary" :loading="submitting" @click="submit">保存</el-button>
-      </div>
+      </FormActions>
     </el-card>
   </section>
 </template>

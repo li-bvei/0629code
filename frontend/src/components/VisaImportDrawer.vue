@@ -4,6 +4,7 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '../services/http'
+import FormActions from './layout/FormActions.vue'
 
 interface FieldDef { key: string; label: string; type: string; required: boolean }
 interface ParsedRow { row_number: number; cells: Record<string, string>; cell_types: Record<string, string> }
@@ -188,7 +189,6 @@ const resultRows = computed(() =>
             <el-option label="GB18030（中国語）" value="gb18030" />
           </el-select>
         </el-form-item>
-        <el-button type="primary" :loading="busy" @click="upload">読み込む</el-button>
       </el-form>
     </section>
 
@@ -222,8 +222,6 @@ const resultRows = computed(() =>
             :key="key" v-model="shared[key]" :placeholder="parsed.fields.find((f) => f.key === key)?.label" />
         </div>
       </details>
-      <el-button @click="step = 0">戻る</el-button>
-      <el-button type="primary" :loading="busy" @click="runPreview">プレビュー</el-button>
     </section>
 
     <section v-else-if="step === 2" class="import-section">
@@ -260,7 +258,7 @@ const resultRows = computed(() =>
           </template>
         </el-table-column>
       </el-table>
-      <el-form inline>
+      <el-form class="import-options">
         <el-form-item label="作成方式">
           <el-radio-group v-model="mode">
             <el-radio value="valid_only">有効な行だけ作成し、誤り行は報告する</el-radio>
@@ -269,15 +267,12 @@ const resultRows = computed(() =>
         </el-form-item>
         <el-form-item><el-checkbox v-model="skipDuplicates">既存と旅券番号が重複する行は作成しない</el-checkbox></el-form-item>
       </el-form>
-      <el-button @click="step = 1">戻る</el-button>
-      <el-button :loading="busy" @click="runPreview">修正を反映して再検証</el-button>
-      <el-button type="primary" :loading="busy" :disabled="!counts.valid" @click="commit">作成する</el-button>
     </section>
 
     <section v-else-if="step === 3 && commitResult" class="import-section">
       <el-result :icon="commitResult.error_count ? 'warning' : 'success'"
         :title="`作成 ${commitResult.success_count} 件 / 誤り ${commitResult.error_count} 件 / 重複スキップ ${commitResult.skipped_count} 件`" />
-      <div class="actions">
+      <div class="result-actions">
         <el-button type="primary" :disabled="!commitResult.success_count"
           @click="download(`/accounting/visa-imports/${parsed.batchId}/pdf-zip/`, 'visa_return.zip', 'post')">PDF を ZIP でダウンロード</el-button>
         <el-button :disabled="!commitResult.error_count"
@@ -295,6 +290,24 @@ const resultRows = computed(() =>
         </el-table-column>
       </el-table>
     </section>
+
+    <!-- 各段階の進む・戻るは下部に固定（本文をスクロールしても見える） -->
+    <template v-if="step <= 2" #footer>
+      <FormActions>
+        <template v-if="step === 0">
+          <el-button type="primary" :loading="busy" @click="upload">読み込む</el-button>
+        </template>
+        <template v-else-if="step === 1">
+          <el-button @click="step = 0">戻る</el-button>
+          <el-button type="primary" :loading="busy" @click="runPreview">プレビュー</el-button>
+        </template>
+        <template v-else>
+          <el-button @click="step = 1">戻る</el-button>
+          <el-button :loading="busy" @click="runPreview">修正を反映して再検証</el-button>
+          <el-button type="primary" :loading="busy" :disabled="!counts.valid" @click="commit">作成する</el-button>
+        </template>
+      </FormActions>
+    </template>
   </el-drawer>
 </template>
 
@@ -308,6 +321,15 @@ const resultRows = computed(() =>
 .warn { color: var(--el-color-warning); font-size: 12px; }
 .shared-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 8px 0; }
 .fix-grid { display: grid; gap: 4px; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.actions :deep(.el-button + .el-button) { margin-left: 0; }
+.result-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.result-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.import-section { min-width: 0; }
+.import-section > :deep(.el-button) { align-self: flex-start; }
+.import-options :deep(.el-radio-group) { display: flex; flex-direction: column; align-items: flex-start; }
+.import-options :deep(.el-radio) { height: auto; min-height: 28px; white-space: normal; }
+@media (max-width: 639px) {
+  .result-actions { flex-direction: column; align-items: stretch; }
+  .result-actions :deep(.el-button) { width: 100%; }
+  .import-steps :deep(.el-step__title) { font-size: 12px; }
+}
 </style>

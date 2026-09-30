@@ -66,6 +66,9 @@ import { formatDate, formatDateTime } from '../utils/date'
 import CaseActionBar from '../components/case/CaseActionBar.vue'
 import CaseAccountingSummary from '../components/case/CaseAccountingSummary.vue'
 import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
+import RecordFormLayout from '../components/layout/RecordFormLayout.vue'
+import ResponsiveActionBar from '../components/layout/ResponsiveActionBar.vue'
+import type { ActionItem } from '../components/layout/actions'
 
 const route = useRoute()
 const router = useRouter()
@@ -1343,6 +1346,16 @@ onMounted(() => {
   fetchCaseDetail()
   fetchBasicInfoOptions()
 })
+
+// 見出しの操作：640px 未満は「進捗を更新」「復元」だけボタンで残し、他は「その他」へ
+const headerActions = computed<ActionItem[]>(() => isArchived.value
+  ? [{ key: 'restore', label: '復元', type: 'primary', collapse: 'never', onClick: restoreCurrentCase }]
+  : [
+      { key: 'edit', label: '基本情報を編集', onClick: openBasicInfoDialog },
+      { key: 'progress', label: '進捗を更新', type: 'primary', collapse: 'never', onClick: () => openProgressUpdateDialog() },
+      { key: 'cancel', label: '案件を中止', type: 'danger', plain: true, danger: true, hidden: !canCancelCase.value, onClick: openCancelDialog },
+      { key: 'archive', label: 'アーカイブ', plain: true, onClick: archiveCurrentCase },
+    ])
 </script>
 
 <template>
@@ -1366,15 +1379,7 @@ onMounted(() => {
             <el-tag v-if="caseDetail.is_overdue" type="danger">期限超過</el-tag>
           </div>
         </div>
-        <div class="case-record-actions">
-          <template v-if="!isArchived">
-            <el-button @click="openBasicInfoDialog">基本情報を編集</el-button>
-            <el-button type="primary" @click="openProgressUpdateDialog()">進捗を更新</el-button>
-            <el-button v-if="canCancelCase" type="danger" plain @click="openCancelDialog">案件を中止</el-button>
-            <el-button plain @click="archiveCurrentCase">アーカイブ</el-button>
-          </template>
-          <el-button v-else type="primary" @click="restoreCurrentCase">復元</el-button>
-        </div>
+        <ResponsiveActionBar class="case-record-actions" :actions="headerActions" label="案件の主な操作" />
       </div>
       <el-alert v-if="isArchived" type="warning" :closable="false" show-icon class="case-archived-alert"
                 :title="`アーカイブ済み（${caseDetail.archived_at || '-'}・${caseDetail.archived_by_name || '-'}）：${caseDetail.archive_reason || '理由なし'}`"
@@ -1406,7 +1411,7 @@ onMounted(() => {
     </div>
 
     <div v-loading="loading" class="detail-grid case-record-content">
-      <div class="case-overview-workspace">
+      <RecordFormLayout>
       <el-card id="case-overview" shadow="never" class="case-basic-card">
         <template #header>
           <div class="card-header-row">
@@ -1436,7 +1441,7 @@ onMounted(() => {
         </el-descriptions>
       </el-card>
 
-      <aside v-if="caseDetail" class="case-action-sidebar">
+      <template v-if="caseDetail" #side>
         <el-card shadow="never">
           <template #header>現在の対応</template>
           <dl v-if="caseDetail" class="case-sidebar-fields">
@@ -1453,8 +1458,8 @@ onMounted(() => {
           <CaseAccountingSummary :case-id="caseDetail.id" class="case-sidebar-accounting" />
         </el-card>
         <VoucherLinksCard v-if="caseDetail" :case-id="caseDetail.id" />
-      </aside>
-      </div>
+      </template>
+      </RecordFormLayout>
 
       <el-card id="case-progress" shadow="never" class="case-record-section">
         <template #header>
@@ -2222,8 +2227,7 @@ onMounted(() => {
 
 .case-record-header-main,
 .case-record-meta,
-.case-record-tags,
-.case-record-actions {
+.case-record-tags {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -2319,22 +2323,8 @@ onMounted(() => {
   text-align: right;
 }
 
-.case-overview-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 16px;
-  align-items: start;
-}
-
 .case-basic-card {
   min-width: 0;
-}
-
-.case-action-sidebar {
-  display: grid;
-  gap: 16px;
-  position: sticky;
-  top: 82px;
 }
 
 .case-sidebar-accounting {
@@ -2393,7 +2383,12 @@ onMounted(() => {
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.header-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .case-stage-stepper {
@@ -2699,8 +2694,7 @@ onMounted(() => {
 }
 
 @media (max-width: 760px) {
-  .case-record-header-main,
-  .case-record-actions {
+  .case-record-header-main {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -2710,13 +2704,20 @@ onMounted(() => {
     margin-left: 0;
   }
 
-  .case-record-summary,
-  .case-overview-workspace {
-    grid-template-columns: 1fr;
+  .case-record-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .case-action-sidebar {
-    position: static;
+  .case-summary-tile {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 4px;
+    text-align: left;
+  }
+
+  .case-summary-tile span {
+    text-align: left;
   }
 
   :deep(.material-notice-dialog) {

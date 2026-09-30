@@ -1,0 +1,337 @@
+/*
+ * 共有レイアウト（フォーム・操作列・Dialog / Drawer）。
+ * 区切り幅：1100px 未満で右列を本文の下へ、640px 未満で 1 列・全幅ボタン。
+ * ページ単位の余白や絶対配置で重なりを避けるのではなく、ここの規則で並べる。
+ */
+
+/* ---- RecordFormLayout：本文 ＋ 右列 ---- */
+.record-form-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.record-form-layout.has-side {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.record-form-main,
+.record-form-side {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.record-form-side {
+  width: var(--record-side-width, 300px);
+}
+
+.record-form-side.is-sticky {
+  position: sticky;
+  top: 82px;
+}
+
+/* ---- FormSection：見出し ＋ 入力欄グリッド ---- */
+.form-section + .form-section {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--sunrise-border);
+}
+
+.form-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.form-section-heading {
+  min-width: 0;
+}
+
+.form-section-heading h3 {
+  margin: 0;
+  color: var(--sunrise-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.form-section-heading p {
+  margin: 4px 0 0;
+  color: var(--sunrise-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.form-section-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.form-section-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 16px;
+}
+
+.form-section-grid.is-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-section-grid.is-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.form-section-grid > *,
+.form-grid > * {
+  min-width: 0;
+}
+
+/* ---- FormActions：保存・取消 ---- */
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  margin-top: 20px;
+}
+
+.form-actions.is-align-start {
+  justify-content: flex-start;
+}
+
+.form-actions.is-align-between {
+  justify-content: space-between;
+}
+
+.form-actions-main,
+.form-actions-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.form-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.el-dialog__footer .form-actions,
+.el-drawer__footer .form-actions {
+  margin-top: 0;
+}
+
+/* ---- ResponsiveActionBar：詳細画面の操作列 ---- */
+.responsive-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.responsive-action-bar .el-button + .el-button {
+  margin-left: 0;
+}
+
+.rab-more.is-mobile-only {
+  display: none;
+}
+
+/* ---- TableRowActions：表の行操作 ---- */
+.table-row-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.table-row-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* ---- ページ見出し：ボタンが見出しに重ならないよう折り返す ---- */
+.page-header-row {
+  flex-wrap: wrap;
+}
+
+.page-header-row > * {
+  min-width: 0;
+}
+
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.page-header-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* ---- Dialog / Drawer：本文だけをスクロールし、下部の操作列は常に見える ---- */
+.el-dialog {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - var(--el-dialog-margin-top, 15vh) - 32px);
+}
+
+.el-dialog.is-fullscreen {
+  max-width: none;
+  max-height: none;
+}
+
+.el-dialog__header,
+.el-dialog__footer {
+  flex-shrink: 0;
+}
+
+.el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.el-dialog__footer .el-button + .el-button {
+  margin-left: 0;
+}
+
+.el-dialog__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.el-drawer {
+  max-width: 100vw;
+}
+
+.el-drawer__footer {
+  border-top: 1px solid var(--sunrise-border);
+  padding-top: 12px;
+}
+
+@media (max-width: 1099px) {
+  .record-form-layout.has-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .record-form-side {
+    width: auto;
+  }
+
+  .record-form-side.is-sticky {
+    position: static;
+  }
+
+  .form-section-grid.is-cols-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 640px) {
+  .rab-mobile-only {
+    display: none !important;
+  }
+}
+
+@media (max-width: 639px) {
+  /* 顶部バー：1 行目にメニュー・題名・利用者、2 行目に検索（副題は省略） */
+  .topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 10px;
+    min-height: 0;
+    padding: 8px 12px;
+  }
+
+  .topbar-subtitle,
+  .topbar-spacer {
+    display: none;
+  }
+
+  .topbar-user {
+    grid-row: 1;
+    grid-column: 3;
+    width: auto;
+    margin-left: 0;
+  }
+
+  .topbar .topbar-search.global-search {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .form-section-grid.is-cols-2,
+  .form-section-grid.is-cols-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .form-actions,
+  .form-actions-main,
+  .form-actions-extra {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .form-actions .el-button {
+    width: 100%;
+  }
+
+  .responsive-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .responsive-action-bar .rab-collapsible {
+    display: none;
+  }
+
+  .responsive-action-bar .rab-more.is-mobile-only {
+    display: flex;
+  }
+
+  .responsive-action-bar > .el-button,
+  .responsive-action-bar .rab-more,
+  .responsive-action-bar .rab-more > .el-button {
+    width: 100%;
+  }
+
+  .page-header-actions {
+    justify-content: flex-start;
+  }
+
+  .el-dialog {
+    --el-dialog-margin-top: 12px;
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 24px);
+    margin-bottom: 12px;
+  }
+
+  .el-dialog__footer > .el-button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .el-drawer.rtl,
+  .el-drawer.ltr {
+    width: 100% !important;
+  }
+}

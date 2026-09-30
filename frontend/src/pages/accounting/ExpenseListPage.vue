@@ -14,6 +14,7 @@ import {
   listAccountingExpenses,
 } from '../../api/accounting'
 import ExpenseFormFields from '../../components/accounting/ExpenseFormFields.vue'
+import FormActions from '../../components/layout/FormActions.vue'
 import type { AccountingListParams, Expense, ExpenseCategory, ExpensePayload } from '../../types/accounting'
 import { formatAccountingNumber } from '../../utils/accountingFormat'
 import { formatDate } from '../../utils/date'
@@ -499,8 +500,10 @@ onMounted(() => {
         <ExpenseFormFields v-if="addDialogVisible" v-model="addForm" :categories="categories" compact />
       </el-form>
       <template #footer>
-        <el-button @click="addDialogVisible = false">キャンセル</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitAddExpense">保存</el-button>
+        <FormActions>
+          <el-button @click="addDialogVisible = false">キャンセル</el-button>
+          <el-button type="primary" :loading="submitting" @click="submitAddExpense">保存</el-button>
+        </FormActions>
       </template>
     </el-dialog>
 
@@ -512,10 +515,6 @@ onMounted(() => {
 2026-07-02,役所,住民票,300,现金,王先生,住民票取得</code>
       </div>
       <el-input v-model="batchText" type="textarea" :rows="8" placeholder="Excel からコピーした内容を貼り付け" />
-      <div class="accounting-batch-actions">
-        <el-button @click="previewBatch">预览</el-button>
-        <el-button type="primary" :loading="batchSubmitting" @click="submitBatch">确认追加</el-button>
-      </div>
       <el-table v-if="batchRows.length" :data="batchRows" max-height="320" stripe>
         <el-table-column prop="lineNumber" label="行" width="70" />
         <el-table-column prop="expense_date" label="日期" width="120" />
@@ -535,6 +534,12 @@ onMounted(() => {
       <p v-if="batchRows.length" class="help-text">
         追加可能：{{ validBatchRows.length }} 件 / エラー：{{ invalidBatchRows.length }} 件
       </p>
+      <template #footer>
+        <FormActions>
+          <el-button @click="previewBatch">预览</el-button>
+          <el-button type="primary" :loading="batchSubmitting" @click="submitBatch">确认追加</el-button>
+        </FormActions>
+      </template>
     </el-dialog>
   </section>
 </template>

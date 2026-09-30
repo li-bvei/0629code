@@ -16,6 +16,9 @@ import {
 } from '../api/companyStaff'
 import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
 import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
+import RecordFormLayout from '../components/layout/RecordFormLayout.vue'
+import ResponsiveActionBar from '../components/layout/ResponsiveActionBar.vue'
+import type { ActionItem } from '../components/layout/actions'
 import { bankAccountTypeOptions, fiscalMonthOptions } from '../constants/options'
 import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, CreateCompanyPayload, CreateCustomerPayload, Customer, Employee, ResidenceStatusMaster } from '../types/api'
 import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
@@ -442,6 +445,13 @@ onMounted(() => {
   fetchCompanyDetail()
   fetchResidenceStatusOptions()
 })
+
+// 見出しの操作：640px 未満は「案件を追加」だけボタンで残し、他は「その他」へ
+const headerActions = computed<ActionItem[]>(() => [
+  { key: 'edit', label: '会社情報を編集', onClick: openCompanyEditDialog },
+  { key: 'staff', label: '従業員追加', onClick: openCreateStaffDialog },
+  { key: 'case', label: '案件を追加', type: 'primary', collapse: 'never', onClick: openCreateCaseDialog },
+])
 </script>
 
 <template>
@@ -455,7 +465,7 @@ onMounted(() => {
         <div class="record-header-main">
           <div class="record-avatar">{{ company.name.slice(0, 1) }}</div>
           <div class="record-identity"><p>{{ displayValue(company.name_kana) }}</p><h2>{{ company.name }}</h2><div class="record-tags"><el-tag effect="plain">会社 ID {{ company.id }}</el-tag><el-tag v-if="company.fiscal_month" type="info" effect="plain">決算 {{ formatFiscalMonth(company.fiscal_month) }}</el-tag></div></div>
-          <div class="record-actions"><el-button @click="openCompanyEditDialog">会社情報を編集</el-button><el-button @click="openCreateStaffDialog">従業員追加</el-button><el-button type="primary" @click="openCreateCaseDialog">案件を追加</el-button></div>
+          <ResponsiveActionBar class="record-actions" :actions="headerActions" label="会社の操作" />
         </div>
         <div class="record-contact-row"><span>代表者 {{ displayValue(getRepresentativeName(company)) }}</span><span>電話 {{ displayValue(company.phone) }}</span><span>メール {{ displayValue(company.email) }}</span><span>最終更新 {{ formatDateTime(company.updated_at) }}</span></div>
       </el-card>
@@ -467,7 +477,7 @@ onMounted(() => {
         <button type="button" class="record-summary-tile" @click="activeSection = 'staff'"><strong>{{ staffMembers.length }}</strong><span>従業員履歴</span></button>
       </div>
 
-      <div v-if="company" class="record-workspace">
+      <RecordFormLayout v-if="company" class="record-workspace">
         <el-card shadow="never" class="record-main-card">
           <el-tabs v-model="activeSection">
             <el-tab-pane label="概要" name="overview">
@@ -498,12 +508,12 @@ onMounted(() => {
           </el-tabs>
         </el-card>
 
-        <aside class="record-sidebar">
+        <template #side>
           <el-card shadow="never"><template #header>現在の対応</template><template v-if="primaryCase"><router-link class="text-link primary-case-link" :to="`/cases/${primaryCase.id}`">{{ primaryCase.case_number }}</router-link><el-tag :type="getCaseDisplayStatusTagType(primaryCase.status)">{{ getCaseDisplayStatus(primaryCase.status) }}</el-tag><dl class="record-field-list sidebar-list"><div><dt>顧客</dt><dd>{{ primaryCase.customer_name }}</dd></div><div><dt>担当者</dt><dd>{{ displayValue(primaryCase.responsible_employee_name) }}</dd></div><div><dt>次の対応</dt><dd>{{ displayValue(primaryCase.next_action) }}</dd></div><div><dt>期限</dt><dd>{{ formatDate(primaryCase.next_action_due_at) }}</dd></div></dl></template><p v-else class="empty-text">関連案件はありません。</p></el-card>
           <VoucherLinksCard :company-id="companyId" />
           <el-card shadow="never"><template #header>データ状態</template><ul class="company-data-status"><li><span>代表者</span><strong>{{ getRepresentativeName(company) ? '登録済み' : '未登録' }}</strong></li><li><span>連絡先</span><strong>{{ company.phone || company.email ? '登録済み' : '未登録' }}</strong></li><li><span>法人番号</span><strong>{{ company.corporate_number ? '登録済み' : '未登録' }}</strong></li><li><span>銀行情報</span><strong>{{ company.bank_account_number ? '登録済み' : '未登録' }}</strong></li></ul></el-card>
-        </aside>
-      </div>
+        </template>
+      </RecordFormLayout>
     </div>
 
     <el-dialog v-model="companyDialogVisible" title="会社情報を編集" width="720px">
@@ -695,7 +705,6 @@ onMounted(() => {
 .record-header-main,
 .record-contact-row,
 .record-tags,
-.record-actions,
 .staff-member-header,
 .staff-member-title {
   display: flex;
@@ -781,13 +790,6 @@ onMounted(() => {
   font-size: 13px;
 }
 
-.record-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 16px;
-  align-items: start;
-}
-
 .company-overview-grid,
 .staff-info-grid {
   display: grid;
@@ -870,13 +872,6 @@ onMounted(() => {
   margin-top: 18px;
 }
 
-.record-sidebar {
-  display: grid;
-  gap: 16px;
-  position: sticky;
-  top: 82px;
-}
-
 .primary-case-link {
   display: block;
   margin-bottom: 10px;
@@ -906,14 +901,10 @@ onMounted(() => {
   color: var(--el-text-color-primary);
 }
 
-@media (max-width: 1050px) {
-  .record-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .record-sidebar {
+/* 右列が本文の下へ移ったとき（1100px 未満）は 2 列で並べる */
+@media (min-width: 640px) and (max-width: 1099px) {
+  .record-workspace :deep(.record-form-side) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    position: static;
   }
 }
 
@@ -926,13 +917,13 @@ onMounted(() => {
   }
 
   .record-actions {
+    width: 100%;
     margin-left: 0;
   }
 
   .record-summary-grid,
   .company-overview-grid,
-  .staff-info-grid,
-  .record-sidebar {
+  .staff-info-grid {
     grid-template-columns: 1fr;
   }
 

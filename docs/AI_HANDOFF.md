@@ -372,6 +372,8 @@ Case
 
 **发布硬化（续，2026-09-30）**：nginx 与前端回滚解耦——`frontend` 服务改为只读挂载 `nginx/default.conf` 的 `nginx:1.27-alpine`，静态文件放在 `frontend_dist` 卷，由 `frontend-assets` 写入；回滚用 `scripts/deploy/release.sh`（只换静态文件或 backend 镜像，切换前后检查 nginx 安全规则和 HTTP，backend 启动用 `/api/auth/csrf/` 轮询＋超时保存日志）。任何旧前端静态文件都在最新安全 nginx 下运行（隔离容器用 `de95411` 旧镜像验证）。平台预览库已执行 3 个硬化 migration。回到 P0 之前的 backend 期间案件文件下载不可用（设计如此）。
 
+**UI 表单布局（2026-09-30，分支 `codex/ui-form-layout`）**：共享组件在 `frontend/src/components/layout/`（`RecordFormLayout`・`FormSection`・`FormActions`・`ResponsiveActionBar`・`TableRowActions`，按钮分配逻辑在 `actions.ts`），规则在 `frontend/src/styles/layout.css`。断点：1100px 未满右列移到本文下方，640px 未满 1 列・全幅按钮・次要操作收进「その他」。Dialog/Drawer 只滚动本文，底部操作栏常驻。新页面请用这些组件，不要用页面级 margin 或绝对定位避让。详见 `docs/CHANGELOG_2026-09-30_ui_form_layout.md`。
+
 ### 明确暂缓或等待业务决策
 
 - 税务证明剩余 6 份 PDF 正式字段映射。
