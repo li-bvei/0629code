@@ -3,7 +3,7 @@
 - 基线：`codex/p2-platform-completion` `f97df6b`；验证分支：`codex/release-local-validation`（包含 P0→P1→P2→P2-C11→P2 收尾→P3→平台收尾的全部提交，是一条线性历史）。
 - 未推送、未部署、未连接生产、未执行正式 LIST.xlsx 导入、未删除任何预览库。
 - 本报告同时作为本验证分支的变更记录（只修复实际发现的 bug，无新功能）。
-- 2026-09-30 发布硬化（分支 `codex/release-hardening`）更新了 §6 migration 顺序、§7 回滚和 §8 待确认事项。
+- 2026-09-30 发布硬化（分支 `codex/release-hardening`）更新了 §2b nginx 解耦、§6 migration 顺序、§7 回滚和 §8 待确认事项；平台预览库已执行 3 个硬化 migration（§4）。
 
 ## 1. 实际浏览器验证结果
 
@@ -76,6 +76,18 @@
 - 结果：`/sun/api/health/` → `{"status":"ok"}`；`/media/`・`/sun/media/`・`/_protected_media/` → 404；路径穿越 `/sun/../_protected_media/`、编码 `/%5Fprotected_media/` → 404；登录后本人下载/预览 200（`application/pdf`、`Cache-Control: private, no-store`、`nosniff`），他人 404；不动产文件同样经 X-Accel 下载、内容一致；SPA `/sun/`、深链接、懒加载主 JS 200。
 - 容器已停止（镜像和隔离卷保留，未影响任何预览库）。
 
+## 2b. nginx 与前端回滚解耦（2026-09-30 发布硬化）
+
+- 结构：`frontend` 服务＝`nginx:1.27-alpine` 运行环境，只读挂载仓库的 `nginx/default.conf`（`/media/`・`/sun/media/` 404、`/_protected_media/` internal＋X-Accel-Redirect）；前端静态文件放在独立卷 `frontend_dist`，由一次性服务 `frontend-assets`（`frontend/Dockerfile` 的 `assets` 阶段）写入。前端镜像不再包含 nginx 配置。
+- 回滚工具 `scripts/deploy/release.sh`：`frontend-assets current|--from-image IMG|--from-ref REF`（只换静态文件）、`backend --image IMG`（换 backend 镜像，不需要旧 compose）、`verify-config`（正在运行的 nginx 必须含受保护媒体规则，否则拒绝切换）、`verify-http`、`wait-backend`（轮询 `/api/auth/csrf/`，HTTP 200＋CSRF 响应才算启动；超时保存日志并非 0 结束）。
+- 隔离容器验证（`sunrise_localval`，mysql:8.0.46）：
+  - 当前静态文件：`/media/`・`/sun/media/`・`/_protected_media/` 404；X-Accel 下载（书类・不动产文件）本人 200 且内容一致、他人 404；`X-Accel-Redirect` 不外泄。
+  - 切换到 `de95411` 的旧前端镜像（镜像内的旧 nginx 配置公开 `/media/`，但未被使用）：`index.html` 引用旧构建的 JS 并加载 200；真实文件路径的 `/media/`・`/sun/media/`・`/_protected_media/` 404；旧调试页面 404；受保护下载仍正常；浏览器中旧页面登录进入仪表盘。之后切回当前版本。
+  - 反例：故意挂载旧 nginx 配置时，`release.sh frontend-assets` 在切换前拒绝（退出码 1）。
+  - backend 旧镜像（`de95411`）↔ 当前镜像切换：各约 3 秒通过 CSRF 检测；旧 backend 启动时 `No migrations to apply`。强制超时（6 秒）：退出码 1，日志已保存，其他容器未被停止。
+  - 旧 backend 期间书类下载 404（旧代码依赖公开 `/media/`）——按设计不重新公开，重新上线新 backend 后恢复。
+  - 环境限制：验证时 Docker Hub 拉取超时，nginx 运行环境使用本机已有的同一 `nginx:1.27-alpine` 基础镜像（配置与 html 均被挂载覆盖），`--from-ref`（需拉取 node 镜像构建）未在容器中实测，`--from-image` 路径已实测。
+
 ## 3. 发现并修复的 bug（均已加入回归检查）
 
 1. **归档中的案件仍显示 Action Bar**（对応記録・資料受領・次の対応・待機等，点击后被后端拒绝）。→ 归档中不渲染 Action Bar（`CaseDetailPage.vue`）。
@@ -97,7 +109,7 @@
 | `gyoseishoshi_erp_p0_preview` | 停留在 P1（accounting 0015），未修改 |
 | `gyoseishoshi_erp_p2_preview` | P2-C11 迁移完成；含 P2 演示数据（分类历史、测试 PDF、Visa 2 件） |
 | `gyoseishoshi_erp_p3_preview` | P3 迁移完成；RE-202609-0001 与其台账 |
-| `gyoseishoshi_erp_platform_preview` | 平台收尾迁移完成；本次新增测试账号 `p0_zhou`、验证用书类 4 件、RE-202609-0002、INV/REC/CON 各 1 件、Visa 2 件、dry-run 履历 1 件；RE-202609-0001 台账已锁定・更正（第 2 版）・2027 年度关闭；决算月已保存为 3 |
+| `gyoseishoshi_erp_platform_preview` | 平台收尾迁移完成，2026-09-30 追加执行 `accounting.0019`・`cases.0021`・`documents.0005`（9 列默认值已确认，migration 状态最新）；本次新增测试账号 `p0_zhou`、验证用书类 4 件、RE-202609-0002、INV/REC/CON 各 1 件、Visa 2 件、dry-run 履历 1 件；RE-202609-0001 台账已锁定・更正（第 2 版）・2027 年度关闭；决算月已保存为 3 |
 | Docker 隔离卷（项目 `sunrise_localval`） | 容器已停止；卷内有 `lv_staff`・`lv_other` 测试账号和验证文件 |
 
 测试账号：`p0_li`・`p0_jiao`・`p0_zhou`・`p0_staff`・`p0_su`（密码只保存在会话临时目录，不在仓库、日志和本报告中）。
@@ -163,7 +175,7 @@
 
 发布硬化后，P0 之前的旧代码可以在最新表结构上创建 Case・Document（创建・更新・替换文件）・請求書・領収書・Expense・Timeline・Task，并由最新代码正确读取（见 `docs/CHANGELOG_2026-09-30_release_hardening.md`）。因此：
 
-- **代码镜像回滚**（backend/frontend 回到旧镜像或旧提交）不需要反向 migration，也不需要恢复数据库。旧代码删除被新表数据引用的记录时会被外键拒绝（不产生不一致），期间请用归档代替删除。
+- **代码镜像回滚**不需要反向 migration，也不需要恢复数据库，并且**不 checkout 旧提交**：backend 用 `scripts/deploy/release.sh backend --image <旧镜像>`，前端只换静态文件 `release.sh frontend-assets --from-image|--from-ref`，nginx 安全配置保持最新（见 §2b）。旧代码删除被新表数据引用的记录时会被外键拒绝（不产生不一致），期间请用归档代替删除；回到 P0 之前的 backend 期间案件文件下载不可用（不重新公开 `/media/`）。
 - **需要专用回滚命令或数据库整体恢复**的是数据操作：权限/账号变更（`restore_access_snapshot`）、Expense 回填（`backfill_expense_owner --rollback`）、localdev 停用、将来的正式 Excel 导入（须先有专用回滚）、误操作或数据损坏（第 3 步备份整体恢复，须批准）。
 - 详细步骤见 `docs/DEPLOY.md`「回滚」（已分为上述两类），发布前必须执行 `backend/scripts/rollback_compat/run.sh`。
 
@@ -180,7 +192,8 @@
 7. D12 localdev 账号停用。
 8. 上线后在「設定」确认公司实际事业年度末月（默认 3 月；年度关闭前确认）。
 9. 是否授予利润分配权限给李以外的人员（默认只有 accounting_admin）。
-10. 发布前「旧代码兼容性检查」（`backend/scripts/rollback_compat/run.sh`）的结果；上线后若需回滚，代码镜像回滚可由操作人员按 DEPLOY 执行，权限・回填・数据库整体恢复须李批准。
+10. 回滚到 P0 之前的 backend 期间案件文件下载不可用（安全优先，不重新公开 `/media/`）。
+11. 发布前「旧代码兼容性检查」（`backend/scripts/rollback_compat/run.sh`）的结果；上线后若需回滚，代码镜像回滚可由操作人员按 DEPLOY 执行，权限・回填・数据库整体恢复须李批准。
 
 ## 9. 正式 LIST.xlsx 导入仍待确认的字段
 

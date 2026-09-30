@@ -370,6 +370,8 @@ Case
 
 **发布硬化（分支 `codex/release-hardening`，基线 `00e8d49`，2026-09-30）**：修复「migrate 后回滚到 P0 之前旧代码会因 NOT NULL 新列失败」。新增 follow-up migration `accounting/0019`・`cases/0021`・`documents/0005`，为 9 个 NOT NULL 列设置数据库默认值（不改旧 migration、不写数据）。新增固定回归 `backend/scripts/rollback_compat/run.sh`（旧基线 `de95411` 在最新表结构上实际创建 Case・Document・請求書・領収書等，最新代码读取更新；专用临时库 `gyoseishoshi_erp_rollback_compat_preview`）和单元测试 `apps/cases/tests_db_defaults.py`。DEPLOY.md 回滚分为「代码镜像回滚（无需恢复数据库）」与「数据操作需专用回滚/整体恢复」，并补充 migrate 前后验证命令。详见 `docs/CHANGELOG_2026-09-30_release_hardening.md`。
 
+**发布硬化（续，2026-09-30）**：nginx 与前端回滚解耦——`frontend` 服务改为只读挂载 `nginx/default.conf` 的 `nginx:1.27-alpine`，静态文件放在 `frontend_dist` 卷，由 `frontend-assets` 写入；回滚用 `scripts/deploy/release.sh`（只换静态文件或 backend 镜像，切换前后检查 nginx 安全规则和 HTTP，backend 启动用 `/api/auth/csrf/` 轮询＋超时保存日志）。任何旧前端静态文件都在最新安全 nginx 下运行（隔离容器用 `de95411` 旧镜像验证）。平台预览库已执行 3 个硬化 migration。回到 P0 之前的 backend 期间案件文件下载不可用（设计如此）。
+
 ### 明确暂缓或等待业务决策
 
 - 税务证明剩余 6 份 PDF 正式字段映射。

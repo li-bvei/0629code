@@ -20,6 +20,8 @@ services:
       retries: 10
 
   backend:
+    # BACKEND_IMAGE を指定すると、その（旧）イメージで起動できる（回滚：scripts/deploy/release.sh backend）。
+    image: ${BACKEND_IMAGE:-sunrise-backend:current}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -40,19 +42,36 @@ services:
              python manage.py collectstatic --noinput &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
 
-  frontend:
+  # フロントの静的ファイルを frontend_dist ボリュームへ書き出す一回限りのサービス。
+  # 静的ファイルの版の切り替え（回滚を含む）は scripts/deploy/release.sh frontend-assets で行う。
+  frontend-assets:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      target: assets
       args:
         VITE_BASE_PATH: ${VITE_BASE_PATH:-/sun/}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/sun/api/}
+    restart: "no"
+    volumes:
+      - frontend_dist:/dist
+
+  # nginx 実行環境（静的ファイルの版とは独立）。安全設定はリポジトリの nginx/default.conf を
+  # 読み取り専用でマウントする：/media/・/sun/media/ は 404、/_protected_media/ は internal
+  # （X-Accel-Redirect 専用）。静的ファイルを古い版に戻しても、この設定は置き換わらない。
+  frontend:
+    image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:8081:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_started
+      frontend-assets:
+        condition: service_completed_successfully
     volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - frontend_dist:/usr/share/nginx/html:ro
       - static_volume:/usr/share/nginx/html/static:ro
       # 案件ファイルは Web ルート外にマウントし、X-Accel-Redirect の internal location からのみ送る。
       - media_volume:/var/protected_media:ro
@@ -61,3 +80,4 @@ volumes:
   mysql_data:
   media_volume:
   static_volume:
+  frontend_dist:

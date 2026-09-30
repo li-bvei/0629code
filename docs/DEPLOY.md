@@ -336,12 +336,14 @@ $RUN backfill_expense_owner --username zbry6947@gmail.com                   # �
 $RUN backfill_expense_owner --username zbry6947@gmail.com --apply --yes --expect-count N --output-dir /ops
 ```
 
-**13. 准备前端**
+**13. 准备前端静态文件**
 
-frontend 镜像里同时包含前端页面和 nginx 配置，所以这一步只 **build**，不 `up`；实际切换放在第 16 步（D10）。
+发布硬化后，前端静态文件（`frontend-assets`，只写入 `frontend_dist` 卷）与 nginx 运行环境（`frontend`，`nginx:1.27-alpine` 只读挂载仓库的 `nginx/default.conf`）已经分离。这一步只 **build** 静态文件镜像，并提前拉取 nginx 镜像；实际切换放在第 16 步（D10）。
 
 ```bash
-docker compose --env-file .env.prod build frontend
+docker compose --env-file .env.prod build frontend-assets
+docker compose --env-file .env.prod pull frontend             # nginx:1.27-alpine
+grep -nE "location \^~ /(sun/)?media/|_protected_media|internal|return 404" nginx/default.conf   # 安全规则存在
 ```
 
 **14. D9 媒体引用盘点**（只读；若「/media/ 参照 合計」大于 0，先停下来确认处理方式）
@@ -350,7 +352,7 @@ docker compose --env-file .env.prod build frontend
 $RUN inventory_media_references | tee p0_ops/d9_media_inventory.txt
 ```
 
-**15. 在 nginx 容器中检查语法**（本地从未做过，这是阻断项）
+**15. 在 nginx 容器中检查语法**（backend 已在第 10 步启动；本地隔离环境已验证通过）
 
 ```bash
 docker compose --env-file .env.prod run --rm --no-deps frontend nginx -t
@@ -359,15 +361,15 @@ docker compose --env-file .env.prod run --rm --no-deps frontend nginx -t
 **16. D10 切换前端和 nginx**（关闭公开 `/media/`，media 卷改挂到 Web 根目录之外）
 
 ```bash
-docker compose --env-file .env.prod up -d frontend
+docker compose --env-file .env.prod up -d frontend            # 先执行一次 frontend-assets 写入静态文件，再启动 nginx
+scripts/deploy/release.sh verify-config                        # 正在运行的 nginx 含 /media/ 404・/_protected_media/ internal
 ```
 
 **17. 验证下载、预览和旧文件**
 
 ```bash
-curl -sI http://127.0.0.1:8081/sun/media/case_documents/任意文件名 | head -1          # 期望 404
-curl -sI http://127.0.0.1:8081/media/case_documents/任意文件名 | head -1              # 期望 404
-curl -sI http://127.0.0.1:8081/_protected_media/case_documents/任意文件名 | head -1   # 期望 404
+scripts/deploy/release.sh verify-http      # /media/・/sun/media/・/_protected_media/ → 404，/sun/ → 200，/sun/api/auth/csrf/ 正常
+curl -sI http://127.0.0.1:8081/sun/media/case_documents/任意文件名 | head -1          # 期望 404（用真实文件名再确认一次）
 ```
 
 然后用李的账号，在书类一览中下载和预览一个既有文件（PDF、日文文件名、大文件断点续传），确认审计里有 `download_authorized`/`download_started`。再用焦的账号访问非本人担当案件的文件，确认返回 403 并有 `download_denied`。
@@ -408,8 +410,11 @@ $RUN shell -c "from django.contrib.auth.models import User; print(User.objects.f
 | 对象 | 方法 |
 |---|---|
 | 第 5～9 步失败（新后端尚未对用户开放） | 停止操作；`docker compose up -d backend` 用第 4 步之前的镜像（见 `p0_ops/images_before_p0.txt`）或上线前的提交重新 build。新表・新列（含数据库默认值）保留 |
-| backend 代码 | 回到上线前的提交或旧镜像，`build backend && up -d backend`；新表・新列保留。回退后用 `$RUN check`、`curl .../health/` 确认，并由操作人员新建一条测试案件・书类后删除（旧代码下若有关联到新表的数据，删除会被外键拒绝，见下方注意） |
-| frontend + nginx | 回到上线前的提交或旧镜像，`build frontend && up -d frontend`（docker-compose 的 media 挂载一起恢复。注意：旧 nginx 配置会重新公开 `/media/`，应同时评估） |
+| backend 代码 | **不要 checkout 旧提交**（旧 compose/nginx 会一起回退）。保持当前仓库，执行 `scripts/deploy/release.sh backend --image <第 3 步记录的旧 backend 镜像>`：以旧镜像启动 backend，轮询 `/api/auth/csrf/`（新旧版本都存在；默认最长 180 秒，`WAIT_TIMEOUT` 可调），HTTP 200 且取得 CSRF 响应后，再检查 nginx 安全配置和 HTTP；超时会把 backend 日志保存到 `p0_ops/backend_timeout_*.log` 并以非 0 结束。新表・新列保留。回到新版：`release.sh backend --image sunrise-backend:current` |
+| frontend 静态文件 | **nginx 配置不随之回滚**。`scripts/deploy/release.sh frontend-assets --from-image <旧 frontend 镜像>`（旧的「nginx 同梱」镜像也可以，只取静态文件）或 `--from-ref <旧 git 版本>`（仅重新构建静态文件）。脚本在切换前检查正在运行的 nginx 含受保护媒体规则（缺少则拒绝切换），切换后再做 HTTP 检查。回到新版：`release.sh frontend-assets current` |
+| nginx 安全配置 | 不属于应用代码回滚对象。`nginx/default.conf` 以当前（最新安全）版本只读挂载；如需修改须作为单独的变更审查，并再次执行 `release.sh verify-config`・`verify-http` |
+
+回到 P0 之前的旧 backend 时的限制：旧代码的书类下载依赖公开的 `/media/`，在最新安全 nginx 下会返回 404。回滚期间案件文件无法下载（文件和元数据不会丢失，重新上线新 backend 后恢复）；这是为了不因回滚而重新公开文件。
 | 阶段 B | `DJANGO_PROTECTED_ADMIN_ENFORCEMENT=False`，重启 backend |
 | 李无法登录 | `$RUN changepassword zbry6947@gmail.com`、`$RUN axes_reset_username zbry6947@gmail.com`、`$RUN protect_account --username zbry6947@gmail.com --apply --yes`、`$RUN restore_access_snapshot /ops/<file> --user zbry6947@gmail.com --apply --yes` |
 
