@@ -3,6 +3,7 @@ import csv
 import io
 
 from django.core.exceptions import SuspiciousFileOperation
+from django.db import transaction as db_transaction
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.utils import timezone
@@ -14,12 +15,13 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from apps.audit.models import AuditLog
-from apps.audit.services import record
+from apps.audit.services import record, safe_changes
 from apps.authentication.access_policy import ALLOW
 from apps.authentication.drf import BusinessScopedViewSetMixin
 from apps.documents.protected_download import build_file_response, is_first_range_request, resolve_document_path
 
-from . import ledger_service
+from . import bulk_service, ledger_service
+from .history import TRANSACTION_FIELDS, serialize_history, transaction_changes, transaction_values
 from .models import (
     REAL_ESTATE_FILE_SUBDIR,
     InternalProfitDistribution,
@@ -41,6 +43,7 @@ from .serializers import (
 )
 
 AUDIT_MODULE = 'real_estate'
+PARTY_HISTORY_FIELDS = ('role', 'name', 'address', 'license_number', 'note')
 
 
 def _audit(request, obj, action, **kwargs):
@@ -57,51 +60,142 @@ class TransactionFilterMixin:
 
 class RealEstateTransactionViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     access_resource = 'real_estate'
-    access_action_map = {'ensure_ledger': 'change', 'audit_log': 'view'}
-    queryset = RealEstateTransaction.objects.select_related('responsible_employee', 'customer', 'management_company',
-                                                           'legal_ledger')
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    access_action_map = {
+        'ensure_ledger': 'ledger', 'audit_log': 'view', 'archive': 'archive', 'restore': 'restore',
+        'export': 'export', 'responsible_suggestions': 'view',
+        'bulk_preview': 'bulk_change', 'bulk_update': 'bulk_change',
+    }
+    queryset = RealEstateTransaction.objects.select_related('customer', 'management_company', 'legal_ledger')
     serializer_class = RealEstateTransactionSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
         p = self.request.query_params
-        if p.get('responsible_employee'):
-            qs = qs.filter(responsible_employee_id=p['responsible_employee'])
-        if p.get('mine') in ('1', 'true'):
-            qs = qs.filter(responsible_employee_id=self.business_policy.employee_id)
-        for name in ('stage', 'payment_status', 'transfer_status', 'transaction_type'):
-            if p.get(name):
-                value = p[name]
-                qs = qs.filter(**{name: '' if value == 'unset' else value})
-        if p.get('management_company'):
-            value = p['management_company']
-            qs = qs.filter(Q(management_company_name__icontains=value) | Q(management_company__name__icontains=value))
-        if p.get('missing') in ('1', 'true'):
-            qs = qs.filter(Q(transaction_date__isnull=True) | Q(responsible_employee__isnull=True)
-                           | Q(management_company_name='') | Q(payment_status=''))
-        keyword = p.get('keyword') or p.get('search')
-        if keyword:
-            qs = qs.filter(Q(transaction_number__icontains=keyword) | Q(party_name__icontains=keyword)
-                           | Q(property_name__icontains=keyword) | Q(room_number__icontains=keyword)
-                           | Q(note__icontains=keyword))
+        qs = bulk_service.apply_filters(super().get_queryset(), p)
+        if self.action == 'list':
+            archive_status = p.get('archive_status', 'active')
+            if archive_status == 'active':
+                qs = qs.filter(is_archived=False)
+            elif archive_status == 'archived':
+                qs = qs.filter(is_archived=True)
         return qs.order_by('-created_at', '-id')
 
+    def perform_create(self, serializer):
+        self._history_fields = set(serializer.validated_data) & set(TRANSACTION_FIELDS)
+        super().perform_create(serializer)
+
     def after_create(self, instance):
-        _audit(self.request, instance, 'transaction_created', object_repr=instance.transaction_number)
+        after = transaction_values(instance, self._history_fields)
+        _audit(self.request, instance, 'transaction_created', object_repr=instance.transaction_number,
+               changes=safe_changes({}, after))
+
+    def perform_update(self, serializer):
+        self._history_fields = set(serializer.validated_data) & set(transaction_values(serializer.instance).keys())
+        self._history_before = transaction_values(serializer.instance, self._history_fields)
+        super().perform_update(serializer)
 
     def after_update(self, instance):
-        _audit(self.request, instance, 'transaction_updated', object_repr=instance.transaction_number)
+        changes = transaction_changes(self._history_before, transaction_values(instance, self._history_fields))
+        if changes:
+            _audit(self.request, instance, 'transaction_updated', object_repr=instance.transaction_number,
+                   changes=changes)
 
-    def perform_destroy(self, instance):
-        # 台帳・ファイルがある記録は削除しない（段階を「キャンセル」にする）
-        if LegalLedger.objects.filter(transaction=instance).exists() or instance.files.exists():  # access-reviewed: 削除対象の取引は範囲確認済み
-            raise ValidationError({'detail': '台帳またはファイルがある記録は削除できません。段階を「キャンセル」にしてください。'})
-        _audit(self.request, instance, 'transaction_deleted', object_repr=instance.transaction_number)
-        instance.delete()
+    @action(detail=True, methods=['post'])
+    @db_transaction.atomic
+    def archive(self, request, pk=None):
+        tx = self.get_object()
+        if tx.is_archived:
+            raise ValidationError({'detail': '既にアーカイブ済みです。'})
+        reason = (request.data.get('reason') or '').strip()
+        if not reason:
+            raise ValidationError({'reason': 'アーカイブ理由を入力してください。'})
+        tx.is_archived = True
+        tx.archived_at = timezone.now()
+        tx.archived_by = request.user
+        tx.archive_reason = reason
+        tx.restored_at = None
+        tx.restored_by = None
+        tx.updated_by = request.user
+        tx.save(update_fields=['is_archived', 'archived_at', 'archived_by', 'archive_reason', 'restored_at',
+                               'restored_by', 'updated_by', 'updated_at'])
+        _audit(request, tx, 'transaction_archived', object_repr=tx.transaction_number, reason=reason,
+               changes={'archive_state': {'from': '有効', 'to': 'アーカイブ'}})
+        return Response(self.get_serializer(tx).data)
+
+    @action(detail=True, methods=['post'])
+    @db_transaction.atomic
+    def restore(self, request, pk=None):
+        tx = self.get_object()
+        if not tx.is_archived:
+            raise ValidationError({'detail': 'アーカイブされていません。'})
+        previous_reason = tx.archive_reason
+        tx.is_archived = False
+        tx.restored_at = timezone.now()
+        tx.restored_by = request.user
+        tx.updated_by = request.user
+        tx.save(update_fields=['is_archived', 'restored_at', 'restored_by', 'updated_by', 'updated_at'])
+        _audit(request, tx, 'transaction_restored', object_repr=tx.transaction_number, reason=previous_reason,
+               changes={'archive_state': {'from': 'アーカイブ', 'to': '有効'}})
+        return Response(self.get_serializer(tx).data)
+
+    @action(detail=False, methods=['post'], url_path='bulk-preview')
+    def bulk_preview(self, request):
+        """対象（絞り込み結果の全件、または一覧で選択した記録）と各記録の版を固定した短期トークンを返す。
+        書き込みはしない。一括変更はこのトークンでしか実行できない。"""
+        queryset = self.business_policy.queryset('real_estate', 'bulk_change')
+        return Response(bulk_service.issue_selection_token(queryset, request.data, request.user))
+
+    @action(detail=False, methods=['post'], url_path='bulk-update')
+    def bulk_update(self, request):
+        """段階・担当者・取引日の一括変更。全件成功か全件中止のどちらか（部分的な書き込みはしない）。"""
+        policy = self.business_policy
+        result = bulk_service.execute(
+            request=request, policy=policy, rule=self.access_rule,
+            queryset=policy.queryset('real_estate', 'bulk_change'),
+            serializer_class=self.get_serializer_class(), serializer_context=self.get_serializer_context(),
+            data=request.data,
+        )
+        return Response(result)
+
+    @action(detail=False, methods=['get'], url_path='responsible-suggestions')
+    def responsible_suggestions(self, request):
+        keyword = (request.query_params.get('q') or '').strip()
+        qs = self.business_policy.queryset('real_estate', 'list').exclude(responsible_name='')
+        if keyword:
+            qs = qs.filter(responsible_name__icontains=keyword)
+        names = qs.order_by('responsible_name').values_list('responsible_name', flat=True).distinct()[:20]
+        return Response([{'name': name} for name in names])
+
+    @action(detail=False, methods=['get'])
+    def export(self, request):
+        qs = self.get_queryset().order_by('transaction_number')
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(['番号', '当事者', '物件名', '部屋番号', '管理会社', '担当者', '取引種別', '段階',
+                         '取引日', '賃料・価格', '仲介手数料', '広告料', '手数料', '支払状態', '支払日',
+                         '振込状態', 'アーカイブ'])
+        count = 0
+        for tx in qs:
+            writer.writerow([
+                tx.transaction_number, tx.party_name, tx.property_name, tx.room_number,
+                tx.management_company_name, tx.responsible_name, tx.get_transaction_type_display(),
+                tx.get_stage_display(), tx.transaction_date or '', tx.rent_or_price or '',
+                tx.brokerage_fee or '', tx.advertising_fee or '', tx.handling_fee or '',
+                tx.get_payment_status_display(), tx.payment_date or '', tx.get_transfer_status_display(),
+                'はい' if tx.is_archived else '',
+            ])
+            count += 1
+        record(module=AUDIT_MODULE, action='transaction_exported', request=request,
+               object_type='real_estate.realestatetransaction', extra={'rows': count})
+        response = HttpResponse(('﻿' + buffer.getvalue()).encode('utf-8'), content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="real_estate_{timezone.localdate():%Y%m%d}.csv"'
+        return response
 
     @action(detail=True, methods=['post'], url_path='ensure-ledger')
     def ensure_ledger(self, request, pk=None):
         tx = self.get_object()
+        if tx.is_archived:
+            raise ValidationError({'detail': 'アーカイブ済みの記録は変更できません。先に復元してください。'})
         existed = LegalLedger.objects.filter(transaction=tx).exists()  # access-reviewed: 取引の変更権限を確認済み
         ledger = ledger_service.ensure_ledger(tx)
         if not existed:
@@ -128,12 +222,10 @@ class RealEstateTransactionViewSet(BusinessScopedViewSetMixin, ModelViewSet):
             ids = [str(i) for i in ids]
             if ids:
                 targets |= Q(object_type=object_type, object_id__in=ids)
-        rows = AuditLog.objects.filter(targets).order_by('-occurred_at')[:200]  # access-reviewed: 取引の閲覧権限を確認済み、対象は当該取引の記録だけ
-        return Response([
-            {'occurred_at': r.occurred_at, 'user': r.username_snapshot, 'action': r.action, 'object_type': r.object_type,
-             'result': r.result, 'reason': r.reason, 'changes': r.changes}
-            for r in rows
-        ])
+        rows = AuditLog.objects.filter(targets, result=AuditLog.RESULT_SUCCESS).select_related(
+            'user', 'employee').order_by('-occurred_at')[:200]  # access-reviewed: 取引の閲覧権限を確認済み、対象は当該取引の記録だけ
+        include_technical = policy.has('audit.view_auditlog')
+        return Response([serialize_history(row, include_technical=include_technical) for row in rows])
 
 
 class TransactionPartyViewSet(TransactionFilterMixin, BusinessScopedViewSetMixin, ModelViewSet):
@@ -144,13 +236,28 @@ class TransactionPartyViewSet(TransactionFilterMixin, BusinessScopedViewSetMixin
     def get_queryset(self):
         return self.filter_transaction(super().get_queryset())
 
+    def perform_create(self, serializer):
+        self._history_fields = set(serializer.validated_data) & set(PARTY_HISTORY_FIELDS)
+        super().perform_create(serializer)
+
     def after_create(self, instance):
-        _audit(self.request, instance, 'party_created', object_repr=instance.name)
+        after = {field: getattr(instance, field) for field in self._history_fields}
+        _audit(self.request, instance, 'party_created', object_repr=instance.name, changes=safe_changes({}, after))
+
+    def perform_update(self, serializer):
+        self._history_fields = set(serializer.validated_data) & set(PARTY_HISTORY_FIELDS)
+        self._history_before = {field: getattr(serializer.instance, field) for field in self._history_fields}
+        super().perform_update(serializer)
 
     def after_update(self, instance):
-        _audit(self.request, instance, 'party_updated', object_repr=instance.name)
+        after = {field: getattr(instance, field) for field in self._history_fields}
+        changes = safe_changes(self._history_before, after)
+        if changes:
+            _audit(self.request, instance, 'party_updated', object_repr=instance.name, changes=changes)
 
     def perform_destroy(self, instance):
+        if instance.transaction.is_archived:
+            raise ValidationError({'detail': 'アーカイブ済みの記録は変更できません。先に復元してください。'})
         ledger = LegalLedger.objects.filter(transaction_id=instance.transaction_id).first()  # access-reviewed: 当事者の変更権限を確認済み
         if ledger is not None and ledger.is_locked:
             raise ValidationError({'detail': '台帳がロックされているため、当事者は削除できません。'})
@@ -164,8 +271,8 @@ class LegalLedgerViewSet(TransactionFilterMixin, BusinessScopedViewSetMixin, Mod
     access_resource = 'real_estate_ledger'
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
     access_action_map = {
-        'lock': 'change', 'correct': 'change', 'legal_hold': 'change', 'corrections': 'view',
-        'close_year': 'change', 'export': 'export',
+        'update': 'ledger', 'partial_update': 'ledger', 'lock': 'ledger', 'correct': 'correct',
+        'legal_hold': 'ledger', 'corrections': 'view', 'close_year': 'close_year', 'export': 'export',
     }
     queryset = LegalLedger.objects.select_related('transaction')
     serializer_class = LegalLedgerSerializer
@@ -179,31 +286,45 @@ class LegalLedgerViewSet(TransactionFilterMixin, BusinessScopedViewSetMixin, Mod
     def create(self, request, *args, **kwargs):
         raise ValidationError({'detail': '台帳は取引の画面から作成してください。'})
 
-    def _require_manage(self):
+    def _require(self, permission, message):
         policy = self.business_policy
-        if not policy.rule('real_estate').can_manage_ledger(policy):
+        if not policy.has(permission):
             record(module=AUDIT_MODULE, action='ledger_manage_denied', request=self.request, result='denied',
-                   object_type='real_estate.legalledger', reason='manage_legal_ledger')
-            raise PermissionDenied('法定台帳のロック・更正・年度締め・出力の権限がありません。')
+                   object_type='real_estate.legalledger', reason=permission)
+            raise PermissionDenied(message)
+
+    @staticmethod
+    def _reject_archived(ledger):
+        if ledger.transaction.is_archived:
+            raise ValidationError({'detail': 'アーカイブ済みの記録は変更できません。先に復元してください。'})
 
     def perform_update(self, serializer):
+        self._reject_archived(serializer.instance)
+        fields = set(serializer.validated_data)
+        before = {field: getattr(serializer.instance, field) for field in fields}
         super().perform_update(serializer)
         ledger = serializer.instance
         ledger_service.refresh_derived(ledger)
         ledger.save(update_fields=['fiscal_year', 'fiscal_year_end_month', 'retention_until', 'updated_at'])
-        _audit(self.request, ledger, 'ledger_updated', object_repr=ledger.transaction.transaction_number)
+        after = {field: getattr(ledger, field) for field in fields}
+        changes = safe_changes(before, after)
+        if changes:
+            _audit(self.request, ledger, 'ledger_updated', object_repr=ledger.transaction.transaction_number,
+                   changes=changes)
 
     @action(detail=True, methods=['post'])
     def lock(self, request, pk=None):
         ledger = self.get_object()
-        self._require_manage()
+        self._reject_archived(ledger)
+        self._require('real_estate.manage_legal_ledger', '法定台帳を管理する権限がありません。')
         ledger_service.lock(ledger, request)
         return Response(self.get_serializer(ledger).data)
 
     @action(detail=True, methods=['post'])
     def correct(self, request, pk=None):
         ledger = self.get_object()
-        self._require_manage()
+        self._reject_archived(ledger)
+        self._require('real_estate.correct_legal_ledger', '法定台帳を更正する権限がありません。')
         data = LedgerCorrectionInputSerializer(data=request.data)
         data.is_valid(raise_exception=True)
         ledger_service.correct(ledger, data.validated_data['changes'], data.validated_data['reason'], request)
@@ -212,7 +333,8 @@ class LegalLedgerViewSet(TransactionFilterMixin, BusinessScopedViewSetMixin, Mod
     @action(detail=True, methods=['post'], url_path='legal-hold')
     def legal_hold(self, request, pk=None):
         ledger = self.get_object()
-        self._require_manage()
+        self._reject_archived(ledger)
+        self._require('real_estate.manage_legal_ledger', '法定台帳を管理する権限がありません。')
         hold = str(request.data.get('hold', 'true')).lower() in ('1', 'true', 'yes')
         ledger_service.set_legal_hold(ledger, hold, request.data.get('reason', ''), request)
         return Response(self.get_serializer(ledger).data)
@@ -224,7 +346,7 @@ class LegalLedgerViewSet(TransactionFilterMixin, BusinessScopedViewSetMixin, Mod
 
     @action(detail=False, methods=['post'], url_path='close-year')
     def close_year(self, request):
-        self._require_manage()
+        self._require('real_estate.close_legal_ledger_year', '法定台帳の年度を締める権限がありません。')
         try:
             year = int(request.data.get('fiscal_year'))
         except (TypeError, ValueError):
@@ -234,7 +356,7 @@ class LegalLedgerViewSet(TransactionFilterMixin, BusinessScopedViewSetMixin, Mod
     @action(detail=False, methods=['get'])
     def export(self, request):
         """台帳の CSV（事務所で表示・印刷するため）。出力は監査に残す。"""
-        self._require_manage()
+        self._require('real_estate.manage_legal_ledger', '法定台帳を出力する権限がありません。')
         qs = self.get_queryset().prefetch_related('transaction__parties').order_by('contract_date', 'id')
         buffer = io.StringIO()
         writer = csv.writer(buffer)
@@ -308,6 +430,8 @@ class RealEstateAccountingLinkViewSet(TransactionFilterMixin, BusinessScopedView
                extra={'income_source_id': instance.income_source_id, 'voucher_id': instance.voucher_id})
 
     def perform_destroy(self, instance):
+        if instance.transaction.is_archived:
+            raise ValidationError({'detail': 'アーカイブ済みの記録は変更できません。先に復元してください。'})
         _audit(self.request, instance, 'accounting_unlinked',
                extra={'income_source_id': instance.income_source_id, 'voucher_id': instance.voucher_id})
         instance.delete()
@@ -348,6 +472,8 @@ class InternalProfitDistributionViewSet(TransactionFilterMixin, BusinessScopedVi
         _audit(self.request, instance, 'profit_distribution_updated', changes={'amount': int(instance.amount)})
 
     def perform_destroy(self, instance):
+        if instance.transaction.is_archived:
+            raise ValidationError({'detail': 'アーカイブ済みの記録は変更できません。先に復元してください。'})
         if instance.status == InternalProfitDistribution.STATUS_SETTLED:
             raise ValidationError({'detail': '結算済みの配分は削除できません。'})
         _audit(self.request, instance, 'profit_distribution_deleted', changes={'amount': int(instance.amount)})
@@ -356,6 +482,8 @@ class InternalProfitDistributionViewSet(TransactionFilterMixin, BusinessScopedVi
     @action(detail=True, methods=['post'])
     def settle(self, request, pk=None):
         obj = self.get_object()
+        if obj.transaction.is_archived:
+            raise ValidationError({'detail': 'アーカイブ済みの記録は変更できません。先に復元してください。'})
         if obj.status == InternalProfitDistribution.STATUS_SETTLED:
             raise ValidationError({'detail': '既に結算済みです。'})
         obj.status, obj.settled_at = InternalProfitDistribution.STATUS_SETTLED, timezone.now()
@@ -366,6 +494,8 @@ class InternalProfitDistributionViewSet(TransactionFilterMixin, BusinessScopedVi
     @action(detail=True, methods=['post'])
     def reopen(self, request, pk=None):
         obj = self.get_object()
+        if obj.transaction.is_archived:
+            raise ValidationError({'detail': 'アーカイブ済みの記録は変更できません。先に復元してください。'})
         if obj.status != InternalProfitDistribution.STATUS_SETTLED:
             raise ValidationError({'detail': '結算済みではありません。'})
         reason = (request.data.get('reason') or '').strip()

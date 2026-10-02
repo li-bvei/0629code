@@ -175,7 +175,8 @@ class CaseAccessTests(AccessFixtureMixin, TestCase):
         self.as_user(self.unlinked)
         response = self.client.post('/api/receptions/', body, content_type='application/json')
         self.assertEqual(response.status_code, 400)
-        self.assertIn('responsible_employee', response.json())
+        # 受付の入力構造（case.responsible_employee）に合わせた項目エラー（2026-10-02 変更）
+        self.assertIn('responsible_employee', response.json()['case'])
 
 
 class PartyAccessTests(AccessFixtureMixin, TestCase):

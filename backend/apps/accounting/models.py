@@ -29,6 +29,67 @@ class ExpenseCategory(models.Model):
         return self.name
 
 
+class ExpenseCategorySuggestionRule(models.Model):
+    """場所などの文字からカテゴリを提案する規則（提案だけ。保存値は利用者が確定した文字列）。
+
+    owner が空の規則は事務所共通、owner がある規則はその利用者本人の提案にだけ使う。
+    規則の一覧・編集・削除・事務所共通への昇格は manage_expense_category を持つ人だけ。支出の入力者は、
+    自分が確定した「場所 → カテゴリ」を明示的に記憶させた場合に限り、本人用の規則を 1 件追加できる
+    （category_suggestions.remember_place_rule）。具体的な場所名を他の利用者の提案に混ぜない。
+    """
+
+    FIELD_PLACE = 'place'
+    FIELD_TARGET = 'expense_target'
+    FIELD_NOTE = 'note'
+    FIELD_CHOICES = ((FIELD_PLACE, '場所'), (FIELD_TARGET, '費用対象'), (FIELD_NOTE, '備考'))
+
+    SOURCE_SEED = 'seed'
+    SOURCE_MANUAL = 'manual'
+    SOURCE_CONFIRMED = 'user_confirmed'
+    SOURCE_CHOICES = ((SOURCE_SEED, '初期規則'), (SOURCE_MANUAL, '管理者が登録'), (SOURCE_CONFIRMED, '入力時に記憶'))
+
+    pattern = models.CharField('文字', max_length=100)
+    # 表記ゆれを吸収した照合用キー（category_suggestions.normalize_key）。保存時に必ず再計算する。
+    pattern_key = models.CharField('照合キー', max_length=100, editable=False)
+    match_field = models.CharField('対象項目', max_length=20, choices=FIELD_CHOICES, default=FIELD_PLACE)
+    expense_category = models.ForeignKey(ExpenseCategory, verbose_name='提案するカテゴリ', on_delete=models.CASCADE,
+                                         related_name='suggestion_rules')
+    priority = models.IntegerField('優先度', default=0)
+    is_active = models.BooleanField('有効', default=True)
+    source = models.CharField('登録元', max_length=20, choices=SOURCE_CHOICES, default=SOURCE_MANUAL)
+    # 空＝事務所共通。値あり＝その利用者だけの規則（利用者を削除したら規則も消す。共通へは自動で広げない）
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='本人用の利用者', on_delete=models.CASCADE,
+                              null=True, blank=True, related_name='expense_category_rules')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='作成者', on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name='+')
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name='最終更新者', on_delete=models.SET_NULL,
+                                   null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_expense_category_rules'
+        verbose_name = '支出カテゴリの提案規則'
+        verbose_name_plural = '支出カテゴリの提案規則'
+        ordering = ['-priority', 'id']
+        constraints = [
+            # 同じ範囲（本人用は利用者ごと）で、同じ項目・同じ文字から別々のカテゴリを提案しない。
+            # 事務所共通（owner が空）の重複は NULL が一意制約に掛からないため、シリアライザと昇格処理で防ぐ。
+            models.UniqueConstraint(fields=['owner', 'match_field', 'pattern_key'],
+                                    name='uniq_expense_category_rule_pattern'),
+        ]
+
+    def __str__(self):
+        return f'{self.get_match_field_display()}「{self.pattern}」→ {self.expense_category}'
+
+    def save(self, *args, **kwargs):
+        from .category_suggestions import normalize_key
+
+        self.pattern = (self.pattern or '').strip()
+        self.pattern_key = normalize_key(self.pattern)
+        super().save(*args, **kwargs)
+
+
 class Expense(models.Model):
     expense_date = models.DateField('日付')
     place = models.CharField('場所', max_length=255, blank=True)

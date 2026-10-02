@@ -20,22 +20,22 @@ export interface RealEstateTransaction {
   management_company_name: string
   management_company: number | null
   management_company_ref_name: string
-  responsible_employee: number | null
-  responsible_employee_name: string
+  responsible_name: string
   transaction_date: string | null
   rent_or_price: string | null
   brokerage_fee: string | null
   advertising_fee: string | null
   handling_fee: string | null
-  source_billed_to_sunrise_amount: string | null
-  source_billed_to_client_amount: string | null
-  source_sunrise_invoice_amount: string | null
   payment_status: string
   payment_status_display: string
   payment_date: string | null
   transfer_status: string
   transfer_status_display: string
   note: string
+  is_archived: boolean
+  archived_at: string | null
+  archive_reason: string
+  restored_at: string | null
   missing_items: string[]
   has_ledger: boolean
   ledger_locked: boolean
@@ -45,6 +45,22 @@ export interface RealEstateTransaction {
 
 export type RealEstateTransactionPayload = Partial<Omit<RealEstateTransaction,
   'id' | 'transaction_number' | 'missing_items' | 'has_ledger' | 'ledger_locked' | 'created_at' | 'updated_at'>>
+
+export interface BulkSelectionPreview {
+  selection_token: string
+  count: number
+  filter_summary: string[]
+  mode: 'ids' | 'filter'
+  expires_in_seconds: number
+}
+
+export interface BulkUpdateResult {
+  batch_id: string
+  matched: number
+  updated: number
+  unchanged: number
+  locked_ledger_count: number
+}
 
 export interface TransactionParty {
   id: number
@@ -147,12 +163,11 @@ export interface ProfitDistribution {
 
 export interface AuditRow {
   occurred_at: string
-  user: string
-  action: string
-  object_type: string
-  result: string
+  actor: string
+  message: string
   reason: string
-  changes: Record<string, unknown>
+  changes: { field: string; before: string; after: string }[]
+  technical_details?: Record<string, unknown>
 }
 
 export interface DryRunRow {
@@ -169,7 +184,7 @@ export interface DryRunRow {
     customer: { id: number; name: string }[]
     management_company: { id: number; name: string }[]
     property: { id: number; number: string; property_name: string; room_number: string }[]
-    responsible: { id: number; name: string }[]
+    responsible: { name: string }[]
   }
 }
 
@@ -179,7 +194,6 @@ export interface DryRunReport {
   sheet: string
   sheets_found: string[]
   headers: string[]
-  unknown_columns: string[]
   missing_columns: string[]
   column_stats: Record<string, { empty: number; dash: number; zero: number; value: number }>
   summary: Record<string, number>

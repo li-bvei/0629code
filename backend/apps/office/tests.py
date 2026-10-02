@@ -22,7 +22,7 @@ class OfficeSettingsApiTests(RealEstateFixture, TestCase):
         self.assertEqual(OfficeSettings.objects.count(), 1)
 
     def test_only_system_admin_and_validation_and_audit(self):
-        for user in (self.staff_a, self.jiao):
+        for user in (self.staff_a, self.manager):
             self.assertEqual(self.api(user, 'patch', URL, {'fiscal_year_end_month': 12}).status_code, 403)
         for bad in (0, 13, 'x', None):
             self.assertEqual(self.api(self.li, 'patch', URL, {'fiscal_year_end_month': bad}).status_code, 400)
@@ -35,14 +35,16 @@ class OfficeSettingsApiTests(RealEstateFixture, TestCase):
 class LedgerSnapshotTests(RealEstateFixture, TestCase):
     def ledger_for(self, date_str):
         tx = self.create_tx(transaction_date=date_str)
-        return self.api(self.staff_a, 'post', f"/api/real-estate/transactions/{tx['id']}/ensure-ledger/").json()
+        response = self.api(self.li, 'post', f"/api/real-estate/transactions/{tx['id']}/ensure-ledger/")
+        self.assertEqual(response.status_code, 201, response.content)
+        return response.json()
 
     def test_snapshot_not_retroactive(self):
         first = self.ledger_for('2026-09-10')
         self.assertEqual((first['fiscal_year_end_month'], first['fiscal_year'], first['retention_until']), (3, 2027, '2032-03-31'))
         self.api(self.li, 'patch', URL, {'fiscal_year_end_month': 12})
         # 既存の台帳は自分の快照（3 月）で計算を続ける
-        edited = self.api(self.staff_a, 'patch', f"/api/real-estate/ledgers/{first['id']}/", {'contract_date': '2026-10-01'}).json()
+        edited = self.api(self.li, 'patch', f"/api/real-estate/ledgers/{first['id']}/", {'contract_date': '2026-10-01'}).json()
         self.assertEqual((edited['fiscal_year_end_month'], edited['fiscal_year']), (3, 2027))
         # 新しい台帳は現在の設定（12 月）を快照にする
         second = self.ledger_for('2026-09-10')

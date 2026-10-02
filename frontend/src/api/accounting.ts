@@ -1,6 +1,8 @@
 import http from '../services/http'
 import type {
   CaseAccountingSummary,
+  ExpenseCategoryRule,
+  ExpenseCategoryRulePayload,
   ExpenseCategorySuggestions,
   AccountingDashboard,
   AccountingListParams,
@@ -592,6 +594,17 @@ export const getExpenseCategorySuggestions = async (params: {
   const response = await http.get<ExpenseCategorySuggestions>('/accounting/expenses/category-suggestions/', { params })
   return response.data
 }
+
+// カテゴリ提案規則の管理（manage_expense_category を持つ人だけ。判定は後端）
+export const listExpenseCategoryRules = async (page = 1) =>
+  (await http.get<AccountingPaginatedResponse<ExpenseCategoryRule>>('/accounting/expense-category-rules/', { params: { page } })).data
+export const createExpenseCategoryRule = async (payload: ExpenseCategoryRulePayload) =>
+  (await http.post<ExpenseCategoryRule>('/accounting/expense-category-rules/', payload)).data
+export const updateExpenseCategoryRule = async (id: number, payload: Partial<ExpenseCategoryRulePayload>) =>
+  (await http.patch<ExpenseCategoryRule>(`/accounting/expense-category-rules/${id}/`, payload)).data
+export const promoteExpenseCategoryRule = async (id: number) =>
+  (await http.post<ExpenseCategoryRule>(`/accounting/expense-category-rules/${id}/promote/`)).data
+export const deleteExpenseCategoryRule = async (id: number) => { await http.delete(`/accounting/expense-category-rules/${id}/`) }
 
 export const getCaseAccountingSummary = async (caseId: number) => {
   const response = await http.get<CaseAccountingSummary>(`/cases/${caseId}/accounting-summary/`)

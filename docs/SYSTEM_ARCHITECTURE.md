@@ -25,9 +25,9 @@
 7. Visa 返签表留在 `accounting/vouchers`。
 8. 不动产使用独立的 `real_estate` app。
 9. 内部利润分配属于不动产的受限子功能。
-10. `LIST.xlsx` 的「强哥」工作表完全忽略，不分析、不映射、不迁移。
+10. 不动产验收只允许读取 `LIST.xlsx` 的 `工作表1`；不枚举、不分析、不映射其他工作表。
 11. Task、Reminder、Document、Portal 以及所有 migration 不得擅自删除。
-12. 普通用户不能修改其他用户的数据。
+12. 普通用户不能修改其他用户的私有数据；不动产是明确例外，已授权用户共同维护全体记录。
 13. 权限必须在后端执行。
 14. superuser 不自动获得业务数据权限。
 15. Timeline 记录业务进展，AuditLog 记录系统访问和修改。
@@ -71,7 +71,7 @@
 
 ```text
 authentication / audit      ← 所有业务模块都可以依赖（权限策略、审计写入）
-employees                   ← cases、accounting、real_estate
+employees                   ← cases、accounting
 customers / companies       ← cases、accounting、real_estate（只引用主档，不复制）
 cases                       ← timelines、documents、tasks、reminders（子资源）
 cases（只读摘要）            ← accounting、real_estate 可通过可选 FK 关联
@@ -91,7 +91,8 @@ api                         → 聚合各模块，不被领域模块依赖
 | Expense（报销） | `owner`（后端强制写入） | 只能查看、修改自己的 | `expense_view_all` / `expense_change_all` / `expense_export_all` 三项分开 |
 | 会计其他模块（收入、车辆、项目、帐票、Visa、税务、清風） | 模块级权限（P0 不做记录级 owner） | 需要对应的 `use_*` 模块权限 | 同左 |
 | Document | 继承父 Case | 下载限本人担当 | `document_download_all` |
-| RealEstate（P3） | 独立规则，P3 设计 | — | 内部利润分配仅限明确授权者 |
+| RealEstate（P3） | 协同台账；担当者是自由业务文本，不是 Employee/账号 | 有模块入口及动作权限者可查看、新建、编辑全部记录 | 批量变更（`bulk_change_real_estate`，须同时有单条编辑权限）、归档、恢复、导出、法定台账、更正、年度关闭、利润分配分别明确授权；不使用 `is_superuser` 绕过 |
+| ExpenseCategory 及建议规则 | 事务所共享的设置数据 | `use_expense` 可读类别；保存支出时受控沉淀类别名、显式确认时记忆一条只对本人生效的场所规则 | 类别与规则的列表维护、本人规则提升为全事务所规则需 `manage_expense_category`；建议规则只产生候选，不改写支出 |
 
 **受控关联规则**（防止通过关联对象自行扩大权限）：Customer/Company 的范围由「关联了本人担当的案件」推导，所以凡是接收既有 Customer/Company ID 的入口，都必须在后端用提交的真实 ID 执行 `PartyRule.check_link`，不能依赖前端候选列表。这些入口包括：Case 新建和更新、新规受付（`existing_customer_id`、`existing_company_id`、家族 `customer`、代表者）、FamilyMember 的 `family_customer`、CompanyStaff 的 `customer`、Company 的代表者。
 

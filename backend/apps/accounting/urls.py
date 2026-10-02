@@ -20,6 +20,7 @@ from .views import (
     AccountingProjectExpenseViewSet,
     AccountingProjectIncomeViewSet,
     AccountingProjectViewSet,
+    ExpenseCategorySuggestionRuleViewSet,
     ExpenseCategoryViewSet,
     ExpenseViewSet,
     IncomeSourceViewSet,
@@ -37,6 +38,8 @@ from .views import (
 router = BusinessRouter()
 router.register('expenses', ExpenseViewSet, basename='accounting-expense')
 router.register('expense-categories', ExpenseCategoryViewSet, basename='accounting-expense-category')
+router.register('expense-category-rules', ExpenseCategorySuggestionRuleViewSet,
+                basename='accounting-expense-category-rule')
 router.register('income-sources', IncomeSourceViewSet, basename='accounting-income-source')
 router.register('vehicle-usages', VehicleUsageViewSet, basename='accounting-vehicle-usage')
 router.register('projects', AccountingProjectViewSet, basename='accounting-project')

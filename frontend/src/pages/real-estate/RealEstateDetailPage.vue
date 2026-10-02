@@ -1,15 +1,13 @@
 <script setup lang="ts">
 // 不動産の単件ワークベンチ。区画：物件・当事者・金額・ファイル・法定台帳・会計参照・内部利益配分・監査記録。
-// 編集ボタンの表示は目安で、可否は後端が判定する（担当外は 403）。
+// 担当者は業務上の自由入力テキスト。編集可否は担当者とは無関係に明示権限で判定する。
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '../../api/realEstate'
-import { listEmployees } from '../../api/employees'
 import RemoteCompanySelect from '../../components/RemoteCompanySelect.vue'
 import RemoteCustomerSelect from '../../components/RemoteCustomerSelect.vue'
 import { useAuthStore } from '../../stores/auth'
-import type { Employee } from '../../types/api'
 import type {
   AuditRow, LedgerCorrection, LegalLedger, ProfitDistribution, RealEstateAccountingLink, RealEstateFile,
   RealEstateTransaction, TransactionParty,
@@ -24,13 +22,14 @@ const router = useRouter()
 const auth = useAuthStore()
 const id = computed(() => Number(route.params.id))
 const tx = ref<RealEstateTransaction | null>(null)
-const employees = ref<Employee[]>([])
 const activeTab = ref('overview')
 const loading = ref(false)
 
-const canEdit = computed(() => Boolean(tx.value) && (auth.can('real_estate.real_estate_change_all')
-  || (tx.value!.responsible_employee != null && tx.value!.responsible_employee === auth.user?.employee_id)))
+const canEdit = computed(() => Boolean(tx.value) && !tx.value!.is_archived && auth.can('real_estate.change_real_estate'))
+const canArchive = computed(() => Boolean(tx.value) && !tx.value!.is_archived && auth.can('real_estate.archive_real_estate'))
+const canRestore = computed(() => Boolean(tx.value?.is_archived) && auth.can('real_estate.restore_real_estate'))
 const canManageLedger = computed(() => auth.can('real_estate.manage_legal_ledger'))
+const canCorrectLedger = computed(() => auth.can('real_estate.correct_legal_ledger'))
 const canProfit = computed(() => auth.can('real_estate.manage_profit_distribution'))
 const canIncome = computed(() => auth.can('accounting.use_income'))
 const canVoucher = computed(() => auth.can('accounting.use_voucher'))
@@ -50,10 +49,17 @@ const editVisible = ref(false)
 const edit = reactive<Record<string, unknown>>({})
 const EDIT_FIELDS = [
   'party_name', 'customer', 'property_name', 'room_number', 'property_address', 'property_kind', 'area_sqm',
-  'management_company_name', 'management_company', 'responsible_employee', 'transaction_type', 'stage', 'transaction_date',
+  'management_company_name', 'management_company', 'responsible_name', 'transaction_type', 'stage', 'transaction_date',
   'rent_or_price', 'brokerage_fee', 'advertising_fee', 'handling_fee', 'payment_status', 'payment_date', 'transfer_status',
   'note',
 ] as const
+const queryResponsible = async (query: string, done: (items: { value: string }[]) => void) => {
+  try {
+    done((await api.listResponsibleSuggestions(query)).map((item) => ({ value: item.name })))
+  } catch {
+    done([])
+  }
+}
 const openEdit = () => {
   if (!tx.value) return
   for (const f of EDIT_FIELDS) edit[f] = (tx.value as unknown as Record<string, unknown>)[f] ?? null
@@ -78,6 +84,30 @@ const changeStage = async (stage: string) => {
     ElMessage.success('段階を変更しました。')
   } catch (error) {
     ElMessage.error(errText(error, '変更できませんでした。'))
+  }
+}
+const archive = async () => {
+  if (!tx.value) return
+  let reason = ''
+  try {
+    reason = (await ElMessageBox.prompt('アーカイブ理由を入力してください。', '記録をアーカイブ', {
+      inputPattern: /\S/, inputErrorMessage: '理由を入力してください。', type: 'warning',
+    })).value
+  } catch { return }
+  try {
+    tx.value = await api.archiveTransaction(tx.value.id, reason)
+    ElMessage.success('記録をアーカイブしました。')
+  } catch (error) {
+    ElMessage.error(errText(error, 'アーカイブできませんでした。'))
+  }
+}
+const restore = async () => {
+  if (!tx.value) return
+  try {
+    tx.value = await api.restoreTransaction(tx.value.id)
+    ElMessage.success('記録を復元しました。')
+  } catch (error) {
+    ElMessage.error(errText(error, '復元できませんでした。'))
   }
 }
 
@@ -333,14 +363,7 @@ const onTab = (name: string | number) => {
   if (name === 'audit') loadAudit()
 }
 
-onMounted(async () => {
-  await loadAll()
-  try {
-    employees.value = (await listEmployees({ page_size: 200 })).results
-  } catch {
-    employees.value = []
-  }
-})
+onMounted(loadAll)
 </script>
 
 <template>
@@ -352,7 +375,8 @@ onMounted(async () => {
         <div v-if="tx" class="header-tags">
           <el-tag :type="tx.transaction_type === 'sale' ? 'warning' : 'info'">{{ tx.transaction_type_display }}</el-tag>
           <span>当事者：{{ tx.party_name }}</span>
-          <span>担当：{{ tx.responsible_employee_name || '-' }}</span>
+          <span>担当：{{ tx.responsible_name || '-' }}</span>
+          <el-tag v-if="tx.is_archived" type="info">アーカイブ</el-tag>
           <el-tag v-for="m in tx.missing_items" :key="m" size="small" type="warning">要補充：{{ m }}</el-tag>
         </div>
       </div>
@@ -361,11 +385,13 @@ onMounted(async () => {
           <el-option v-for="o in STAGE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
         </el-select>
         <el-button v-if="canEdit" type="primary" @click="openEdit">基本情報を編集</el-button>
+        <el-button v-if="canArchive" type="danger" plain @click="archive">アーカイブ</el-button>
+        <el-button v-if="canRestore" type="success" plain @click="restore">復元</el-button>
       </div>
     </div>
 
-    <el-alert v-if="tx && !canEdit" type="info" :closable="false" show-icon class="page-alert"
-              title="閲覧のみ（担当外の記録です）。変更は担当者または全件変更の権限者が行います。" />
+    <el-alert v-if="tx?.is_archived" type="info" :closable="false" show-icon class="page-alert"
+              :title="`アーカイブ済みです。理由：${tx.archive_reason || '未記載'}。復元後に編集できます。`" />
     <el-alert v-if="tx?.transaction_type === 'sale'" type="warning" :closable="false" show-icon class="page-alert"
               title="売買は記録のみです（第 1 版では売買の業務フロー・10 年保存の運用は有効にしていません）。" />
 
@@ -395,14 +421,6 @@ onMounted(async () => {
               <div><dt>支払状態</dt><dd>{{ tx.payment_status_display }}<span v-if="tx.payment_date">（{{ formatDate(tx.payment_date) }}）</span></dd></div>
               <div><dt>振込状態</dt><dd>{{ tx.transfer_status_display }}</dd></div>
             </dl>
-            <div class="source-amounts">
-              <div class="sub">取込元の請求金額（意味の確定まで合算しない）</div>
-              <dl class="fields">
-                <div><dt>向SUNRISE請求書金額</dt><dd>{{ yen(tx.source_billed_to_sunrise_amount) }}</dd></div>
-                <div><dt>向客人請求金額</dt><dd>{{ yen(tx.source_billed_to_client_amount) }}</dd></div>
-                <div><dt>SUNRISE請求書金額</dt><dd>{{ yen(tx.source_sunrise_invoice_amount) }}</dd></div>
-              </dl>
-            </div>
           </el-card>
         </div>
         <el-card v-if="tx.note" shadow="never" class="mt"><template #header>備考</template><div class="pre">{{ tx.note }}</div></el-card>
@@ -431,7 +449,7 @@ onMounted(async () => {
         <el-card shadow="never" class="ledger-print">
           <template v-if="!ledger">
             <p class="sub">まだ台帳がありません。取引の内容（物件・金額・取引日）から台帳の下書きを作成できます。</p>
-            <el-button v-if="canEdit" type="primary" @click="createLedger">台帳を作成</el-button>
+            <el-button v-if="canManageLedger && !tx.is_archived" type="primary" @click="createLedger">台帳を作成</el-button>
           </template>
           <template v-else>
             <div class="ledger-head">
@@ -443,13 +461,14 @@ onMounted(async () => {
               <el-tag v-if="ledger.legal_hold" type="warning">legal hold：{{ ledger.legal_hold_reason }}</el-tag>
               <div class="grow" />
               <el-button size="small" @click="printLedger">印刷</el-button>
-              <template v-if="canManageLedger">
-                <el-button v-if="!ledger.is_locked" size="small" type="warning" @click="lock">ロック</el-button>
-                <el-button v-else size="small" type="warning" @click="openCorrection">更正</el-button>
-                <el-button size="small" @click="toggleHold">{{ ledger.legal_hold ? 'legal hold 解除' : 'legal hold' }}</el-button>
+              <!-- 後端と同じ権限で出し分ける：ロック・legal hold は台帳管理、更正は台帳更正。アーカイブ中は出さない -->
+              <template v-if="!tx.is_archived">
+                <el-button v-if="canManageLedger && !ledger.is_locked" size="small" type="warning" @click="lock">ロック</el-button>
+                <el-button v-if="canCorrectLedger && ledger.is_locked" size="small" type="warning" @click="openCorrection">更正</el-button>
+                <el-button v-if="canManageLedger" size="small" @click="toggleHold">{{ ledger.legal_hold ? 'legal hold 解除' : 'legal hold' }}</el-button>
               </template>
             </div>
-            <el-form label-position="top" :disabled="ledger.is_locked || !canEdit">
+            <el-form label-position="top" :disabled="ledger.is_locked || !canManageLedger || tx.is_archived">
               <div class="form-grid">
                 <el-form-item label="取引態様">
                   <el-select v-model="ledgerForm.transaction_form" style="width: 100%"><el-option v-for="o in LEDGER_FORM_OPTIONS" :key="o.value" :label="o.label" :value="o.value" /></el-select>
@@ -471,7 +490,7 @@ onMounted(async () => {
               <el-form-item label="特約"><el-input v-model="ledgerForm.special_terms" type="textarea" :rows="3" /></el-form-item>
             </el-form>
             <div class="sub">各当事者・代理／媒介業者は「当事者」区画の内容が台帳に含まれます（{{ ledger.parties.length }} 名）。</div>
-            <el-button v-if="!ledger.is_locked && canEdit" type="primary" class="mt" @click="saveLedger">台帳を保存</el-button>
+            <el-button v-if="!ledger.is_locked && canManageLedger && !tx.is_archived" type="primary" class="mt" @click="saveLedger">台帳を保存</el-button>
             <template v-if="corrections.length">
               <h4 class="mt">更正履歴</h4>
               <el-table :data="corrections" size="small">
@@ -568,10 +587,16 @@ onMounted(async () => {
         <el-card shadow="never">
           <el-table :data="auditRows" size="small" empty-text="記録はありません">
             <el-table-column label="日時" width="160"><template #default="{ row }">{{ formatDateTime(row.occurred_at) }}</template></el-table-column>
-            <el-table-column prop="user" label="利用者" width="110" />
-            <el-table-column prop="action" label="操作" min-width="170" />
-            <el-table-column prop="object_type" label="対象" min-width="180" />
-            <el-table-column prop="result" label="結果" width="80" />
+            <el-table-column prop="actor" label="操作者" width="120" />
+            <el-table-column label="内容" min-width="280">
+              <template #default="{ row }">
+                <div>{{ row.message }}</div>
+                <div v-for="change in row.changes" :key="`${change.field}-${change.before}-${change.after}`" class="sub">
+                  {{ change.field }}：「{{ change.before || '（空）' }}」→「{{ change.after || '（空）' }}」
+                </div>
+                <details v-if="row.technical_details" class="technical"><summary>技術詳細（管理者のみ）</summary><pre>{{ JSON.stringify(row.technical_details, null, 2) }}</pre></details>
+              </template>
+            </el-table-column>
             <el-table-column prop="reason" label="理由" min-width="140" />
           </el-table>
         </el-card>
@@ -591,7 +616,8 @@ onMounted(async () => {
           <el-form-item label="管理会社"><el-input v-model="edit.management_company_name as string" /></el-form-item>
           <el-form-item label="管理会社主档（任意）"><RemoteCompanySelect v-model="edit.management_company as number | null" clearable /></el-form-item>
           <el-form-item label="担当">
-            <el-select v-model="edit.responsible_employee" filterable style="width: 100%"><el-option v-for="e in employees" :key="e.id" :label="e.name" :value="e.id" /></el-select>
+            <el-autocomplete v-model="edit.responsible_name as string" :fetch-suggestions="queryResponsible" clearable
+                             placeholder="自由入力（候補以外も可）" style="width: 100%" />
           </el-form-item>
           <el-form-item label="取引種別">
             <el-select v-model="edit.transaction_type" style="width: 100%"><el-option v-for="o in TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" /></el-select>
@@ -722,15 +748,20 @@ onMounted(async () => {
   overflow-wrap: anywhere;
 }
 
-.source-amounts {
-  margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--el-border-color);
-}
-
 .sub {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.technical {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.technical pre {
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
 .mt {

@@ -9,6 +9,7 @@ import RemoteCompanySelect from '../RemoteCompanySelect.vue'
 import RemoteCustomerSelect from '../RemoteCustomerSelect.vue'
 import type { ExpenseCategory, ExpenseCategorySuggestions, ExpensePayload } from '../../types/accounting'
 import type { Case } from '../../types/api'
+import { canOfferRemember, pendingPlaceRecommendations } from '../../utils/expenseCategory'
 
 type Option = { value: number, label: string } | null
 
@@ -63,6 +64,12 @@ const applyCategory = (name: string) => {
 const recommendations = computed(() =>
   (suggestions.value?.recommendations ?? []).filter((row) => row.name !== form.value.category),
 )
+// 場所などの文字からの提案。「採用」を押すまでカテゴリ欄は変えない（手入力のまま保存できる）。
+const placeRecommendations = computed(() => pendingPlaceRecommendations(suggestions.value, form.value.category))
+const offerRemember = computed(() => canOfferRemember(suggestions.value, form.value.place, form.value.category))
+watch(offerRemember, (offered) => {
+  if (!offered && form.value.remember_place_category) form.value.remember_place_category = false
+})
 
 const onCaseChange = (row: Case | null) => {
   if (!row) return
@@ -98,10 +105,19 @@ watch(() => form.value, () => {
         <el-button link type="primary" @click="applyCategory(suggestions.normalized.suggestion)">「{{ suggestions.normalized.suggestion }}」を使う</el-button>
         （入力のまま保存もできます）
       </div>
+      <div v-for="row in placeRecommendations" :key="`${row.match_field}-${row.name}`" class="field-hint category-hint">
+        おすすめのカテゴリ：<strong>{{ row.name }}</strong>（{{ row.reason }}<template v-if="row.scope === 'personal'">・自分で記憶</template>）
+        <el-button link type="primary" @click="applyCategory(row.name)">採用</el-button>
+      </div>
       <div v-if="recommendations.length" class="field-hint category-hint">
         過去の記録からの候補：
         <el-button v-for="row in recommendations" :key="row.name" link type="primary" :title="row.reason" @click="applyCategory(row.name)">{{ row.name }}</el-button>
       </div>
+    </el-form-item>
+    <el-form-item v-if="offerRemember" :class="compact ? 'accounting-dialog-full' : 'expense-note'">
+      <el-checkbox v-model="form.remember_place_category">
+        この場所「{{ form.place }}」とカテゴリ「{{ form.category }}」の対応を記憶する（次回から自分の候補にだけ出ます）
+      </el-checkbox>
     </el-form-item>
     <el-form-item label="金額" prop="amount">
       <el-input v-model="form.amount" inputmode="numeric" />

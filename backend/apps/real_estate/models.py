@@ -63,25 +63,32 @@ class RealEstateTransaction(models.Model):
     management_company_name = models.CharField('管理会社', max_length=200, blank=True)
     management_company = models.ForeignKey('companies.Company', verbose_name='管理会社（参照）', on_delete=models.SET_NULL,
                                            null=True, blank=True, related_name='real_estate_managed_transactions')
-    responsible_employee = models.ForeignKey('employees.Employee', verbose_name='担当', on_delete=models.PROTECT,
-                                             null=True, blank=True, related_name='real_estate_transactions')
+    # 担当者は権限・ログインアカウント・Employee と切り離した業務上の自由入力文字列。
+    responsible_name = models.CharField('担当者', max_length=200, blank=True)
     transaction_date = models.DateField('取引日', null=True, blank=True)
-    # 金額（円）。LIST.xlsx の近い 3 つの請求金額は意味が確定するまで別々の元金額として保持する。
+    # 金額（円）
     rent_or_price = models.DecimalField('賃料・価格', max_digits=12, decimal_places=0, null=True, blank=True)
     brokerage_fee = models.DecimalField('仲介手数料（報酬）', max_digits=12, decimal_places=0, null=True, blank=True)
     advertising_fee = models.DecimalField('広告料', max_digits=12, decimal_places=0, null=True, blank=True)
     handling_fee = models.DecimalField('手数料', max_digits=12, decimal_places=0, null=True, blank=True)
-    source_billed_to_sunrise_amount = models.DecimalField('元：向SUNRISE請求書金額', max_digits=12, decimal_places=0, null=True, blank=True)
-    source_billed_to_client_amount = models.DecimalField('元：向客人請求金額', max_digits=12, decimal_places=0, null=True, blank=True)
-    source_sunrise_invoice_amount = models.DecimalField('元：SUNRISE請求書金額', max_digits=12, decimal_places=0, null=True, blank=True)
     payment_status = models.CharField('支払状態', max_length=20, choices=PAYMENT_CHOICES, blank=True, default=PAYMENT_UNSET)
     payment_date = models.DateField('支払日', null=True, blank=True)
     transfer_status = models.CharField('振込状態', max_length=20, choices=TRANSFER_CHOICES, blank=True, default=TRANSFER_UNSET)
     note = models.TextField('備考', blank=True)
+    is_archived = models.BooleanField('アーカイブ済み', default=False)
+    archived_at = models.DateTimeField('アーカイブ日時', null=True, blank=True)
+    archived_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name='+', verbose_name='アーカイブ実行者')
+    archive_reason = models.CharField('アーカイブ理由', max_length=500, blank=True)
+    restored_at = models.DateTimeField('復元日時', null=True, blank=True)
+    restored_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name='+', verbose_name='復元実行者')
     # 取込元（将来の本取込用。第 1 版は dry-run のみで、この列に書くのは手入力でない場合だけ）
     source_file = models.CharField('取込元ファイル', max_length=255, blank=True)
+    source_file_sha256 = models.CharField('取込元 SHA-256', max_length=64, blank=True, db_index=True)
     source_sheet = models.CharField('取込元シート', max_length=100, blank=True)
     source_row = models.PositiveIntegerField('取込元の行番号', null=True, blank=True)
+    source_reference = models.CharField('取込元番号', max_length=100, blank=True)
     source_values = models.JSONField('取込元の原値', default=dict, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name='+', verbose_name='作成者')
@@ -96,11 +103,19 @@ class RealEstateTransaction(models.Model):
         verbose_name_plural = '不動産取引'
         ordering = ['-created_at', '-id']
         permissions = [
-            ('use_real_estate', '不動産の利用（本人担当）'),
-            ('real_estate_view_all', '不動産：全件閲覧'),
-            ('real_estate_change_all', '不動産：全件変更'),
-            ('manage_legal_ledger', '不動産：法定台帳のロック・更正・年度締め・出力'),
+            ('use_real_estate', '不動産モジュールを利用'),
+            ('view_real_estate', '不動産記録を閲覧'),
+            ('create_real_estate', '不動産記録を新規登録'),
+            ('change_real_estate', '不動産記録を編集'),
+            ('bulk_change_real_estate', '不動産記録を一括変更'),
+            ('archive_real_estate', '不動産記録をアーカイブ'),
+            ('restore_real_estate', '不動産記録を復元'),
+            ('export_real_estate', '不動産記録・台帳を出力'),
+            ('manage_legal_ledger', '不動産：法定台帳を管理'),
+            ('correct_legal_ledger', '不動産：法定台帳を更正'),
+            ('close_legal_ledger_year', '不動産：法定台帳の年度を締める'),
             ('manage_profit_distribution', '不動産：内部利益配分の閲覧・編集'),
+            ('import_real_estate', '不動産：LIST 取込を実行'),
         ]
 
     def __str__(self):

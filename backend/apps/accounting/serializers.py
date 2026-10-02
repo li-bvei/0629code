@@ -12,6 +12,7 @@ from .models import (
     Estimate,
     Expense,
     ExpenseCategory,
+    ExpenseCategorySuggestionRule,
     IncomeSource,
     SeifuNoticePdfRecord,
     TaxRenewalAgentTemplate,
@@ -42,7 +43,53 @@ class ExpenseCategorySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class ExpenseCategorySuggestionRuleSerializer(serializers.ModelSerializer):
+    expense_category_name = serializers.CharField(source='expense_category.name', read_only=True)
+    match_field_display = serializers.CharField(source='get_match_field_display', read_only=True)
+    source_display = serializers.CharField(source='get_source_display', read_only=True)
+    scope = serializers.SerializerMethodField()
+    owner_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExpenseCategorySuggestionRule
+        fields = ('id', 'pattern', 'match_field', 'match_field_display', 'expense_category', 'expense_category_name',
+                  'priority', 'is_active', 'source', 'source_display', 'scope', 'owner_name', 'created_at',
+                  'updated_at')
+        # 範囲（本人用／事務所共通）は API の入力では変えられない。共通への変更は promote だけ。
+        read_only_fields = ('source', 'created_at', 'updated_at')
+
+    def get_scope(self, obj):
+        return 'office' if obj.owner_id is None else 'personal'
+
+    def get_owner_name(self, obj):
+        owner = obj.owner
+        if owner is None:
+            return ''
+        employee = getattr(owner, 'employee', None) if hasattr(owner, 'employee') else None
+        return employee.name if employee is not None else owner.get_username()
+
+    def validate(self, attrs):
+        from .category_suggestions import normalize_key
+
+        pattern = attrs.get('pattern', getattr(self.instance, 'pattern', ''))
+        match_field = attrs.get('match_field', getattr(self.instance, 'match_field', ExpenseCategorySuggestionRule.FIELD_PLACE))
+        key = normalize_key(pattern)
+        if not key:
+            raise serializers.ValidationError({'pattern': '文字を入力してください。'})
+        # 同じ範囲の中での重複を防ぐ（新規登録は常に事務所共通、変更は対象の規則の範囲のまま）
+        owner_id = self.instance.owner_id if self.instance is not None else None
+        duplicate = ExpenseCategorySuggestionRule.objects.filter(owner_id=owner_id, match_field=match_field,
+                                                                 pattern_key=key)
+        if self.instance is not None:
+            duplicate = duplicate.exclude(pk=self.instance.pk)
+        if duplicate.exists():
+            raise serializers.ValidationError({'pattern': '同じ項目・同じ文字の規則が既にあります。'})
+        return attrs
+
+
 class ExpenseSerializer(serializers.ModelSerializer):
+    # 「この場所とカテゴリの対応を記憶する」を利用者が明示的に選んだ場合だけ true（保存項目ではない）
+    remember_place_category = serializers.BooleanField(write_only=True, required=False, default=False)
     owner_username = serializers.CharField(source='owner.username', read_only=True, default='')
     case_number = serializers.CharField(source='case.case_number', read_only=True, default='')
     customer_name = serializers.CharField(source='customer.name', read_only=True, default='')
@@ -54,6 +101,18 @@ class ExpenseSerializer(serializers.ModelSerializer):
         fields = '__all__'
         # 所有者・作成者・更新者は後端が設定する。フロントからの指定は無視される。
         read_only_fields = ['owner', 'created_by', 'updated_by']
+
+    def create(self, validated_data):
+        remember = validated_data.pop('remember_place_category', False)
+        instance = super().create(validated_data)
+        instance._remember_place_category = remember
+        return instance
+
+    def update(self, instance, validated_data):
+        remember = validated_data.pop('remember_place_category', False)
+        instance = super().update(instance, validated_data)
+        instance._remember_place_category = remember
+        return instance
 
     def get_owner_name(self, obj):
         owner = obj.owner

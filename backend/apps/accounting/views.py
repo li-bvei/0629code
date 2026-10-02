@@ -16,6 +16,7 @@ from .models import (
     AccountingVoucher,
     Expense,
     ExpenseCategory,
+    ExpenseCategorySuggestionRule,
     IncomeSource,
     SeifuNoticePdfRecord,
     TaxRenewalAgentTemplate,
@@ -25,7 +26,7 @@ from .models import (
     VisaReturnApplication,
     VoucherItemTemplate,
 )
-from .category_suggestions import build_suggestions
+from .category_suggestions import build_suggestions, ensure_category_master, remember_place_rule
 from .excel import expenses_excel_response, project_excel_response
 from .serializers import (
     AccountingProjectDetailSerializer,
@@ -34,6 +35,7 @@ from .serializers import (
     AccountingProjectSerializer,
     AccountingVoucherSerializer,
     ExpenseCategorySerializer,
+    ExpenseCategorySuggestionRuleSerializer,
     ExpenseSerializer,
     IncomeSourceSerializer,
     SeifuNoticePdfRecordSerializer,
@@ -222,6 +224,69 @@ class ExpenseCategoryViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         return queryset.order_by('sort_order', 'id')
 
 
+class ExpenseCategorySuggestionRuleViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+    """カテゴリ提案規則の管理。一覧・登録・変更・削除・昇格のすべてに manage_expense_category が必要
+    （入力時に記憶された場所の文字を、権限の無い利用者へ一覧で見せないため）。
+    ここで登録する規則は事務所共通。利用者が記憶した本人用の規則は promote で事務所共通にできる。"""
+
+    access_resource = 'expense_category_rule'
+    queryset = ExpenseCategorySuggestionRule.objects.select_related('expense_category', 'owner')
+    serializer_class = ExpenseCategorySuggestionRuleSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        params = self.request.query_params
+        is_active = parse_bool(params.get('is_active'))
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active)
+        if params.get('search'):
+            queryset = queryset.filter(Q(pattern__icontains=params['search'])
+                                       | Q(expense_category__name__icontains=params['search']))
+        if params.get('scope') == 'office':
+            queryset = queryset.filter(owner__isnull=True)
+        elif params.get('scope') == 'personal':
+            queryset = queryset.filter(owner__isnull=False)
+        return queryset.order_by('-priority', 'id')
+
+    def _audit(self, action, instance):
+        record(module='accounting', action=action, request=self.request, obj=instance, object_repr=str(instance),
+               via_permission='accounting.manage_expense_category')
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user, updated_by=self.request.user, owner=None,
+                        source=ExpenseCategorySuggestionRule.SOURCE_MANUAL)
+        self._audit('expense_category_rule_created', serializer.instance)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+        self._audit('expense_category_rule_updated', serializer.instance)
+
+    def perform_destroy(self, instance):
+        self._audit('expense_category_rule_deleted', instance)
+        instance.delete()
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def promote(self, request, pk=None):
+        """本人用の規則を事務所共通にする（全員の提案に出るようになる）。"""
+        rule = self.get_object()
+        if rule.owner_id is None:
+            return Response({'detail': 'この規則は既に事務所共通です。'}, status=status.HTTP_400_BAD_REQUEST)
+        if ExpenseCategorySuggestionRule.objects.filter(
+            owner__isnull=True, match_field=rule.match_field, pattern_key=rule.pattern_key,
+        ).exists():
+            return Response({'detail': '同じ項目・同じ文字の事務所共通の規則が既にあります。'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        previous_owner = rule.owner.get_username()
+        rule.owner = None
+        rule.updated_by = request.user
+        rule.save(update_fields=['owner', 'updated_by', 'updated_at'])
+        record(module='accounting', action='expense_category_rule_promoted', request=request, obj=rule,
+               object_repr=str(rule), via_permission='accounting.manage_expense_category',
+               extra={'previous_owner': previous_owner})
+        return Response(self.get_serializer(rule).data)
+
+
 class ExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     """支出記録（報銷）。範囲は BusinessAccessPolicy の ExpenseRule が決める：
     本人分のみ／expense_view_all で全員分（他人分は読み取り専用）／
@@ -254,13 +319,27 @@ class ExpenseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
                    via_permission='accounting.expense_view_all')
         return Response(self.get_serializer(instance).data)
 
+    def _settle_category(self, instance):
+        """確定して保存されたカテゴリを主档に蓄積し、明示的に選ばれた場合だけ場所の規則を記憶する。
+        支出の category（入力された文字）は書き換えない。"""
+        category = ensure_category_master(instance.category, request=self.request)
+        if getattr(instance, '_remember_place_category', False):
+            remember_place_rule(instance.place, category, request=self.request)
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+
     def after_create(self, instance):
         record_accounting_case_link(self.request, instance, None, kind='expense')
+        self._settle_category(instance)
 
+    @transaction.atomic
     def perform_update(self, serializer):
         previous_case = serializer.instance.case
         super().perform_update(serializer)
         record_accounting_case_link(self.request, serializer.instance, previous_case, kind='expense')
+        self._settle_category(serializer.instance)
 
     def after_update(self, instance):
         if instance.owner_id != self.business_policy.user_id:

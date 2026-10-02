@@ -1,7 +1,8 @@
 import http from '../services/http'
 import type { PaginatedResponse } from '../types/api'
+import type { BulkPreviewRequest, BulkUpdateRequest } from '../utils/realEstateBulk'
 import type {
-  AuditRow, DryRunHistoryRow, DryRunReport, LedgerCorrection, LegalLedger, ProfitDistribution, RealEstateAccountingLink,
+  AuditRow, BulkSelectionPreview, BulkUpdateResult, DryRunHistoryRow, DryRunReport, LedgerCorrection, LegalLedger, ProfitDistribution, RealEstateAccountingLink,
   RealEstateFile, RealEstateTransaction, RealEstateTransactionPayload, TransactionParty,
 } from '../types/realEstate'
 
@@ -17,6 +18,22 @@ export const createTransaction = async (payload: RealEstateTransactionPayload) =
   (await http.post<RealEstateTransaction>(`${base}/transactions/`, payload)).data
 export const updateTransaction = async (id: number, payload: RealEstateTransactionPayload) =>
   (await http.patch<RealEstateTransaction>(`${base}/transactions/${id}/`, payload)).data
+export const archiveTransaction = async (id: number, reason: string) =>
+  (await http.post<RealEstateTransaction>(`${base}/transactions/${id}/archive/`, { reason })).data
+export const restoreTransaction = async (id: number) =>
+  (await http.post<RealEstateTransaction>(`${base}/transactions/${id}/restore/`)).data
+export const listResponsibleSuggestions = async (q = '') =>
+  (await http.get<{ name: string }[]>(`${base}/transactions/responsible-suggestions/`, { params: { q } })).data
+export const exportTransactions = async (params: Record<string, unknown> = {}) =>
+  (await http.get<Blob>(`${base}/transactions/export/`, { params: clean(params), responseType: 'blob' })).data
+// 一括変更：対象の固定（書き込みなし。絞り込み結果の全件、または一覧で選択した記録）と、1 回の原子的な変更。
+// 単票 PATCH を繰り返さない。実行は固定した選択トークンでしか行えない。
+export const previewBulkSelection = async (filters: Record<string, unknown>) =>
+  (await http.post<BulkSelectionPreview>(`${base}/transactions/bulk-preview/`, { filters: clean(filters) })).data
+export const previewBulkSelectedRows = async (payload: BulkPreviewRequest) =>
+  (await http.post<BulkSelectionPreview>(`${base}/transactions/bulk-preview/`, payload)).data
+export const bulkUpdateTransactions = async (payload: BulkUpdateRequest) =>
+  (await http.post<BulkUpdateResult>(`${base}/transactions/bulk-update/`, payload)).data
 export const getTransactionAuditLog = async (id: number) =>
   (await http.get<AuditRow[]>(`${base}/transactions/${id}/audit-log/`)).data
 export const ensureLedger = async (id: number) =>

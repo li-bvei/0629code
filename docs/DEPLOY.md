@@ -418,6 +418,10 @@ $RUN shell -c "from django.contrib.auth.models import User; print(User.objects.f
 | 阶段 B | `DJANGO_PROTECTED_ADMIN_ENFORCEMENT=False`，重启 backend |
 | 李无法登录 | `$RUN changepassword zbry6947@gmail.com`、`$RUN axes_reset_username zbry6947@gmail.com`、`$RUN protect_account --username zbry6947@gmail.com --apply --yes`、`$RUN restore_access_snapshot /ops/<file> --user zbry6947@gmail.com --apply --yes` |
 
+注意（2026-10-02 批次）：`real_estate/0005_bulk_change_permission` 只新增一个 Permission 行；`accounting/0020_expense_category_rules` 新建规则表并写入 3 条初始规则（提案先为既有类别「停车费」，不改写支出记录）。两者都不影响旧代码运行。`0020` 不创建也不启用类别。migrate 后需执行 `setup_access_roles --apply --yes`，`system_admin` 才会得到 `real_estate.bulk_change_real_estate`；并执行只读检查 `$RUN check_expense_category_rules`（非 0 退出时按输出处理：缺失用 `--apply --yes --username <执行者>` 补登记；类别被停用时由管理员决定是否启用，命令不会自动启用，也不会创建「駐車場代」等别名类别）。详见 `docs/CHANGELOG_2026-10-02_real_estate_batch_reception.md` §4。
+
+注意（不动产 `real_estate.0004_collaborative_ledger`）：该 migration 会删除旧担当关联、三项废止来源金额列和旧权限 `real_estate_view_all`・`real_estate_change_all`，反向 migrate 无法复原这些内容。生产首次上线时不动产表为空，不丢数据；回滚到 P0 之前的代码不受影响，但**不得回滚到 `0004` 之前的 P3 版本镜像**。详见 `docs/RELEASE_LOCAL_VALIDATION_2026-09-29.md` §6。
+
 注意（旧代码在新表结构上的已知限制）：旧代码不认识 P1～P3 的新表（見積書・契約書・不動産・监查日志等）。如果新代码运行期间已经有新表数据引用了某个案件、顾客、公司、书类或用户，旧代码删除该记录时会被数据库外键拒绝（不会产生不一致，只是删除失败）。日常请用归档而非删除。新代码运行期间写入的新表数据在回滚期间保留，重新上线新代码后恢复可见。
 
 **2. 代码回滚不能撤销、需要专用回滚命令或数据库整体恢复的情况**

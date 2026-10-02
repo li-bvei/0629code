@@ -30,7 +30,7 @@
   - Case：案件番号・顾客名/カナ・公司名；只返回可见范围内的案件（番号、顾客名、进度、是否归档）。
   - Customer / Company：只按名称・カナ匹配；只返回 id・名称・カナ・表现级别；范围外（minimal）标记为不可打开、不给链接。
   - Document：标题・原文件名；返回标题・案件番号・分类・是否归档和案件链接，不返回保存路径、URL 或文件名以外的元数据。
-  - RealEstateTransaction：番号・当事人・物件・房间；按不动产本人担当/全件规则。
+  - RealEstateTransaction：番号・当事人・物件・房间；当前按不动产协同台账规则。
 - 不按 My Number、证件号码、住所、电话、邮件、金额搜索，也不返回这些字段或会计金额（测试确认）。
 - 审计：结果含顾客/公司时记录 `search.global_search_personal_results`（各类件数、minimal 件数、检索词长度），**不记录检索词本身**；普通搜索不记录。
 - 前端：顶栏全局搜索框，按类别分组显示，可打开的结果点击跳转；范围外结果显示「範囲外（最小識別情報のみ）」且不可点击。
@@ -40,7 +40,7 @@
 - `router/index.ts`：39 个页面改为 `() => import(...)`，只有 `AdminLayout`、`LoginPage` 保持同步加载；路由地址、名称、`beforeEach` 的登录与权限判断不变。
 - 构建结果：主 chunk 2,131.40 kB（gzip 632.96 kB）→ 1,125.52 kB（gzip 372.34 kB），页面拆为 66 个 JS chunk（最大页面 CaseDetailPage 96.6 kB）。主 chunk 仍主要是 Vue/Element Plus 全量注册，后续可再评估按需引入。
 - 加载失败：`router.onError` 识别动态 import 失败（各浏览器文言），弹出「画面を読み込めませんでした」并提供「再読み込み」到目标页面（登录 Cookie 保持）。判定函数 `utils/chunkLoad.ts` 有单元测试。
-- 顺带修正前端路由权限表：`/vouchers/estimates` → `use_estimate`、`/vouchers/contracts` → `use_contract`（此前被 `/vouchers` 前缀误判为 `use_voucher`）、`/real-estate` → `use_real_estate`、`/real-estate/import` → `real_estate_change_all`（仅影响显示/跳转，后端判断不变）。
+- 顺带修正前端路由权限表；不动产导入当前使用独立 `import_real_estate` 权限。
 
 ## 本地预览（仅本批次）
 
@@ -57,4 +57,4 @@
 - 部署时执行 migration（`cases/0020`、`office/0001`、`real_estate/0003`）后运行 `setup_access_roles`（dry-run → `--apply --yes`）。
 - 首次部署后由李在设置页确认或保存公司实际决算月（未保存前使用环境变量或默认 3 月）。
 - 既有台账的决算月快照为空：未关闭的在下次编辑/锁定/年度关闭时按当时设置补上；如需以特定月份固定，请先在设置页确认后再关闭年度。
-- 正式 LIST.xlsx 导入、三个请求金额的业务含义仍待确认；本批次未涉及。
+- 正式生产 LIST.xlsx 导入仍需单独批准；废止来源金额已在后续修订删除。

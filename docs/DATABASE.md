@@ -254,11 +254,11 @@ Portal 相关数据应支持：
 - 离开下書き时写入 `issued_snapshot`，之后宛先・金额等锁定（只可改备注和关联案件），不可删除。
 - 状态迁移、创建、更新、删除、PDF 下载写 AuditLog（`module='voucher'`）。
 
-### 11.8 P3 不动产（2026-09-29 本地已实现，分支 `codex/p3-real-estate`；生产未部署）
+### 11.8 P3 不动产（2026-10-01 协同台账修订；生产未部署）
 
 | 对象 | 主要字段 | migration | 说明 |
 |---|---|---|---|
-| `real_estate_transactions` | `transaction_number`（RE-YYYYMM-NNNN）、`transaction_type`（rental/sale）、`stage`、`party_name`＋`customer_id`、物件（名称/房间/所在地/种类/面积）、`management_company_name`＋`management_company_id`、`responsible_employee_id`（PROTECT）、`transaction_date`、`rent_or_price`・`brokerage_fee`・`advertising_fee`・`handling_fee`、`source_billed_to_sunrise_amount`・`source_billed_to_client_amount`・`source_sunrise_invoice_amount`（分别保存，不合并）、`payment_status`/`payment_date`/`transfer_status`、`source_file`/`source_sheet`/`source_row`/`source_values`、`created_by`/`updated_by` | `real_estate/0001_initial` | 权限：`use_real_estate`・`real_estate_view_all`・`real_estate_change_all`・`manage_legal_ledger`・`manage_profit_distribution` |
+| `real_estate_transactions` | `transaction_number`（RE-YYYYMM-NNNN）、`transaction_type`、`stage`、`party_name`＋`customer_id`、物件、`management_company_name`＋`management_company_id`、`responsible_name`（自由文本）、业务金额、支付/振込状态、归档/恢复元数据、来源文件哈希/工作表/行号/原值、`created_by`/`updated_by` | `real_estate/0001_initial`＋`0004_collaborative_ledger` | 协同台账；担当不关联 Employee。入口、查看、新建、编辑、归档、恢复、导出、台账管理/更正/年度关闭、利润分配、导入均为明确权限 |
 | `real_estate_number_sequences` | `key`（RE-YYYYMM）、`last_number` | 同上 | 加锁取号 |
 | `real_estate_transaction_parties` | `role`（贷主/借主/卖主/买主/代理人/媒介业者/共同宅建业者）、姓名、住所、免许番号、`customer_id`/`company_id` | 同上 | 台账锁定后不可增删改 |
 | `real_estate_legal_ledgers` | 1:1 交易（PROTECT）；取引态样、类型、所在地/名称/房间/面积/建物概要、赁料/价格、报酬、广告费、手续费、特约、取引日、`fiscal_year`、`fiscal_year_closed_at`、`retention_years`（默认 5）、`retention_until`、`legal_hold`/理由、`is_locked`/`locked_at`/`locked_by`/`locked_snapshot`、`version` | 同上 | 无删除 API；到期只标记复核 |
@@ -266,7 +266,16 @@ Portal 相关数据应支持：
 | `real_estate_files` | `transaction_id`、`kind`、`title`、`file`（`real_estate_files/YYYY/MM/<uuid>`）、原文件名/大小/MIME/SHA-256、`document_id`（参照案件书类）、`uploaded_by` | 同上 | 复用 Document 上传检查与受保护下载 |
 | `real_estate_accounting_links` | `transaction_id`、`income_source_id`、`voucher_id`、备注 | 同上 | 只引用，不复制会计数据 |
 | `real_estate_profit_distributions` | 分配对象（名称/担当）、`method`（fixed/ratio）、`base_amount`、`ratio_percent`、`fixed_amount`、`amount`（自动计算）、`status`（draft/settled）、`settled_at`、备注 | 同上 | 不进入法定台账 |
-| `real_estate_import_runs` | 文件名、SHA-256、工作表、`summary`、`report`（行号・原值・规范化・错误・候选） | `real_estate/0002_import_runs` | 仅 dry-run 履历，不创建交易 |
+| `real_estate_import_runs` | 文件名、SHA-256、工作表、`summary`、`report`（行号・原值・规范化・错误・候选） | `real_estate/0002_import_runs` | dry-run 履历；隔离 QA 库也保存验收导入报告，生产禁用 |
+
+| `real_estate_transactions`（权限） | 新增 `bulk_change_real_estate` | `real_estate/0005_bulk_change_permission` | 2026-10-02。只有 Permission 行，无列变更；批量变更不新增表，履历写 AuditLog（`transaction_updated`＋`extra.bulk`、`transaction_bulk_updated`） |
+
+### 11.8.1 支出类别建议规则（2026-10-02 本地已实现；生产未部署）
+
+| 对象 | 主要字段 | migration | 说明 |
+|---|---|---|---|
+| `accounting_expense_category_rules`（ExpenseCategorySuggestionRule） | `pattern`、`pattern_key`（规范化匹配键）、`match_field`（place/expense_target/note）、`expense_category_id`（CASCADE）、`priority`、`is_active`、`source`（seed/manual/user_confirmed）、`owner_id`（空＝全事务所；有值＝仅本人，CASCADE）、`created_by`/`updated_by`、时间戳；唯一约束 `owner`＋`match_field`＋`pattern_key`（全事务所规则的重复由应用层检查） | `accounting/0020_expense_category_rules` | 同一 migration 写入 3 条初始规则（駐車場・停车场・parking → 既有类别「停车费」）。这是设置数据，不改写任何支出记录 |
+| `accounting_expense_categories` | 结构不变 | — | 保存支出时把确认使用的类别名沉淀为主档（已有同名或仅表记不同则复用；停用的不重新启用）。`accounting_expenses.category` 仍是自由文本，不改外键 |
 
 ### 11.9 P2 平台能力收尾（2026-09-29 本地已实现，分支 `codex/p2-platform-completion`；生产未部署）
 
@@ -297,4 +306,3 @@ P1～P3 追加的 NOT NULL 列中，以下 9 列原本没有数据库级默认�
 - 其余新增列均可空或属于旧代码不写入的新表（P0 的 `owner` 等、各关联 FK、OfficeSettings、不动产、帳票新表）。
 - 以后若 `AlterField` 这些列，Django 会去掉默认值；`apps/cases/tests_db_defaults.py` 会失败，需在新 migration 中用 `apps.common.db_defaults` 重新设置。
 - 旧代码删除被新表（見積書・契約書・不動産・审计日志等）引用的父记录时会被外键拒绝（`scripts/rollback_compat/inventory.py` 列出全部此类外键）。
-

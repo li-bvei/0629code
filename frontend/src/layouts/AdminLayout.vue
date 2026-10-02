@@ -177,7 +177,7 @@ const handleLogout = async () => {
           </el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu v-if="auth.canAny('real_estate.use_real_estate', 'real_estate.real_estate_view_all', 'real_estate.real_estate_change_all')" index="real-estate">
+        <el-sub-menu v-if="auth.can('real_estate.use_real_estate')" index="real-estate">
           <template #title>
             <el-icon><OfficeBuilding /></el-icon>
             <span>不動産</span>
@@ -186,7 +186,7 @@ const handleLogout = async () => {
             <el-icon><OfficeBuilding /></el-icon>
             <span>取引一覧</span>
           </el-menu-item>
-          <el-menu-item v-if="auth.can('real_estate.real_estate_change_all')" index="/real-estate/import">
+          <el-menu-item v-if="auth.can('real_estate.import_real_estate')" index="/real-estate/import">
             <el-icon><Upload /></el-icon>
             <span>LIST 取込（dry-run）</span>
           </el-menu-item>

@@ -37,6 +37,9 @@
 - [2026-09-29 P2 集成分支](CHANGELOG_2026-09-29_p2_integration.md)
 - [2026-09-29 P2-C11 帐票](CHANGELOG_2026-09-29_p2_c11_vouchers.md)
 - [2026-09-29 本地发布验证报告](RELEASE_LOCAL_VALIDATION_2026-09-29.md)
+- [2026-10-01 P3 不动产协同台账修订](CHANGELOG_2026-10-01_p3_collaborative_ledger.md)
+- [2026-10-02 变更请求：不动产批量作业・支出类别联想・新规受付简化（方案）](CHANGE_REQUEST_2026-10-02_real_estate_batch_reception.md)
+- [2026-10-02 上述变更请求的本地实现记录](CHANGELOG_2026-10-02_real_estate_batch_reception.md)
 - [2026-09 项目审查报告](PROJECT_AUDIT_2026-09.md)
 
 ## 历史上下文

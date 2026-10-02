@@ -1,6 +1,6 @@
 # SUNRISE AI 交接总文档
 
-更新时间：2026-09-28
+更新时间：2026-10-02
 项目：SUNRISE 日本行政书士事务所内部业务管理系统  
 仓库：`/Users/tatsuya/Documents/Projects/0629code`
 
@@ -16,6 +16,8 @@
 6. 需要深入历史背景时，再读 `AI_CONTEXT.md` 和 `AI_TASK.md` 的对应章节。
 7. 需要确认产品原则、数据库或部署规则时，读取 `docs/PROJECT.md`、`docs/DATABASE.md`、`docs/CODING_RULES.md`、`docs/DEPLOY.md`。
 8. 变更细节见 `docs/CHANGELOG_2026-09-06_intake_workspace.md`、`docs/CHANGELOG_2026-09-16_p0_followup.md` 和后续按日期排列的记录；旧版审查结论见 `docs/PROJECT_AUDIT_2026-09.md`。
+
+不动产批量变更、支出类别联想、新规受付直接输入已于 2026-10-02 在本地实现，实现内容、验证结果和未决业务选择见 `docs/CHANGELOG_2026-10-02_real_estate_batch_reception.md`；原始问题定位与方案见 `docs/CHANGE_REQUEST_2026-10-02_real_estate_batch_reception.md`。继续修改这三块前两份都要读。**这三项不是待办**：CHANGE_REQUEST 是已实施的设计记录，现行契约以 CHANGELOG 和代码为准。
 
 文档优先级固定为：AI_HANDOFF.md（当前状态与入口）> SYSTEM_ARCHITECTURE.md（架构约束）> DEVELOPMENT_REQUIREMENTS_2026-09-26.md（业务需求）> DEVELOPMENT_PLAN.md（实施顺序）> DATABASE.md（数据结构）> CHANGELOG（历史）。
 
@@ -76,6 +78,17 @@ docs/                          当前文档与历史记录
 ```
 
 ## 3. 当前工作区与验证状态
+
+2026-10-02 批量变更・类别联想・受付简化（同一分支 `codex/p3-real-estate-collaborative-ledger`，未提交、未推送、未部署；生产 D1～D12 未执行）：
+
+- 不动产：筛选增加取引日范围・振込状态；新增 `bulk-preview`/`bulk-update`（原子、只改段階・担当者・取引日、只对利用中记录、逐条可读履历＋批次审计；`bulk-update` 只接受 `bulk-preview` 的签名 token，token 固化每条记录的 `updated_at`，预览后任一记录变化则整批 409，手动勾选也走同一路径）；新权限 `real_estate.bulk_change_real_estate`（`real_estate/0005`），角色定义中只有 `system_admin` 拥有。
+- 支出：新表 `accounting_expense_category_rules`（`accounting/0020`，含 3 条初始规则 → 既有类别「停车费」）；`category-suggestions` 增加 `place_recommendations`；保存时把确认的类别沉淀为主档；显式勾选才记忆场所规则，且默认只对本人生效（`owner`），管理员可用 `promote` 提升为全事务所规则；规则的列表和维护都需要 `manage_expense_category`。
+- 新规受付：页面改为直接输入两步，不再照合、不再发送 `existing_customer_id`；未关联 Employee 时担当者必填；400 按字段显示。后端担当者缺失的 400 改为 `{"case": {"responsible_employee": [...]}}`。
+- 上线前检查：`check_expense_category_rules`（类别「停车费」与 3 条初始规则；只读，`--apply` 只补缺，不启用被停用的类别、不建别名类别）。`accounting/0020` 不创建类别。
+- 验证：后端全量 `Ran 350 tests — OK`；`check` 0 issues；`makemigrations --check --dry-run` 无差异；前端单元 33 项、`npm run build`、`git diff --check` 通过；浏览器验收两轮：合成数据库 `gyoseishoshi_erp_batch_qa_20261002`，以及由既有 QA 库（真实 LIST `工作表1` 36 条）复制的 `gyoseishoshi_erp_real_estate_qa_20261002_batch`（既有 QA 库未改动，三个 QA 库都保留）。
+- 部署后需 `setup_access_roles --apply --yes`。业务选择已于 2026-10-02 由用户确认（批量权限只给李；类别名保留「停车费」；必须关联 Employee、不做未分配案件；记忆规则默认仅本人；旧照合 API 暂留），见 CHANGELOG §6。
+
+2026-10-01 不动产协同台账修订（分支 `codex/p3-real-estate-collaborative-ledger`，未推送、未部署）：`real_estate/0004_collaborative_ledger` 将担当从 Employee 关联改为自由文本，删除三项废止来源金额，新增归档/恢复与来源哈希。已授权用户共同查看、新建和编辑所有不动产记录；李仅凭明确 role 权限完成全操作，`is_superuser` 不参与业务判断。独立 QA 库 `gyoseishoshi_erp_real_estate_qa_20261001` 已从 `LIST.xlsx` 的唯一目标 `工作表1` 导入 36 条，未读其他工作表；真实值未写入仓库。专项测试、全量回归、前端构建和静态检查已通过；浏览器已确认李的归档/恢复/台账锁定与更正，以及普通授权用户跨担当编辑和自由担当文本。详见 `CHANGELOG_2026-10-01_p3_collaborative_ledger.md`。
 
 2026-09-28 状态：
 
@@ -159,7 +172,7 @@ Case
 已存在并受登录保护的主要页面：
 
 - `/dashboard`：Dashboard KPI、阶段统计、最近案件、期限列表
-- `/reception/new`：三步新规受付
+- `/reception/new`：新规受付（2026-10-02 起为直接输入两步：业务信息 → 确认并创建，无照合步骤）
 - `/cases`、`/cases/:id`：案件列表与案件工作区基础页面
 - `/customers`、`/customers/:id`：顾客与家族/关联数据
 - `/companies`、`/companies/:id`：公司与公司职员
@@ -199,6 +212,11 @@ Case
 | `POST /api/cases/{id}/change-status/` | 案件状态专用变更入口 |
 | `POST /api/cases/{id}/change-registration-status/` | 登记状态专用变更入口 |
 | `GET /api/documents/{id}/download/`、`/preview/` | 2026-09-28 新增（本地）：受保护下载/预览。父 Case 担当或 `document_download_all`；审计 denied/authorized/started；生产用 X-Accel-Redirect |
+| `POST /api/real-estate/transactions/bulk-preview/`、`bulk-update/` | 2026-10-02 新增（本地）：不动产批量变更。需 `use_real_estate`＋`change_real_estate`＋`bulk_change_real_estate`；全成功或全中止；只改段階・担当者・取引日。先 `bulk-preview`（`{filters}` 或 `{selection:{mode:'ids',items:[{id,updated_at}]}}`）取得 token，再 `bulk-update {selection_token, changes, clear_fields, expected_count}`；预览后对象有变化返回 409 |
+| `GET /api/real-estate/transactions/` | 2026-10-02：新增 `transaction_date_from`/`transaction_date_to`/`transfer_status` 筛选 |
+| `GET /api/accounting/expenses/category-suggestions/` | 2026-10-02：响应新增 `place_recommendations`（文字规则的类别建议，只是候选） |
+| `/api/accounting/expense-category-rules/`、`{id}/promote/` | 2026-10-02 新增（本地）：类别建议规则的管理与「本人规则→全事务所规则」的提升，全部动作需 `manage_expense_category` |
+| `POST /api/receptions/` | 2026-10-02：未关联 Employee 且未选担当的 400 改为 `{"case": {"responsible_employee": [...]}}`；受付页面不再发送 `existing_customer_id`（后端仍兼容） |
 | `GET /api/auth/me/` | 2026-09-28 修订：`permissions`/`business_permissions` 只返回显式业务权限（不再是 superuser 的全部权限），新增 `employee_id`、`employee_name`、`is_protected`、`dev_tools_enabled` |
 | 所有业务 API | 2026-09-28：统一经 BusinessAccessPolicy 限定范围。范围外 404、可见但不可写 403；顾客/公司列表与搜索对范围外只返回最小识别字段（`access_level`）；Expense summary/dashboard 无全体会计权限时余额为 `null`（`balance_visible`、`expense_scope`） |
 | `POST /api/receptions/`、`POST /api/cases/` | 2026-09-28：未指定担当则设为本人；账号未关联 Employee 返回 400；无 `case_change_all` 不能以他人为担当 |
@@ -356,13 +374,13 @@ Case
 
 ### P3：不动产业务模块
 
-- P3-D1：确认租赁/买卖范围、法定台账字段和 `LIST.xlsx` 主表三个金额列含义（忽略 `强哥` 表）。
+- P3-D1：确认租赁/买卖范围、法定台账字段；废止无业务意义的来源金额列。
 - P3-D2：新建独立 `real_estate` 模块、列表、详情和简易新规输入。
 - P3-D3：保存期限、年度关闭、锁定、更正、权限和审计。
 - P3-D4：`LIST.xlsx` 主表 dry-run、人工确认、正式迁移和对账。
-- P3-D5：独立内部利润分配功能，不读取 `强哥` 表，不进入法定台账。
+- P3-D5：独立内部利润分配功能，不读取其他工作表，不进入法定台账。
 
-**P3 第一版（分支 `codex/p3-real-estate`，基于 `codex/p2-polish`，2026-09-29）**：独立 app `real_estate`（migration `0001`・`0002` 只加结构）。交易总览＋单笔工作台、首屏 7 项、法定台账（锁定・更正・年度关闭・legal hold・保存期限・CSV 导出，无物理删除）、受保护文件、会计引用、内部利润分配（专用权限、查看审计）、LIST.xlsx/CSV dry-run（只读 `工作表1`，不读 `强哥`，无正式导入接口，生产禁用）。权限：一般用户本人担当、业务管理员看全部改本人、李看改全部并管理台账/利润分配。部署后需 `setup_access_roles --apply --yes`。待确认：公司决算月（`REAL_ESTATE_FISCAL_YEAR_END_MONTH`，默认 3）、三个请求金额的业务含义、正式迁移方案。本地预览：后端 `127.0.0.1:8031`、前端 `http://localhost:5201`（用 localhost 避免与 P2 预览共享 cookie），库 `gyoseishoshi_erp_p3_preview`（从 P2 预览库克隆）。详见 `docs/CHANGELOG_2026-09-29_p3_real_estate.md`。
+**P3 第一版（2026-09-29，已由 2026-10-01 修订覆盖）**：独立 app `real_estate`、交易工作台、法定台账、受保护文件、会计引用、利润分配及 dry-run。当前实现以 `0004_collaborative_ledger` 为准：不动产改为协同台账，担当者为自由文本；已授权普通用户共同查看/新建/编辑全体记录；李通过 system_admin/accounting_admin/business_admin 的明确权限完成归档、恢复、导出、台账、更正、年度关闭和利润分配，`is_superuser` 不参与业务判断；废止来源金额已从最终结构移除；验收仅读取 `工作表1`。
 
 **P2 平台能力收尾（分支 `codex/p2-platform-completion`，基于 P3 `1a4c5e3`，2026-09-29）**：事务所「事業年度末月」单例设置（`office/0001`，DB 优先、环境变量仅 fallback、只有 system_admin 可改、写审计），不动产台账保存决算月快照（`real_estate/0003`，关闭后冻结、不追溯）；Case 归档完善（`cases/0020`：实行者・理由・复原、Timeline/AuditLog、归档中只读）；权限感知全局搜索 `/api/search/?q=`（不返回 My Number・证件号・文件路径・金额，搜索审计不记录检索词）；前端路由级 lazy loading 与加载失败提示。部署后需 `setup_access_roles --apply --yes`（新增 `office.manage_office_settings`）。本地预览：后端 `127.0.0.1:8041`、前端 `http://[::1]:5211`（避免与 P2/P3 预览共享 cookie），库 `gyoseishoshi_erp_platform_preview`（从 P3 预览库克隆）。详见 `docs/CHANGELOG_2026-09-29_p2_platform_completion.md`。
 
@@ -512,6 +530,7 @@ backend/apps/documents/migrations/0003_alter_document_options.py
 | `docs/CHANGELOG_2026-09-27_p0_access_design.md` | 2026-09-27 P0 方案编写记录（第 1 版） | 核对本次文档变更 |
 | `docs/CHANGELOG_2026-09-27_p0_access_design_v2.md` | 2026-09-27 P0 方案第 2 版修订记录 | 核对 Q1～Q11 决定与技术修正 |
 | `docs/CHANGELOG_2026-09-27_p0_docs_sync.md` | 2026-09-27 需求/DATABASE/README 同步与 ProtectedAccount 两阶段启用 | 核对本次文档变更 |
+| `docs/CHANGELOG_2026-10-02_real_estate_batch_reception.md` | 不动产批量变更、支出类别联想、新规受付直接输入的本地实现 | 修改这三块前必读；含未决业务选择 |
 | `docs/CHANGELOG_2026-09-28_p0_access_control.md` | P0 访问控制本地实现（唯一最终 CHANGELOG） | 审查 P0 实现、migration、测试、部署与回滚 |
 | `docs/CHANGELOG_2026-09-28_p1_case_workspace.md` | P1 案件工作台本地实现（P1 阶段唯一 CHANGELOG） | 审查 P1 字段、接口、Timeline/AuditLog、测试 |
 | `docs/PROJECT_AUDIT_2026-09.md` | 2026-09 审查报告 | 查看数据与风险背景 |
@@ -799,7 +818,7 @@ Smart Summary
 - Visa 返签表保留当前模块位置，主流程改为上传 CSV/XLSX、列映射、预览校验、批量生成 PDF、ZIP 和错误报告。
 - 报价书、契约书、请求书、领收书各自保留独立状态和编号，可在统一帐票入口及案件摘要中查看。
 - 新增独立 `real_estate` 领域；采用列表总览、单笔工作台和简易新规输入，并满足宅建业法台账、保存期限、锁定和更正审计要求。
-- `/Users/tatsuya/Downloads/LIST.xlsx` 的主表作为待迁移源数据；三个相近金额字段含义未确认前不得自动合并。`强哥` 工作表已确认无用，完全忽略。内部利润分配作为新功能独立设计，不复用该表数据，也不写入法定台账。
+- `/Users/tatsuya/Downloads/LIST.xlsx` 只允许读取 `工作表1`；其他工作表不打开、不枚举、不分析。废止来源金额不映射、不保存、不合计。内部利润分配独立设计，不复用源表字段，也不写入法定台账。
 
 ### 15.2 计划与当前实现的边界
 

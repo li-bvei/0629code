@@ -14,8 +14,6 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from apps.audit.services import record
 from apps.authentication.drf import BusinessScopedViewSetMixin
-from apps.employees.models import Employee
-
 from .list_import import ListImportError, build_report, error_report_csv, file_sha256
 from .models import RealEstateImportRun
 
@@ -67,13 +65,14 @@ class RealEstateImportViewSet(BusinessScopedViewSetMixin, ReadOnlyModelViewSet):
             return [{'id': t.id, 'number': t.transaction_number, 'property_name': t.property_name,
                      'room_number': t.room_number} for t in qs[:5]]
 
-        def employee(name):
+        def responsible(name):
             if not name:
                 return []
-            # 「担当A」のような表記も拾えるよう、名前がどちらかに含まれるものを候補にする（自動では結び付けない）
-            rows = [e for e in Employee.objects.filter(is_active=True).only('id', 'name')
-                    if e.name and (e.name in name or name in e.name)]
-            return [{'id': e.id, 'name': e.name} for e in rows[:5]]
+            # アカウントや Employee は参照せず、既存記録の担当者文字列だけを候補にする。
+            rows = policy.queryset('real_estate', 'list').exclude(responsible_name='').filter(
+                responsible_name__icontains=name).order_by('responsible_name').values_list(
+                'responsible_name', flat=True).distinct()[:5]
+            return [{'name': value} for value in rows]
 
         def existing(values):
             if not (values.get('party_name') and values.get('property_name')):
@@ -83,7 +82,7 @@ class RealEstateImportViewSet(BusinessScopedViewSetMixin, ReadOnlyModelViewSet):
                 room_number=values.get('room_number') or '')
             return [{'id': t.id, 'number': t.transaction_number} for t in qs[:5]]
 
-        return {'customer': customer, 'company': company, 'property': prop, 'employee': employee, 'existing': existing}
+        return {'customer': customer, 'company': company, 'property': prop, 'responsible': responsible, 'existing': existing}
 
     @action(detail=False, methods=['post'], url_path='dry-run')
     def dry_run(self, request):

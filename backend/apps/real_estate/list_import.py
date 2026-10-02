@@ -1,10 +1,9 @@
 """LIST.xlsx / CSV の dry-run 取込（第 1 版は検証と報告だけで、取引は作らない）。
 
-- XLSX は `工作表1` だけを読む。`强哥` シートは開かない・読まない・報告にも出さない。
+- XLSX は `工作表1` だけを読む。他のシートは開かない・列挙しない・報告にも出さない。
 - 各行の元ファイル・シート・行番号・原値を保持して報告する。
 - 「-」・空・0 を区別して規範化し、列ごとに件数を報告する。
-- 近い 3 つの請求金額（向SUNRISE請求書金額・向客人請求金額・SUNRISE請求書金額）は合算・統合せず、別々の元金額のまま。
-- 顧客・会社・物件・担当者は候補を示すだけで、自動では結び付けない。
+- 顧客・会社・物件は候補を示すだけで、自動では結び付けない。担当者候補は既存記録の文字列だけを使う。
 - 同じファイルを何度実行しても結果は同じ（書き込みは実行履歴だけ）。
 """
 import csv
@@ -15,7 +14,6 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 TARGET_SHEET = '工作表1'
-EXCLUDED_SHEETS = {'强哥'}
 MAX_ROWS = 5000
 
 # 見出し → (項目, 型)
@@ -31,9 +29,6 @@ COLUMNS = {
     '广告料': ('advertising_fee', 'amount'),
     '支払い状態': ('payment_status', 'payment'),
     '支払日': ('payment_date', 'date'),
-    '向SUNRISE請求書金額': ('source_billed_to_sunrise_amount', 'amount'),
-    '向客人請求金額': ('source_billed_to_client_amount', 'amount'),
-    'SUNRISE請求書金額': ('source_sunrise_invoice_amount', 'amount'),
     '振込状態': ('transfer_status', 'transfer'),
     '手续费': ('handling_fee', 'amount'),
     '担当者': ('responsible_name', 'text'),
@@ -80,7 +75,6 @@ def read_table(filename, content):
             wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         except Exception as exc:
             raise ListImportError('Excel ファイルを開けません。') from exc
-        visible_sheets = [s for s in wb.sheetnames if s not in EXCLUDED_SHEETS]
         if TARGET_SHEET not in wb.sheetnames:
             raise ListImportError(f'シート「{TARGET_SHEET}」がありません（このシートだけを読み込みます）。')
         ws = wb[TARGET_SHEET]
@@ -93,7 +87,7 @@ def read_table(filename, content):
             rows.append((index, list(values)))
             if len(rows) > MAX_ROWS:
                 raise ListImportError(f'{MAX_ROWS} 行を超えるファイルは読み込めません。')
-        return [str(h).strip() if h is not None else '' for h in headers], rows, TARGET_SHEET, visible_sheets
+        return [str(h).strip() if h is not None else '' for h in headers], rows, TARGET_SHEET, [TARGET_SHEET]
     raise ListImportError('CSV または XLSX ファイルを選択してください。')
 
 
@@ -222,7 +216,6 @@ def _key(*parts):
 def build_report(filename, content, *, candidates):
     """dry-run の報告を作る。candidates は候補検索の関数群（範囲は呼び出し側の権限で絞る）。"""
     headers, rows, sheet, sheets = read_table(filename, content)
-    unknown = [h for h in headers if h and h not in COLUMNS]
     missing_columns = [h for h in COLUMNS if h not in headers]
     data_rows = [(n, v) for n, v in rows if any(classify(x) != 'empty' for x in v)]
     blank_rows = len(rows) - len(data_rows)
@@ -255,7 +248,7 @@ def build_report(filename, content, *, candidates):
                 'customer': candidates['customer'](norm.get('party_name')),
                 'management_company': candidates['company'](norm.get('management_company_name')),
                 'property': candidates['property'](norm.get('property_name'), norm.get('room_number')),
-                'responsible': candidates['employee'](norm.get('responsible_name')),
+                'responsible': candidates['responsible'](norm.get('responsible_name')),
             },
         })
     summary = {
@@ -271,9 +264,8 @@ def build_report(filename, content, *, candidates):
     return {
         'file_name': filename,
         'sheet': sheet,
-        'sheets_found': sheets,  # 除外シート（强哥）は一覧にも出さない
-        'headers': headers,
-        'unknown_columns': unknown,
+        'sheets_found': sheets,
+        'headers': [header for header in headers if header in COLUMNS],
         'missing_columns': missing_columns,
         'column_stats': column_stats(headers, data_rows),
         'summary': summary,

@@ -5,6 +5,7 @@ from django.db import IntegrityError
 from django.db.models import Count, Max, Q
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -79,9 +80,14 @@ class ReceptionCreateView(BusinessAccessMixin, APIView):
         case_data = data.get('case')
         if isinstance(case_data, dict) and case_data.get('case_type_master') and case_data.get('application_category'):
             case_data = dict(case_data)
-            case_data['responsible_employee'] = self.access_rule.resolve_create_responsible_id(
-                self.business_policy, case_data.get('responsible_employee'),
-            )
+            try:
+                case_data['responsible_employee'] = self.access_rule.resolve_create_responsible_id(
+                    self.business_policy, case_data.get('responsible_employee'),
+                )
+            except ValidationError as exc:
+                # 受付の入力構造（case.responsible_employee）に合わせて返し、画面が該当欄に表示できるようにする
+                detail = exc.detail if isinstance(exc.detail, dict) else {'responsible_employee': exc.detail}
+                raise ValidationError({'case': detail}) from exc
             data['case'] = case_data
         return data
 

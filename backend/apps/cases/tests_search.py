@@ -52,14 +52,14 @@ class GlobalSearchTests(AccountingFixture, TestCase):
     def test_documents_and_real_estate_respect_scope(self):
         Document.objects.create(case=self.case_a, title='在職証明書テスト', file_name='secret_path.pdf')
         RealEstateTransaction.objects.create(party_name='検索 借主', property_name='検索ハイツ',
-                                             responsible_employee=self.case_a.responsible_employee)
+                                             responsible_name='検索担当')
         body = self.search(self.staff_a, '検索')
         self.assertEqual(len(self.group(body, 'real_estate')), 1)
         docs = self.group(self.search(self.staff_a, '在職証明'), 'document')
         self.assertEqual(docs[0]['url'], f'/cases/{self.case_a.id}')
         self.assertNotIn('secret_path', json.dumps(docs, ensure_ascii=False))
         self.assertEqual(self.group(self.search(self.staff_b, '在職証明'), 'document'), [])
-        self.assertEqual(self.group(self.search(self.staff_b, '検索'), 'real_estate'), [])
+        self.assertEqual(len(self.group(self.search(self.staff_b, '検索'), 'real_estate')), 1)
 
     def test_audit_without_keyword_and_short_query(self):
         self.assertTrue(self.search(self.staff_a, '会')['query_too_short'])

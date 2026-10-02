@@ -250,3 +250,81 @@ class ReceptionIdempotencyApiTests(TestCase):
         }, format='json')
         self.assertEqual(response.status_code, 201)
         self.assertEqual(ReceptionIdempotencyRecord.objects.count(), 0)
+
+
+class ReceptionDirectEntryErrorTests(TestCase):
+    """新規受付（照合なしの直接入力）：400 は項目単位で読める形で返す。"""
+
+    def setUp(self):
+        from apps.authentication.roles import STAFF
+        from apps.authentication.testing import make_user
+
+        self.client = APIClient()
+        # 案件の利用権限はあるが、担当者（Employee）に関連付いていないアカウント
+        self.unlinked = make_user('reception-unlinked', roles=[STAFF])
+        self.admin_unlinked = get_user_model().objects.create_user(username='reception-admin-unlinked', password='pw')
+        grant_full_business_access(self.admin_unlinked)
+        self.linked = make_user('reception-linked', roles=[STAFF], employee_name='受付担当')
+        self.case_type, _ = CaseTypeMaster.objects.update_or_create(
+            code='direct-eng', defaults={'name': '直接入力種別', 'number_abbreviation': '直入', 'sort_order': 1},
+        )
+        self.category, _ = CaseApplicationCategory.objects.update_or_create(
+            code='direct-renewal', defaults={'name': '直接入力区分', 'number_abbreviation': '直区', 'sort_order': 1},
+        )
+
+    def payload(self, **case):
+        return {
+            'request_id': 'direct-001',
+            'customer': {'name': '直接 太郎', 'birth_date': '1992-02-02'},
+            'case': {'case_type_master': self.case_type.id, 'application_category': self.category.id, **case},
+        }
+
+    def post(self, user, body):
+        self.client.force_authenticate(user)
+        return self.client.post('/api/receptions/', body, format='json')
+
+    def test_unlinked_account_without_responsible_gets_structured_field_error(self):
+        response = self.post(self.admin_unlinked, self.payload())
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {'case': {'responsible_employee': ['担当者を選択してください。']}})
+        self.assertEqual(Customer.objects.count(), 0)
+        self.assertEqual(Case.objects.count(), 0)
+        self.assertFalse(ReceptionIdempotencyRecord.objects.exists())
+
+    def test_unlinked_account_succeeds_after_choosing_a_valid_responsible_with_same_request_id(self):
+        from apps.employees.models import Employee
+
+        self.assertEqual(self.post(self.admin_unlinked, self.payload()).status_code, 400)
+        employee = Employee.objects.get(user=self.linked)
+        response = self.post(self.admin_unlinked, self.payload(responsible_employee=employee.id))
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertFalse(response.json()['customer_reused'])
+        self.assertEqual(Case.objects.get(pk=response.json()['case']).responsible_employee_id, employee.id)
+        # 成功後の再送（同じ request_id）は同じ結果を返し、重複して作らない
+        again = self.post(self.admin_unlinked, self.payload(responsible_employee=employee.id))
+        self.assertEqual(again.json(), response.json())
+        self.assertEqual((Customer.objects.count(), Case.objects.count()), (1, 1))
+
+    def test_unlinked_ordinary_account_cannot_assign_others_and_nothing_is_created(self):
+        from apps.employees.models import Employee
+
+        employee = Employee.objects.get(user=self.linked)
+        self.assertEqual(self.post(self.unlinked, self.payload()).status_code, 400)
+        response = self.post(self.unlinked, self.payload(responsible_employee=employee.id))
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('detail', response.json())
+        self.assertEqual(Case.objects.count(), 0)
+
+    def test_new_customer_without_birth_date_names_the_field(self):
+        body = self.payload()
+        body['customer'] = {'name': '生年月日なし'}
+        response = self.post(self.linked, body)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('birth_date', response.json()['customer'])
+        body['customer'] = {'name': '', 'birth_date': '1992-02-02'}
+        self.assertIn('name', self.post(self.linked, body).json()['customer'])
+
+    def test_linked_account_creates_case_for_self_with_direct_input(self):
+        response = self.post(self.linked, self.payload())
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(Case.objects.get(pk=response.json()['case']).responsible_employee.user, self.linked)

@@ -60,7 +60,6 @@ const SUMMARY_LABELS: Record<string, string> = {
 }
 const pickName = (c: { name: string }) => c.name
 const pickNumber = (c: { number: string }) => c.number
-const yen = (v: unknown) => (v === null || v === undefined ? '-' : `￥${Number(v).toLocaleString()}`)
 
 onMounted(loadHistory)
 </script>
@@ -93,8 +92,6 @@ onMounted(loadHistory)
         </div>
         <el-alert v-if="report.missing_columns.length" type="warning" :closable="false" class="mt"
                   :title="`見つからない列：${report.missing_columns.join('、')}`" />
-        <el-alert v-if="report.unknown_columns.length" type="info" :closable="false" class="mt"
-                  :title="`対応付けない列（無視）：${report.unknown_columns.join('、')}`" />
         <h4>列ごとの値（空・「-」・0・値）</h4>
         <el-table :data="Object.entries(report.column_stats).map(([k, v]) => ({ column: k, ...v }))" size="small" max-height="260">
           <el-table-column prop="column" label="列" min-width="160" />
@@ -121,10 +118,9 @@ onMounted(loadHistory)
               <div class="sub">番号 {{ row.raw['番号'] || '-' }}・日期 {{ row.raw['日期'] || '-' }}・担当 {{ row.raw['担当者'] || '-' }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="金額（元のまま・別々）" min-width="230">
+          <el-table-column label="業務金額" min-width="230">
             <template #default="{ row }">
               <div class="sub">中介 {{ row.raw['中介费'] || '空' }}／広告 {{ row.raw['广告料'] || '空' }}／手数料 {{ row.raw['手续费'] || '空' }}</div>
-              <div class="sub">向SUNRISE {{ yen(row.values.source_billed_to_sunrise_amount) }}／向客人 {{ yen(row.values.source_billed_to_client_amount) }}／SUNRISE {{ yen(row.values.source_sunrise_invoice_amount) }}</div>
             </template>
           </el-table-column>
           <el-table-column label="誤り・要補充・注記" min-width="260">

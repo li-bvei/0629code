@@ -1,4 +1,4 @@
-"""P3 LIST.xlsx dry-run：工作表1 だけ・强哥は読まない、-/空/0 の区別、3 つの金額は別々、候補のみ、重複、再実行。"""
+"""LIST.xlsx dry-run：対象シート限定、自由担当者文字列、-/空/0、候補、重複、再実行。"""
 import io
 import json
 from datetime import datetime
@@ -14,8 +14,8 @@ from apps.real_estate.models import RealEstateTransaction
 from apps.real_estate.tests import RealEstateFixture
 
 HEADERS = ['日期', '番号', '客名', '物件名', '部屋番号', '種類', '管理会社', '中介费', '广告料', '支払い状態', '支払日',
-           '向SUNRISE請求書金額', '向客人請求金額', 'SUNRISE請求書金額', '振込状態', '手续费', '担当者']
-SENTINEL = 'QIANGGE-SHOULD-NEVER-APPEAR'
+           '振込状態', '手续费', '担当者']
+SENTINEL = 'OTHER-SHEET-SHOULD-NEVER-APPEAR'
 
 
 def workbook_bytes(rows, extra_sheets=True):
@@ -26,23 +26,21 @@ def workbook_bytes(rows, extra_sheets=True):
     for r in rows:
         ws.append(r)
     if extra_sheets:
-        wb.create_sheet('强哥').append([SENTINEL, 999999])
-        wb.create_sheet('工作表2').append(['メモ'])
+        wb.create_sheet('対象外').append([SENTINEL, 999999])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
 ROWS = [
-    [datetime(2026, 4, 3), 'A-001', '王 一郎', 'サンライズ天王寺', 301, '賃貸', '大阪管理', 85000, 42500, '済み',
-     datetime(2026, 4, 20), 127500, 93500, 110000, '振込済み', None, '担当A'],
-    [None, 'A-002', '張 二郎', 'ハイツ勝山', 102, None, None, '-', 0, None, None, None, None, None, None, None, None],
-    ['4/5', 'A-003', '李 三', 'ハイツ勝山', '102号', '賃貸', '京都管理', 'abc', 10000, '相殺', None, None, None, None,
-     None, 500, '担当A'],
-    [None] * 17,
-    [datetime(2026, 4, 3), 'A-001', '王 一郎', 'サンライズ天王寺', 301, '賃貸', '大阪管理', 85000, 42500, '済み', None,
-     None, None, None, None, None, '担当A'],
-    [datetime(2026, 5, 1), 'A-005', None, None, None, '売買', '大阪管理', 1, 1, '済み', None, None, None, None, None, None, '担当A'],
+    [datetime(2026, 4, 3), 'A-001', '取引先1', '物件1', 301, '賃貸', '管理会社1', 85000, 42500, '済み',
+     datetime(2026, 4, 20), '振込済み', None, '担当候補'],
+    [None, 'A-002', '取引先2', '物件2', 102, None, None, '-', 0, None, None, None, None, None],
+    ['4/5', 'A-003', '取引先3', '物件2', '102号', '賃貸', '管理会社2', 'abc', 10000, '相殺', None, None, 500, '担当候補'],
+    [None] * 14,
+    [datetime(2026, 4, 3), 'A-001', '取引先1', '物件1', 301, '賃貸', '管理会社1', 85000, 42500, '済み', None,
+     None, None, '担当候補'],
+    [datetime(2026, 5, 1), 'A-005', None, None, None, '売買', '管理会社1', 1, 1, '済み', None, None, None, '担当候補'],
 ]
 
 
@@ -53,38 +51,35 @@ class ListDryRunTests(RealEstateFixture, TestCase):
         return self.client.post('/api/real-estate/imports/dry-run/', {
             'file': SimpleUploadedFile(name, content if content is not None else workbook_bytes(ROWS))})
 
-    def test_reads_only_sheet1_and_never_qiangge(self):
+    def test_reads_only_target_sheet(self):
         response = self.dry_run(self.li)
         self.assertEqual(response.status_code, 201, response.content)
         body = response.json()
         text = json.dumps(body, ensure_ascii=False)
         self.assertEqual(body['sheet'], '工作表1')
         self.assertNotIn(SENTINEL, text)
-        self.assertNotIn('强哥', text)
+        self.assertNotIn('対象外', text)
         self.assertEqual(body['summary']['rows'], 5)
         self.assertEqual(body['summary']['blank_rows_skipped'], 1)
         self.assertTrue(body['dry_run'])
         self.assertEqual(RealEstateTransaction.objects.count(), 0)
 
     def test_normalization_amounts_candidates_duplicates(self):
-        Customer.objects.create(name='王 一郎', birth_date='1990-01-01')
-        Company.objects.create(name='大阪管理株式会社')
+        Customer.objects.create(name='取引先1', birth_date='1990-01-01')
+        Company.objects.create(name='管理会社1株式会社')
+        self.create_tx(user=self.li, responsible_name='担当候補')
         body = self.dry_run(self.li).json()
         rows = {r['row_number']: r for r in body['results']}
         first = rows[2]
         self.assertEqual(first['source'], {'file': 'LIST.xlsx', 'sheet': '工作表1', 'row': 2})
         self.assertEqual(first['values']['transaction_date'], '2026-04-03')
         self.assertEqual(first['values']['room_number'], '301')
-        # 近い 3 つの金額は合算せず別々
-        self.assertEqual(first['values']['source_billed_to_sunrise_amount'], 127500)
-        self.assertEqual(first['values']['source_billed_to_client_amount'], 93500)
-        self.assertEqual(first['values']['source_sunrise_invoice_amount'], 110000)
         self.assertEqual(first['values']['payment_status'], 'paid')
         self.assertEqual(first['values']['transfer_status'], 'transferred')
         self.assertEqual(first['raw']['部屋番号'], '301')
-        self.assertEqual([c['name'] for c in first['candidates']['customer']], ['王 一郎'])
-        self.assertEqual([c['name'] for c in first['candidates']['management_company']], ['大阪管理株式会社'])
-        self.assertEqual(first['candidates']['responsible'][0]['name'], 'A')
+        self.assertEqual([c['name'] for c in first['candidates']['customer']], ['取引先1'])
+        self.assertEqual([c['name'] for c in first['candidates']['management_company']], ['管理会社1株式会社'])
+        self.assertEqual(first['candidates']['responsible'], [{'name': '担当候補'}])
         # -・0・空の区別
         second = rows[3]
         self.assertIsNone(second['values']['brokerage_fee'])
@@ -109,7 +104,7 @@ class ListDryRunTests(RealEstateFixture, TestCase):
         # 秒の境目をまたいだときに SHA-256 が変わってしまう（full suite でのみ起きた不安定の原因）。
         content = workbook_bytes(ROWS)
         first = self.dry_run(self.li, content).json()
-        self.create_tx(user=self.li, party_name='王 一郎', property_name='サンライズ天王寺', room_number='301')
+        self.create_tx(user=self.li, party_name='取引先1', property_name='物件1', room_number='301')
         second = self.dry_run(self.li, content).json()
         self.assertEqual(second['previous_runs'], [first['id']])
         self.assertEqual(second['results'][0]['duplicate_existing'][0]['number'][:3], 'RE-')
@@ -124,7 +119,7 @@ class ListDryRunTests(RealEstateFixture, TestCase):
         self.assertEqual(len(runs), 2)
 
     def test_csv_and_missing_sheet(self):
-        csv = ('﻿' + ','.join(HEADERS) + '\n2026-04-03,C-1,客,物件,1,賃貸,管理,-,0,済み,,,,,,,担当A\n').encode('utf-8')
+        csv = ('﻿' + ','.join(HEADERS) + '\n2026-04-03,C-1,客,物件,1,賃貸,管理,-,0,済み,,,0,担当A\n').encode('utf-8')
         body = self.dry_run(self.li, csv, 'list.csv').json()
         self.assertEqual(body['sheet'], 'CSV')
         self.assertEqual(body['summary']['rows'], 1)
@@ -136,6 +131,6 @@ class ListDryRunTests(RealEstateFixture, TestCase):
 
     def test_permissions_and_disabled_environment(self):
         self.assertEqual(self.dry_run(self.staff_a).status_code, 403)
-        self.assertEqual(self.dry_run(self.jiao).status_code, 403)
+        self.assertEqual(self.dry_run(self.manager).status_code, 403)
         with override_settings(REAL_ESTATE_IMPORT_DRY_RUN_ENABLED=False):
             self.assertEqual(self.dry_run(self.li).status_code, 403)

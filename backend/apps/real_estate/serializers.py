@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from apps.documents.upload_policy import file_metadata, validate_upload
 
+from .history import user_display_name
 from .ledger_service import reject_if_locked
 from .models import (
     InternalProfitDistribution,
@@ -17,7 +18,7 @@ from .models import (
 
 REQUIRED_FOR_SETTLEMENT = (
     ('transaction_date', '取引日'),
-    ('responsible_employee_id', '担当'),
+    ('responsible_name', '担当者'),
     ('management_company_name', '管理会社'),
     ('payment_status', '支払状態'),
 )
@@ -33,7 +34,6 @@ class RealEstateTransactionSerializer(serializers.ModelSerializer):
     stage_display = serializers.CharField(source='get_stage_display', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
     transfer_status_display = serializers.CharField(source='get_transfer_status_display', read_only=True)
-    responsible_employee_name = serializers.CharField(source='responsible_employee.name', read_only=True, default='')
     customer_name = serializers.CharField(source='customer.name', read_only=True, default='')
     management_company_ref_name = serializers.CharField(source='management_company.name', read_only=True, default='')
     missing_items = serializers.SerializerMethodField()
@@ -43,9 +43,11 @@ class RealEstateTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = RealEstateTransaction
         fields = '__all__'
-        read_only_fields = ('transaction_number', 'source_file', 'source_sheet', 'source_row', 'source_values',
-                            'created_by', 'updated_by', 'created_at', 'updated_at')
-        extra_kwargs = {'responsible_employee': {'required': False}}
+        read_only_fields = (
+            'transaction_number', 'source_file', 'source_file_sha256', 'source_sheet', 'source_row',
+            'source_reference', 'source_values', 'is_archived', 'archived_at', 'archived_by', 'archive_reason',
+            'restored_at', 'restored_by', 'created_by', 'updated_by', 'created_at', 'updated_at',
+        )
 
     def get_missing_items(self, obj):
         return missing_items(obj)
@@ -64,6 +66,8 @@ class RealEstateTransactionSerializer(serializers.ModelSerializer):
         return bool(ledger and ledger.is_locked)
 
     def validate(self, attrs):
+        if self.instance is not None and self.instance.is_archived and attrs:
+            raise serializers.ValidationError({'detail': 'アーカイブ済みの記録は編集できません。先に復元してください。'})
         for field in ('rent_or_price', 'brokerage_fee', 'advertising_fee', 'handling_fee'):
             value = attrs.get(field)
             if value is not None and value < 0:
@@ -89,11 +93,14 @@ class TransactionPartySerializer(serializers.ModelSerializer):
 
 
 class LegalLedgerCorrectionSerializer(serializers.ModelSerializer):
-    corrected_by_name = serializers.CharField(source='corrected_by.username', read_only=True, default='')
+    corrected_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = LegalLedgerCorrection
         fields = ('id', 'version', 'changes', 'reason', 'corrected_by_name', 'corrected_at')
+
+    def get_corrected_by_name(self, obj):
+        return user_display_name(obj.corrected_by)
 
 
 class LegalLedgerSerializer(serializers.ModelSerializer):
@@ -145,7 +152,7 @@ class LedgerCorrectionInputSerializer(serializers.Serializer):
 
 class RealEstateFileSerializer(serializers.ModelSerializer):
     kind_display = serializers.CharField(source='get_kind_display', read_only=True)
-    uploaded_by_name = serializers.CharField(source='uploaded_by.username', read_only=True, default='')
+    uploaded_by_name = serializers.SerializerMethodField()
     document_title = serializers.CharField(source='document.title', read_only=True, default='')
     file = serializers.FileField(write_only=True, required=False)
     has_file = serializers.SerializerMethodField()
@@ -158,6 +165,9 @@ class RealEstateFileSerializer(serializers.ModelSerializer):
 
     def get_has_file(self, obj):
         return bool(obj.file)
+
+    def get_uploaded_by_name(self, obj):
+        return user_display_name(obj.uploaded_by)
 
     def validate_file(self, uploaded):
         problem = validate_upload(uploaded)

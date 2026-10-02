@@ -85,6 +85,8 @@ export interface ExpensePayload {
   customer?: number | null
   company?: number | null
   case?: number | null
+  /** 利用者が「この場所とカテゴリの対応を記憶する」を選んだ場合だけ true（保存項目ではない。本人用の規則になる） */
+  remember_place_category?: boolean
 }
 
 export interface ExpenseSummary {
@@ -886,8 +888,40 @@ export interface ExpenseCategorySuggestions {
   matches: Array<{ name: string; source: 'master' | 'history'; count: number }>
   normalized: { input: string; suggestion: string; reason: string } | null
   recommendations: Array<{ name: string; reason: string; score: number }>
+  // 文字規則（場所などに含まれる文字 → カテゴリ）からの提案。採用するまで入力値は変わらない。
+  place_recommendations: PlaceCategoryRecommendation[]
   source_scope: 'own_history'
 }
+
+export interface PlaceCategoryRecommendation {
+  name: string
+  match_field: 'place' | 'expense_target' | 'note'
+  pattern: string
+  /** office＝事務所共通の規則、personal＝自分が記憶した規則 */
+  scope: 'office' | 'personal'
+  reason: string
+  requires_confirmation: boolean
+}
+
+export interface ExpenseCategoryRule {
+  id: number
+  pattern: string
+  match_field: 'place' | 'expense_target' | 'note'
+  match_field_display: string
+  expense_category: number
+  expense_category_name: string
+  priority: number
+  is_active: boolean
+  source: 'seed' | 'manual' | 'user_confirmed'
+  source_display: string
+  /** personal＝記憶した本人だけに効く。事務所共通への変更は promote だけ */
+  scope: 'office' | 'personal'
+  owner_name: string
+  created_at: string
+  updated_at: string
+}
+
+export type ExpenseCategoryRulePayload = Pick<ExpenseCategoryRule, 'pattern' | 'match_field' | 'expense_category' | 'priority' | 'is_active'>
 
 export interface CaseAccountingSummary {
   case_id: number

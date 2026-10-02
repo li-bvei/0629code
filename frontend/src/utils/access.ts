@@ -23,7 +23,7 @@ const ROUTE_PERMISSIONS: Array<[string, string]> = [
   ['/reminders', 'cases.use_cases'],
   ['/timelines', 'cases.use_cases'],
   ['/documents', 'cases.use_cases'],
-  ['/real-estate/import', 'real_estate.real_estate_change_all'],
+  ['/real-estate/import', 'real_estate.import_real_estate'],
   ['/real-estate', 'real_estate.use_real_estate'],
 ]
 
