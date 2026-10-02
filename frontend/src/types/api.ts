@@ -994,6 +994,8 @@ export interface FamilyMemberPayload {
   customer: number
   family_customer?: number | null
   new_customer?: CreateCustomerPayload
+  /** 関連付いている人物の修正内容（変更した項目だけ。更新時のみ） */
+  person?: Record<string, string | null>
   relationship: string
   is_dependent?: boolean
   note?: string

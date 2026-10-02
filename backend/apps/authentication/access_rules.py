@@ -625,10 +625,27 @@ class PartyChildRule(Rule):
         self._check_link(policy, data)
         return {}
 
+    def _check_person_edit(self, policy, data, instance):
+        """家族の画面から関連付いている人物（Customer）を直接修正してよいか。
+
+        その人物を自分で変更できる（本人担当・case_change_all）か、他の担当者（未割当を含む）の進行中案件が
+        無い場合だけ許可する。他担当の進行中案件の顧客を、家族の関連を足掛かりに書き換えさせない。
+        """
+        if not data.get('person') or not self.link_field:
+            return
+        person = getattr(instance, self.link_field, None)
+        if person is None:
+            return
+        if CUSTOMER_RULE.object_decision(policy, person, 'change') == ALLOW:
+            return
+        if CUSTOMER_RULE.foreign_active_case_exists(policy, person):
+            raise PermissionDenied('この方は他の担当者の進行中案件の顧客のため、ここからは本人の情報を変更できません。担当者または管理者に依頼してください。')
+
     def prepare_update(self, policy, instance, data):
         if self.parent_field in data and data[self.parent_field] != self.parent(instance):
             self._check_parent_writable(policy, data[self.parent_field])
         self._check_link(policy, data, instance)
+        self._check_person_edit(policy, data, instance)
         return {}
 
 

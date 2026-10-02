@@ -325,6 +325,13 @@ FAMILY_MEMBER_PERSON_FIELDS = [
 ]
 
 
+# 家族の編集画面から、関連付いている人物（Customer）の情報を直接修正できる項目
+FAMILY_PERSON_EDIT_FIELDS = (
+    'name', 'name_kana', 'birth_date', 'gender', 'nationality', 'phone', 'email', 'postal_code', 'address',
+    'my_number', 'residence_status', 'residence_card_no', 'residence_expiry', 'passport_no', 'passport_expiry',
+)
+
+
 class FamilyMemberSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     relationship_display = serializers.CharField(source='get_relationship_display', read_only=True)
@@ -334,6 +341,9 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
     email = serializers.SerializerMethodField()
     has_my_number = serializers.SerializerMethodField()
     new_customer = serializers.DictField(write_only=True, required=False)
+    # 関連付いている人物（family_customer）の修正内容。変更した項目だけを送る（更新時のみ）。
+    # 可否は access_rules の PartyChildRule が判定する（他担当の進行中案件の顧客は直接修正できない）。
+    person = serializers.DictField(write_only=True, required=False)
 
     class Meta:
         model = FamilyMember
@@ -353,6 +363,7 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
             'is_dependent',
             'note',
             'new_customer',
+            'person',
             'created_at',
             'updated_at',
         ]
@@ -397,10 +408,44 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {'family_customer': '既存顧客の選択と新規顧客の入力は同時に指定できません。'}
             )
+        person = attrs.get('person')
+        if person is not None:
+            linked = getattr(self.instance, 'family_customer', None)
+            if self.instance is None or linked is None or new_customer_data or family_customer != linked:
+                raise serializers.ValidationError(
+                    {'person': '人物情報の修正は、関連付け済みの家族を編集するときだけ行えます。'}
+                )
+            unknown = sorted(set(person) - set(FAMILY_PERSON_EDIT_FIELDS))
+            if unknown:
+                raise serializers.ValidationError({'person': f'修正できない項目です：{"、".join(unknown)}'})
+            if not person.get('my_number'):
+                person.pop('my_number', None)  # 空欄は「変更なし」（登録済みの値を消さない）
+            if person:
+                person_serializer = CustomerSerializer(linked, data=person, partial=True)
+                if not person_serializer.is_valid():
+                    raise serializers.ValidationError({'person': person_serializer.errors})
+                attrs['person'] = person_serializer.validated_data
         return attrs
+
+    def _update_person(self, instance, person):
+        """関連付いている人物の情報を修正し、監査に残す（証件番号・My Number は「変更あり」だけ記録）。"""
+        from apps.audit.services import record, safe_changes
+
+        linked = instance.family_customer
+        before = {field: getattr(linked, field) for field in person}
+        for field, value in person.items():
+            setattr(linked, field, value)
+        changes = safe_changes(before, {field: getattr(linked, field) for field in person})
+        if not changes:
+            return
+        linked.save(update_fields=[*changes.keys(), 'updated_at'])
+        record(module='customers', action='family_person_updated', request=self.context.get('request'), obj=linked,
+               object_repr=linked.name, changes=changes,
+               extra={'family_member_id': instance.pk, 'parent_customer_id': instance.customer_id})
 
     def create(self, validated_data):
         new_customer_data = validated_data.pop('new_customer', None)
+        validated_data.pop('person', None)
         if new_customer_data:
             customer_serializer = CustomerSerializer(data=new_customer_data)
             customer_serializer.is_valid(raise_exception=True)
@@ -411,11 +456,14 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         new_customer_data = validated_data.pop('new_customer', None)
+        person = validated_data.pop('person', None)
         if new_customer_data:
             customer_serializer = CustomerSerializer(data=new_customer_data)
             customer_serializer.is_valid(raise_exception=True)
             validated_data['family_customer'] = customer_serializer.save()
         instance = super().update(instance, validated_data)
+        if person:
+            self._update_person(instance, person)
         sync_reverse_family_link(instance)
         return instance
 

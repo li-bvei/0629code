@@ -40,7 +40,7 @@
 - [2026-10-01 P3 不动产协同台账修订](CHANGELOG_2026-10-01_p3_collaborative_ledger.md)
 - [2026-10-02 变更请求：不动产批量作业・支出类别联想・新规受付简化（方案）](CHANGE_REQUEST_2026-10-02_real_estate_batch_reception.md)
 - [2026-10-02 上述变更请求的本地实现记录](CHANGELOG_2026-10-02_real_estate_batch_reception.md)
-- [2026-10-03 案件进度更新时申請日无法填写的修正](CHANGELOG_2026-10-03_case_application_date.md)
+- [2026-10-03 案件进度更新（申請日・理由）与家族信息编辑的修正](CHANGELOG_2026-10-03_case_progress_family_fixes.md)
 - [2026-09 项目审查报告](PROJECT_AUDIT_2026-09.md)
 
 ## 历史上下文

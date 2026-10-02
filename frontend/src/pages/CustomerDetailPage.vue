@@ -20,6 +20,8 @@ import type { ActionItem } from '../components/layout/actions'
 import type { CaseApplicationCategory, CasePayload, CaseTypeMaster, CreateCustomerPayload, Customer, CustomerCaseSummary, CustomerDetail, CustomerRelatedCompany, Employee, FamilyMember, FamilyMemberPayload, ResidenceStatusMaster, UpdateCustomerPayload } from '../types/api'
 import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
+import { describeApiErrors, responseOf } from '../utils/apiErrors'
+import { buildPersonChanges } from '../utils/familyPerson'
 
 const route = useRoute()
 const router = useRouter()
@@ -228,13 +230,22 @@ const customerRules: FormRules<UpdateCustomerPayload> = {
   birth_date: [{ required: true, message: '生年月日を入力してください。', trigger: 'change' }],
 }
 
+// 編集中の家族（関連付け済みの人物）。関連先を変えずに編集している間は、その人物の情報を直接修正できる。
+const editingFamilyOriginal = ref<FamilyMember | null>(null)
+const editingLinkedPerson = computed(() => (
+  editingFamilyOriginal.value !== null
+  && Boolean(editingFamilyOriginal.value.family_customer)
+  && familyForm.value.family_customer === editingFamilyOriginal.value.family_customer
+))
+const showFamilyPersonFields = computed(() => !familyForm.value.family_customer || editingLinkedPerson.value)
+
 const familyRules: FormRules<FamilyEditForm> = {
   relationship: [{ required: true, message: '関係を選択してください。', trigger: 'change' }],
   name: [
     {
       validator: (_rule, value, callback) => {
-        if (!familyForm.value.family_customer && !value) {
-          callback(new Error('既存の顧客を選択するか、氏名を入力してください。'))
+        if (showFamilyPersonFields.value && !value) {
+          callback(new Error(editingLinkedPerson.value ? '氏名を入力してください。' : '既存の顧客を選択するか、氏名を入力してください。'))
           return
         }
         callback()
@@ -245,8 +256,8 @@ const familyRules: FormRules<FamilyEditForm> = {
   birth_date: [
     {
       validator: (_rule, value, callback) => {
-        if (!familyForm.value.family_customer && !value) {
-          callback(new Error('新規に顧客として登録する場合は生年月日を入力してください。'))
+        if (showFamilyPersonFields.value && !value) {
+          callback(new Error(editingLinkedPerson.value ? '生年月日を入力してください。' : '新規に顧客として登録する場合は生年月日を入力してください。'))
           return
         }
         callback()
@@ -398,8 +409,19 @@ const submitCase = async () => {
   }
 }
 
+const FAMILY_ERROR_LABELS: Record<string, string> = {
+  relationship: '関係', family_customer: '既存の顧客', person: '人物情報',
+  'person.name': '氏名', 'person.name_kana': 'フリガナ', 'person.birth_date': '生年月日', 'person.gender': '性別',
+  'person.nationality': '国籍', 'person.phone': '電話番号', 'person.email': 'メール', 'person.postal_code': '郵便番号',
+  'person.address': '住所', 'person.my_number': 'マイナンバー', 'person.residence_status': '在留資格',
+  'person.residence_card_no': '在留カード番号', 'person.residence_expiry': '在留期限',
+  'person.passport_no': 'パスポート番号', 'person.passport_expiry': 'パスポート期限',
+  'new_customer.name': '氏名', 'new_customer.birth_date': '生年月日', 'new_customer.email': 'メール',
+}
+
 const resetFamilyForm = () => {
   editingFamilyMemberId.value = null
+  editingFamilyOriginal.value = null
   familyForm.value = {
     relationship: '',
     family_customer: null,
@@ -438,6 +460,7 @@ const handleFamilyCustomerChange = (selected: Customer | null) => {
 
 const startEditFamilyMember = (familyMember: FamilyMember) => {
   editingFamilyMemberId.value = familyMember.id
+  editingFamilyOriginal.value = familyMember
   familyForm.value = {
     relationship: familyMember.relationship,
     family_customer: familyMember.family_customer,
@@ -482,7 +505,12 @@ const submitFamilyMember = async () => {
       is_dependent: familyForm.value.is_dependent,
       note: familyForm.value.note,
     }
-    if (familyForm.value.family_customer) {
+    if (editingLinkedPerson.value && editingFamilyOriginal.value) {
+      // 関連付け済みの人物：変更した項目だけを送る（生年月日・在留情報などをこの画面で直接修正）
+      payload.family_customer = familyForm.value.family_customer
+      const person = buildPersonChanges(editingFamilyOriginal.value, familyForm.value)
+      if (Object.keys(person).length) payload.person = person
+    } else if (familyForm.value.family_customer) {
       payload.family_customer = familyForm.value.family_customer
     } else {
       const newCustomer: CreateCustomerPayload = {
@@ -513,10 +541,11 @@ const submitFamilyMember = async () => {
     }
     familyEditTarget.value = null
     await fetchCustomerDetail()
-  } catch {
-    errorMessage.value = editingFamilyMemberId.value
-      ? '家族情報の更新に失敗しました。'
-      : '家族情報の追加に失敗しました。'
+  } catch (error) {
+    // 後端が返した理由（どの項目が・なぜ、または権限の理由）をそのまま示す
+    const lines = describeApiErrors(responseOf(error).data, FAMILY_ERROR_LABELS)
+    const fallback = editingFamilyMemberId.value ? '家族情報の更新に失敗しました。' : '家族情報の追加に失敗しました。'
+    ElMessage.error({ message: lines.join(' ') || fallback, duration: 8000 })
   } finally {
     familySubmitting.value = false
   }
@@ -732,8 +761,9 @@ const headerActions = computed<ActionItem[]>(() => [
                       <RemoteCustomerSelect v-model="familyForm.family_customer" placeholder="氏名・カナ・電話・案件番号で検索" @change="handleFamilyCustomerChange" />
                     </el-form-item>
                   </div>
-                  <template v-if="!familyForm.family_customer">
-                    <p class="section-optional-note">既存顧客に該当しない場合のみ、新しい人物として入力してください。</p>
+                  <template v-if="showFamilyPersonFields">
+                    <p v-if="editingLinkedPerson" class="section-optional-note">この方の生年月日・在留情報などを、ここで直接修正できます（変更した項目だけが保存されます。マイナンバーは空欄なら変更しません）。</p>
+                    <p v-else class="section-optional-note">既存顧客に該当しない場合のみ、新しい人物として入力してください。</p>
                     <div class="form-grid">
                       <el-form-item label="フリガナ" prop="name_kana" class="form-grid-start"><el-input v-model="familyForm.name_kana" /></el-form-item>
                       <el-form-item label="氏名" prop="name" class="form-grid-start"><el-input v-model="familyForm.name" /></el-form-item>
@@ -772,7 +802,7 @@ const headerActions = computed<ActionItem[]>(() => [
                     <div class="relationship-actions">
                       <el-tag v-if="familyMember.family_customer" type="info" effect="plain">人物情報連携済み</el-tag>
                       <el-tag v-else type="warning" effect="plain">旧形式データ</el-tag>
-                      <el-button text type="primary" :disabled="familyEditTarget !== null" @click="startEditFamilyMember(familyMember)">関係を編集</el-button>
+                      <el-button text type="primary" :disabled="familyEditTarget !== null" @click="startEditFamilyMember(familyMember)">編集</el-button>
                       <el-button text type="danger" :disabled="familyEditTarget !== null" @click="confirmDeleteFamilyMember(familyMember)">削除</el-button>
                     </div>
                   </header>
