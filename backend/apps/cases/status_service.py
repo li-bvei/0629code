@@ -266,9 +266,9 @@ def change_case_status(
     valid_statuses = {choice[0] for choice in Case.STATUS_CHOICES}
     if new_status not in valid_statuses:
         raise CaseStatusChangeError('指定された進捗は使用できません。')
+    # 進捗変更では理由（備考）の入力を強制しない（2026-10-03：警告の確認だけで進められる）。
+    # 備考は任意で、入力されていれば Timeline に残す。
     note = (note or '').strip()
-    if force and not note:
-        raise CaseStatusChangeError('強制変更する場合は備考を入力してください。')
 
     with transaction.atomic():
         locked_case = Case.objects.select_for_update().get(pk=case.pk)

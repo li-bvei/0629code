@@ -766,10 +766,6 @@ const openApplyTemplateDialog = () => {
 
 const submitProgressUpdate = async () => {
   if (!caseDetail.value) return
-  if (progressUpdateForm.value.force && !progressUpdateForm.value.note.trim()) {
-    ElMessage.warning('強制変更する場合は備考を入力してください。')
-    return
-  }
   if (appliedAtMissing.value) {
     try {
       await ElMessageBox.confirm(
@@ -854,7 +850,7 @@ const submitProgressUpdate = async () => {
     if (data?.warnings?.length) {
       progressUpdateWarnings.value = data.warnings
       progressUpdateForm.value.force = true
-      ElMessage.warning('確認が必要な警告があります。')
+      ElMessage.warning('警告の内容を確認して、もう一度「保存」を押してください。')
     } else {
       ElMessage.error(data?.detail || '進捗の更新に失敗しました。')
     }
@@ -1818,7 +1814,7 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
           </ul>
         </el-alert>
         <el-button
-          v-if="!progressUpdateNoteVisible && !progressUpdateWarnings.length"
+          v-if="!progressUpdateNoteVisible"
           text
           size="small"
           class="note-toggle-button"
@@ -1826,10 +1822,10 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
         >
           備考を追加
         </el-button>
-        <el-form-item v-else :label="progressUpdateWarnings.length ? '備考（強制変更する場合は必須）' : '備考'">
+        <el-form-item v-else label="備考（任意）">
           <el-input v-model="progressUpdateForm.note" type="textarea" :rows="2" />
         </el-form-item>
-        <el-checkbox v-if="progressUpdateWarnings.length" v-model="progressUpdateForm.force">警告を確認して強制変更する</el-checkbox>
+        <el-checkbox v-if="progressUpdateWarnings.length" v-model="progressUpdateForm.force">警告を確認して変更する</el-checkbox>
       </el-form>
       <template #footer>
         <el-button @click="progressUpdateDialogVisible = false">キャンセル</el-button>

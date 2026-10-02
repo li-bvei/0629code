@@ -991,17 +991,11 @@ class CaseStatusWorkflowTestCase(TestCase):
             is_required=True,
             is_completed=False,
         )
-        empty_note_response = self.client.post(f'/api/cases/{self.case.id}/change-status/', {
-            'new_status': Case.STATUS_READY_TO_APPLY,
-            'force': True,
-            'note': '',
-        }, format='json')
-        self.assertEqual(empty_note_response.status_code, 400)
-
+        # 警告を確認して進める場合、理由（備考）の入力は強制しない（2026-10-03 変更）
         response = self.client.post(f'/api/cases/{self.case.id}/change-status/', {
             'new_status': Case.STATUS_READY_TO_APPLY,
             'force': True,
-            'note': '例外対応',
+            'note': '',
         }, format='json')
 
         self.assertEqual(response.status_code, 200)
