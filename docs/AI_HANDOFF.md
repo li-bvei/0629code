@@ -79,7 +79,9 @@ docs/                          当前文档与历史记录
 
 ## 3. 当前工作区与验证状态
 
-2026-10-02 批量变更・类别联想・受付简化（同一分支 `codex/p3-real-estate-collaborative-ledger`，未提交、未推送、未部署；生产 D1～D12 未执行）：
+2026-10-02 批量变更・类别联想・受付简化（同一分支 `codex/p3-real-estate-collaborative-ledger`，已提交 `9b81b77` 并于 2026-10-02 推送到 `origin/codex/p3-real-estate-collaborative-ledger`；未合并到 `main`、未部署；生产 D1～D12 未执行）：
+
+- Git 状态：远程此前只有 `main`（`de95411`）。该分支建立在 P0～P3、发布硬化、UI 布局等本地提交之上，所以这次推送把这些此前从未推送的提交一并带到了远程的这个功能分支；`main` 未变。以下各节中更早日期写的「未推送」描述的是当时状态。
 
 - 不动产：筛选增加取引日范围・振込状态；新增 `bulk-preview`/`bulk-update`（原子、只改段階・担当者・取引日、只对利用中记录、逐条可读履历＋批次审计；`bulk-update` 只接受 `bulk-preview` 的签名 token，token 固化每条记录的 `updated_at`，预览后任一记录变化则整批 409，手动勾选也走同一路径）；新权限 `real_estate.bulk_change_real_estate`（`real_estate/0005`），角色定义中只有 `system_admin` 拥有。
 - 支出：新表 `accounting_expense_category_rules`（`accounting/0020`，含 3 条初始规则 → 既有类别「停车费」）；`category-suggestions` 增加 `place_recommendations`；保存时把确认的类别沉淀为主档；显式勾选才记忆场所规则，且默认只对本人生效（`owner`），管理员可用 `promote` 提升为全事务所规则；规则的列表和维护都需要 `manage_expense_category`。
@@ -88,7 +90,7 @@ docs/                          当前文档与历史记录
 - 验证：后端全量 `Ran 350 tests — OK`；`check` 0 issues；`makemigrations --check --dry-run` 无差异；前端单元 33 项、`npm run build`、`git diff --check` 通过；浏览器验收两轮：合成数据库 `gyoseishoshi_erp_batch_qa_20261002`，以及由既有 QA 库（真实 LIST `工作表1` 36 条）复制的 `gyoseishoshi_erp_real_estate_qa_20261002_batch`（既有 QA 库未改动，三个 QA 库都保留）。
 - 部署后需 `setup_access_roles --apply --yes`。业务选择已于 2026-10-02 由用户确认（批量权限只给李；类别名保留「停车费」；必须关联 Employee、不做未分配案件；记忆规则默认仅本人；旧照合 API 暂留），见 CHANGELOG §6。
 
-2026-10-01 不动产协同台账修订（分支 `codex/p3-real-estate-collaborative-ledger`，未推送、未部署）：`real_estate/0004_collaborative_ledger` 将担当从 Employee 关联改为自由文本，删除三项废止来源金额，新增归档/恢复与来源哈希。已授权用户共同查看、新建和编辑所有不动产记录；李仅凭明确 role 权限完成全操作，`is_superuser` 不参与业务判断。独立 QA 库 `gyoseishoshi_erp_real_estate_qa_20261001` 已从 `LIST.xlsx` 的唯一目标 `工作表1` 导入 36 条，未读其他工作表；真实值未写入仓库。专项测试、全量回归、前端构建和静态检查已通过；浏览器已确认李的归档/恢复/台账锁定与更正，以及普通授权用户跨担当编辑和自由担当文本。详见 `CHANGELOG_2026-10-01_p3_collaborative_ledger.md`。
+2026-10-01 不动产协同台账修订（分支 `codex/p3-real-estate-collaborative-ledger`，已随 2026-10-02 的推送进入远程功能分支，未部署）：`real_estate/0004_collaborative_ledger` 将担当从 Employee 关联改为自由文本，删除三项废止来源金额，新增归档/恢复与来源哈希。已授权用户共同查看、新建和编辑所有不动产记录；李仅凭明确 role 权限完成全操作，`is_superuser` 不参与业务判断。独立 QA 库 `gyoseishoshi_erp_real_estate_qa_20261001` 已从 `LIST.xlsx` 的唯一目标 `工作表1` 导入 36 条，未读其他工作表；真实值未写入仓库。专项测试、全量回归、前端构建和静态检查已通过；浏览器已确认李的归档/恢复/台账锁定与更正，以及普通授权用户跨担当编辑和自由担当文本。详见 `CHANGELOG_2026-10-01_p3_collaborative_ledger.md`。
 
 2026-09-28 状态：
 

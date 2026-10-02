@@ -1,7 +1,7 @@
 # 2026-10-02：不动产批量变更、支出类别联想、新规受付直接输入（本地实现）
 
 依据：`docs/CHANGE_REQUEST_2026-10-02_real_estate_batch_reception.md`。
-分支：`codex/p3-real-estate-collaborative-ledger`（未提交、未推送、未部署；生产 D1～D12 未执行；未修改生产库和正式预览库）。
+分支：`codex/p3-real-estate-collaborative-ledger`（已提交 `9b81b77` 并于 2026-10-02 推送到 `origin/codex/p3-real-estate-collaborative-ledger`；未合并到 `main`、未部署；生产 D1～D12 未执行；未修改生产库和正式预览库）。
 
 ## 1. 不动产：搜索补齐与批量变更
 
