@@ -352,11 +352,7 @@ grep -nE "location \^~ /(sun/)?media/|_protected_media|internal|return 404" ngin
 $RUN inventory_media_references | tee p0_ops/d9_media_inventory.txt
 ```
 
-**15. 在 nginx 容器中检查语法**（backend 已在第 10 步启动；本地隔离环境已验证通过）
-
-```bash
-docker compose --env-file .env.prod run --rm --no-deps frontend nginx -t
-```
+**15. nginx 语法检查**：放到第 16 步切换之后，用运行中的容器执行 `docker compose --env-file .env.prod exec -T frontend nginx -t`。不要在切换前用 `run --rm frontend nginx -t`：首次部署时 `frontend_dist` 卷还是空的，只读挂载下无法创建 `/static` 挂载点，容器会启动失败（2026-10-02 生产实际遇到；不是配置错误）。第 16 步的 `release.sh verify-config` 也会读取运行中 nginx 的完整配置。
 
 **16. D10 切换前端和 nginx**（关闭公开 `/media/`，media 卷改挂到 Web 根目录之外）
 
@@ -431,7 +427,7 @@ $RUN shell -c "from django.contrib.auth.models import User; print(User.objects.f
 | 账号、Group、superuser（D2～D7、D11） | `$RUN restore_access_snapshot /ops/<snapshot>.json`（先看差异，再加 `--apply --yes`；可以用 `--user` 限定账号）。代码回滚本身不会恢复权限变更 |
 | Expense 回填（D8，真实数据写入） | `$RUN backfill_expense_owner --rollback /ops/<csv>`（先看差异，再加 `--apply --yes`）；CSV 丢失时只能整体恢复 |
 | localdev 停用（D12） | 由李确认后手动恢复 `is_active` |
-| 正式 Excel（LIST.xlsx）导入（尚未实现，将来执行时） | 必须先有专用回滚手段；否则只能用导入前的备份整体恢复 |
+| 正式 Excel（LIST.xlsx）导入（`import_real_estate_list`） | `import_real_estate_list --rollback /ops/<ID 清单 CSV> --username <执行者>`（先看差异，再加 `--apply --yes`）；导入后被修改或已有台账等子数据的记录不会被删除，只报告 |
 | 反向 migration（仅在必须删除新表/新列时） | 须先备份并批准；会丢失 owner、关联、审计、帳票、不动产等数据。一般不需要 |
 | 数据整体恢复（误操作、数据损坏） | 用第 3 步的 SQL 和媒体卷备份恢复（须批准，先在测试环境演练） |
 

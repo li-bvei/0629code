@@ -79,6 +79,16 @@ docs/                          当前文档与历史记录
 
 ## 3. 当前工作区与验证状态
 
+### 生产状态（2026-10-02 首次部署 P0～P3；以本小节为准，下文更早日期的「生产未部署」是当时状态）
+
+- 生产运行提交 `74658ef`（分支 `codex/p3-real-estate-collaborative-ledger`，**未合并到 `main`**；服务器仓库处于 detached HEAD）。后端镜像 `sunrise-backend:current`，前端 `nginx:1.27-alpine`＋`frontend_dist` 卷。旧镜像保留为 `0629code-backend:before-p0`、`0629code-frontend:before-p0`。
+- 已执行：D1（只读核对）、备份（`p0_ops/backup_before_p0_20261002_2235.sql`＋媒体卷）、25 项 migration、D2/D3（李・周关联，新建担当者「焦」关联 `jiao`）、D4（快照＋李登记为受保护账号）、D6/D7（5 个角色；李＝system/accounting/business_admin，焦・周＝business_admin＋expense_viewer）、D9（文件 0、`/media/` 引用 0）、D10（nginx 切换，`/media/` 404）。
+- **未执行**：D8（支出 owner 回填）——用户决定暂不执行。1335 条旧支出 `owner` 为空：李凭 `expense_view_all`/`expense_change_all` 仍可查看和修改；按本人历史的类别推荐对这些旧记录不起作用。以后要做时命令不变（`backfill_expense_owner --username zbry6947@gmail.com --apply --yes --expect-count <未設定件数>`）。D5（Admin 只允许受保护账号）、D11（焦・周降级）待用户决定。D12 不需要（生产无 `localdev`）。
+- 生产 `.env.prod` **没有** `FIELD_ENCRYPTION_KEY`，My Number（7 条）用代码中的默认密钥加密。部署时不得新增该变量（会导致无法解密）。更换密钥需要单独的重新加密工具，尚未实现。
+- NAING 目前只有担当者记录、没有账号；用户希望作为普通用户（`staff`），待新建账号后用 `link_user_employee`・`assign_business_roles` 处理。
+- 不动产正式导入：命令 `import_real_estate_list`（见 CHANGELOG §7），生产执行状态见该节。
+- 生产操作由用户在服务器终端执行，AI 无服务器访问权限。
+
 2026-10-02 批量变更・类别联想・受付简化（同一分支 `codex/p3-real-estate-collaborative-ledger`，已提交 `9b81b77` 并于 2026-10-02 推送到 `origin/codex/p3-real-estate-collaborative-ledger`；未合并到 `main`、未部署；生产 D1～D12 未执行）：
 
 - Git 状态：远程此前只有 `main`（`de95411`）。该分支建立在 P0～P3、发布硬化、UI 布局等本地提交之上，所以这次推送把这些此前从未推送的提交一并带到了远程的这个功能分支；`main` 未变。以下各节中更早日期写的「未推送」描述的是当时状态。

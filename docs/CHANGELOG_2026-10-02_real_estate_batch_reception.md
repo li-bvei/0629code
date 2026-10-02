@@ -148,6 +148,25 @@
 
 隔离容器已停止，镜像（`sunrise-backend:batchval`）和隔离卷保留；未影响任何预览库或 QA 库。生产未执行任何操作。
 
+## 7. 首次生产部署与 LIST 正式导入命令（2026-10-02）
+
+生产部署（提交 `74658ef`，不合并 `main`）的执行状态记录在 `AI_HANDOFF.md` §3「生产状态」。部署中发现并处理的事项：
+
+- `DEPLOY.md` 第 15 步的 `run --rm frontend nginx -t` 在 `frontend_dist` 卷为空时会因只读挂载失败（不是配置错误）；已改为切换后用 `exec` 检查。
+- 生产 `.env.prod` 无 `FIELD_ENCRYPTION_KEY`（使用代码默认密钥）；部署时保持不变。
+
+新增正式导入命令 `python manage.py import_real_estate_list <LIST.xlsx> --username <执行者>`（`backend/apps/real_estate/management/commands/import_real_estate_list.py`，共用逻辑在 `list_load.py`，QA 命令 `load_real_estate_qa` 改为调用同一逻辑）：
+
+- 默认 dry-run，只输出件数和不登记的行号，不输出任何源数据值。
+- `--apply` 必须同时给 `--expect-imported N`，与校验结果不一致则中止。
+- 执行者必须明确持有 `real_estate.import_real_estate`（不看 `is_superuser`）。
+- 只读 `工作表1`；校验错误・文件内重复・已登记的行不登记；重复执行不会重复登记。
+- 每条记录写 `transaction_created` 履历，另写汇总审计 `list_imported`，并输出 ID 清单 CSV。
+- `--rollback <CSV>` 只取消清单内、导入后未被修改且没有台账・当事者・文件等子数据的记录（默认 dry-run；被修改过的保留并报告）。
+- 担当者保持自由文本；空的日期・担当者・管理会社・支付状态不推测，页面显示为「要補充」。
+
+本地用真实 `LIST.xlsx` 在 QA 库做了只读预演：对象 41 行，可导入 36 行，校验错误 5 行（不导入），其中 24 行有待补充项。与 2026-10-01 的 QA 导入结果一致。
+
 ## 6. 业务选择（2026-10-02 已由用户确认）
 
 确认结果：
