@@ -88,7 +88,7 @@ docs/                          当前文档与历史记录
 - NAING 目前只有担当者记录、没有账号；用户希望作为普通用户（`staff`），待新建账号后用 `link_user_employee`・`assign_business_roles` 处理。
 - 不动产正式导入：命令 `import_real_estate_list`（见 CHANGELOG §7），生产执行状态见该节。
 - 生产操作由用户在服务器终端执行，AI 无服务器访问权限。
-- 2026-10-03 修正（本地已提交，是否已部署以服务器当前提交为准）：①案件「進捗を更新」在申请之后的进度都可填写申請日；②进度变更不再强制输入理由（归档理由不变）；③顾客页面的家族编辑可直接修改已关联人物的生日・在留信息等（`PATCH /api/family-members/{id}/` 的 `person`，受控于 `PartyChildRule`）。详见 `CHANGELOG_2026-10-03_case_progress_family_fixes.md`。
+- 2026-10-03 修正（本地已提交，是否已部署以服务器当前提交为准）：①案件「進捗を更新」在申请之后的进度都可填写申請日；②进度变更不再强制输入理由（归档理由不变）；④案件详情页的各区块都放进正文栏与右列并排（消除基本信息卡片下方的留白）；③顾客页面的家族编辑可直接修改已关联人物的生日・在留信息等（`PATCH /api/family-members/{id}/` 的 `person`，受控于 `PartyChildRule`）。详见 `CHANGELOG_2026-10-03_case_progress_family_fixes.md`。
 
 2026-10-02 批量变更・类别联想・受付简化（同一分支 `codex/p3-real-estate-collaborative-ledger`，已提交 `9b81b77` 并于 2026-10-02 推送到 `origin/codex/p3-real-estate-collaborative-ledger`；未合并到 `main`、未部署；生产 D1～D12 未执行）：
 

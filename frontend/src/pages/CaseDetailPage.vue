@@ -1454,25 +1454,6 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
         </el-descriptions>
       </el-card>
 
-      <template v-if="caseDetail" #side>
-        <el-card shadow="never">
-          <template #header>現在の対応</template>
-          <dl v-if="caseDetail" class="case-sidebar-fields">
-            <div><dt>次の対応</dt><dd>{{ displayValue(caseDetail.next_action || caseDetail.next_task_title) }}</dd></div>
-            <div><dt>期限</dt><dd :class="{ 'is-overdue': caseDetail.is_overdue }">{{ formatDate(caseDetail.next_action_due_at) }}</dd></div>
-            <div><dt>担当者</dt><dd>{{ displayValue(caseDetail.next_task_responsible_employee_name || caseDetail.responsible_employee_name) }}</dd></div>
-            <div><dt>必須事項</dt><dd>{{ caseDetail.required_items_completed }} / {{ caseDetail.required_items_total }} 完了</dd></div>
-          </dl>
-          <el-button type="primary" class="case-sidebar-action" @click="openProgressUpdateDialog()">進捗を更新</el-button>
-        </el-card>
-        <el-card shadow="never">
-          <template #header>関連レコード</template>
-          <div class="case-related-links"><router-link class="text-link" :to="`/customers/${caseDetail?.customer}`">顧客詳細を開く</router-link><router-link v-if="caseDetail?.company" class="text-link" :to="`/companies/${caseDetail.company}`">会社詳細を開く</router-link><el-button text type="primary" @click="openRegistrationStatusDialog">登録状態を変更</el-button></div>
-          <CaseAccountingSummary :case-id="caseDetail.id" class="case-sidebar-accounting" />
-        </el-card>
-        <VoucherLinksCard v-if="caseDetail" :case-id="caseDetail.id" />
-      </template>
-      </RecordFormLayout>
 
       <el-card id="case-progress" shadow="never" class="case-record-section">
         <template #header>
@@ -1727,6 +1708,28 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
         </el-table>
         <p v-if="!timelines.length" class="empty-text">該当データなし</p>
       </el-card>
+
+      <!-- 右列（現在の対応・関連レコード・帳票）は、本文の全セクションと並べる。
+           基本情報カードだけと並べると、右列の方が高いぶん本文側に空白ができる。 -->
+      <template v-if="caseDetail" #side>
+        <el-card shadow="never">
+          <template #header>現在の対応</template>
+          <dl v-if="caseDetail" class="case-sidebar-fields">
+            <div><dt>次の対応</dt><dd>{{ displayValue(caseDetail.next_action || caseDetail.next_task_title) }}</dd></div>
+            <div><dt>期限</dt><dd :class="{ 'is-overdue': caseDetail.is_overdue }">{{ formatDate(caseDetail.next_action_due_at) }}</dd></div>
+            <div><dt>担当者</dt><dd>{{ displayValue(caseDetail.next_task_responsible_employee_name || caseDetail.responsible_employee_name) }}</dd></div>
+            <div><dt>必須事項</dt><dd>{{ caseDetail.required_items_completed }} / {{ caseDetail.required_items_total }} 完了</dd></div>
+          </dl>
+          <el-button type="primary" class="case-sidebar-action" @click="openProgressUpdateDialog()">進捗を更新</el-button>
+        </el-card>
+        <el-card shadow="never">
+          <template #header>関連レコード</template>
+          <div class="case-related-links"><router-link class="text-link" :to="`/customers/${caseDetail?.customer}`">顧客詳細を開く</router-link><router-link v-if="caseDetail?.company" class="text-link" :to="`/companies/${caseDetail.company}`">会社詳細を開く</router-link><el-button text type="primary" @click="openRegistrationStatusDialog">登録状態を変更</el-button></div>
+          <CaseAccountingSummary :case-id="caseDetail.id" class="case-sidebar-accounting" />
+        </el-card>
+        <VoucherLinksCard v-if="caseDetail" :case-id="caseDetail.id" />
+      </template>
+      </RecordFormLayout>
     </div>
 
     <el-dialog v-model="progressUpdateDialogVisible" title="進捗を更新" width="480px">
