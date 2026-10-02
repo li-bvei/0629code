@@ -138,6 +138,16 @@
 
 说明：受付页面对「未关联 Employee 且未选担当者」先做前端必填校验，所以这一情形在页面上看到的是前端的同一句提示；后端 400 的结构由 API 测试和直接调用确认，页面把后端 400 映射到字段的逻辑由前端单元测试和上一轮的邮箱格式错误验收确认。
 
+## 5.2 发布前固定检查（2026-10-02，提交 `21e5331`）
+
+| 检查 | 结果 |
+|---|---|
+| 旧代码兼容性（`backend/scripts/rollback_compat/run.sh … --recreate`，专用临时库） | 通过：旧基线 `de95411` 建旧表结构 → 最新代码 migrate（待执行 102 项，含 `accounting/0020`、`real_estate/0004`・`0005`）→ 阻止旧代码写入的 NOT NULL 列 0、旧代码缺失列 0、旧代码写入失败 0、新代码读取更新 24 项失败 0 |
+| 同一库上的 `check_expense_category_rules`（与生产相同的「旧结构升级」路径） | 类别「停车费」有效、3 条初始规则有效，退出码 0 |
+| Docker 隔离环境（`git archive` 副本、临时 `.env.prod`、compose 项目 `sunrise_batchval`、端口 `127.0.0.1:18082`、mysql:8.0、`APP_ENV=production`） | 镜像构建成功；全新库 migrate 111 项全部应用，`migrate --check` 0；`check` 0 issues；`setup_access_roles --apply` 后只有 `system_admin` 含 `bulk_change_real_estate`；`check_access_config` 仅阶段 A 警告；`nginx -t` 成功；`release.sh verify-config`・`verify-http` 全部 OK（`/media/`・`/sun/media/`・`/_protected_media/` 为 404）；health/readiness 正常；未登录访问业务 API 403；开发端点 404 |
+
+隔离容器已停止，镜像（`sunrise-backend:batchval`）和隔离卷保留；未影响任何预览库或 QA 库。生产未执行任何操作。
+
 ## 6. 业务选择（2026-10-02 已由用户确认）
 
 确认结果：
