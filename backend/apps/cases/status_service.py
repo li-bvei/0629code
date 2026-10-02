@@ -186,6 +186,13 @@ def _apply_payload_field(locked_case, field_name, value, changed_fields, detail_
         detail_lines.append(f'{label}：{value}')
 
 
+# 申請より後の進捗（申請日が審査期間の起点になる）
+POST_APPLICATION_STATUSES = {
+    Case.STATUS_APPLIED, Case.STATUS_UNDER_REVIEW, Case.STATUS_ADDITIONAL_DOCUMENTS,
+    Case.STATUS_ADDITIONAL_DOCUMENTS_SUBMITTED, Case.STATUS_APPROVED, Case.STATUS_REJECTED,
+}
+
+
 def _apply_status_business_fields(locked_case, previous_status, new_status, change_date_value, status_payload):
     status_payload = status_payload or {}
     changed_fields = {'status', 'status_changed_at'}
@@ -206,6 +213,13 @@ def _apply_status_business_fields(locked_case, previous_status, new_status, chan
     if new_status == Case.STATUS_APPLIED:
         applied_at = _normalize_change_date(status_payload.get('applied_at') or change_date_value)
         _apply_payload_field(locked_case, 'applied_at', applied_at, changed_fields, detail_lines, '申請日')
+        _apply_payload_field(locked_case, 'application_receipt_number', status_payload.get('application_receipt_number'), changed_fields, detail_lines, '受付番号')
+    if new_status in POST_APPLICATION_STATUSES and new_status != Case.STATUS_APPLIED:
+        # 「申請済み」を経ずに審査中・補正・結果へ直接進めた場合も、申請日（審査期間の起点）を同時に保存できる。
+        # 指定が無ければ推測で埋めない（変更日を申請日にしない）。
+        applied_at = status_payload.get('applied_at')
+        if applied_at:
+            _apply_payload_field(locked_case, 'applied_at', _normalize_change_date(applied_at), changed_fields, detail_lines, '申請日')
         _apply_payload_field(locked_case, 'application_receipt_number', status_payload.get('application_receipt_number'), changed_fields, detail_lines, '受付番号')
     if new_status == Case.STATUS_UNDER_REVIEW:
         _apply_if_empty(locked_case, 'review_started_at', change_date_value, changed_fields, detail_lines, '審査開始日')

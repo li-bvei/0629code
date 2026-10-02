@@ -1,6 +1,6 @@
 # SUNRISE AI 交接总文档
 
-更新时间：2026-10-02
+更新时间：2026-10-03
 项目：SUNRISE 日本行政书士事务所内部业务管理系统  
 仓库：`/Users/tatsuya/Documents/Projects/0629code`
 
@@ -88,6 +88,7 @@ docs/                          当前文档与历史记录
 - NAING 目前只有担当者记录、没有账号；用户希望作为普通用户（`staff`），待新建账号后用 `link_user_employee`・`assign_business_roles` 处理。
 - 不动产正式导入：命令 `import_real_estate_list`（见 CHANGELOG §7），生产执行状态见该节。
 - 生产操作由用户在服务器终端执行，AI 无服务器访问权限。
+- 2026-10-03 修正（本地已提交，待部署）：案件「進捗を更新」在申请之后的进度都可填写申請日，避免案件一览的审查期间为空。详见 `CHANGELOG_2026-10-03_case_application_date.md`。
 
 2026-10-02 批量变更・类别联想・受付简化（同一分支 `codex/p3-real-estate-collaborative-ledger`，已提交 `9b81b77` 并于 2026-10-02 推送到 `origin/codex/p3-real-estate-collaborative-ledger`；未合并到 `main`、未部署；生产 D1～D12 未执行）：
 

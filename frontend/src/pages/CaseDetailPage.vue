@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown, Check, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -63,6 +63,7 @@ import {
 } from '../utils/caseStatus'
 import type { CaseStageDisplay } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
+import { defaultAppliedAt, isAppliedAtMissing, shouldShowAppliedFields } from '../utils/caseProgress'
 import CaseActionBar from '../components/case/CaseActionBar.vue'
 import CaseAccountingSummary from '../components/case/CaseAccountingSummary.vue'
 import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
@@ -208,9 +209,14 @@ const progressUpdateForm = ref({
   completed_at: null as string | null,
 })
 
-const showAppliedFields = computed(() => (
-  progressUpdateForm.value.new_status === 'applied' || Boolean(caseDetail.value?.applied_at)
-))
+// 申請以降の進捗（審査中・補正・許可など）へ直接進める場合にも申請日の入力欄を出す
+const showAppliedFields = computed(() => shouldShowAppliedFields(progressUpdateForm.value.new_status, caseDetail.value?.applied_at))
+const appliedAtMissing = computed(() => isAppliedAtMissing(progressUpdateForm.value.new_status, progressUpdateForm.value.applied_at))
+// ダイアログ内で「申請済み」を選び直したとき、申請日が空なら今日を仮に入れる
+watch(() => progressUpdateForm.value.new_status, (status) => {
+  if (!progressUpdateDialogVisible.value || progressUpdateForm.value.applied_at) return
+  progressUpdateForm.value.applied_at = defaultAppliedAt(status, caseDetail.value?.applied_at, getTodayDate())
+})
 const showAdditionalDocumentsFields = computed(() => (
   progressUpdateForm.value.new_status === 'additional_documents' || Boolean(caseDetail.value?.additional_documents_requested_at)
 ))
@@ -540,7 +546,7 @@ const openProgressUpdateDialog = (suggestedStatus?: string) => {
     change_date: today,
     note: '',
     force: false,
-    applied_at: caseDetail.value.applied_at || today,
+    applied_at: defaultAppliedAt(suggestedStatus || caseDetail.value.status, caseDetail.value.applied_at, today),
     application_receipt_number: caseDetail.value.application_receipt_number || '',
     additional_documents_requested_at: caseDetail.value.additional_documents_requested_at || today,
     additional_documents_detail: caseDetail.value.additional_documents_detail || '',
@@ -764,6 +770,16 @@ const submitProgressUpdate = async () => {
     ElMessage.warning('強制変更する場合は備考を入力してください。')
     return
   }
+  if (appliedAtMissing.value) {
+    try {
+      await ElMessageBox.confirm(
+        '申請日が未入力です。未入力のままだと案件一覧の「審査期間」が表示されません。このまま更新しますか？',
+        '申請日の確認', { confirmButtonText: 'このまま更新', cancelButtonText: '戻って入力する', type: 'warning' },
+      )
+    } catch {
+      return
+    }
+  }
   progressUpdateSubmitting.value = true
   try {
     await changeCaseStatus(caseId.value, {
@@ -772,8 +788,9 @@ const submitProgressUpdate = async () => {
       note: progressUpdateForm.value.note,
       force: progressUpdateForm.value.force,
       status_payload: {
-        applied_at: progressUpdateForm.value.applied_at,
-        application_receipt_number: progressUpdateForm.value.application_receipt_number,
+        // 画面に出していない項目は送らない（非表示の仮の値を保存させない）
+        applied_at: showAppliedFields.value ? progressUpdateForm.value.applied_at : null,
+        application_receipt_number: showAppliedFields.value ? progressUpdateForm.value.application_receipt_number : '',
         additional_documents_requested_at: progressUpdateForm.value.additional_documents_requested_at,
         additional_documents_detail: progressUpdateForm.value.additional_documents_detail,
         additional_documents_submitted_at: progressUpdateForm.value.additional_documents_submitted_at,
@@ -1743,8 +1760,9 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
           />
         </el-form-item>
         <template v-if="showAppliedFields">
-          <el-form-item label="入管局受理日">
+          <el-form-item label="申請日（入管局受理日）">
             <el-date-picker v-model="progressUpdateForm.applied_at" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" class="form-control" />
+            <div v-if="appliedAtMissing" class="field-hint applied-at-hint">申請日が未入力です。入力すると案件一覧に審査期間が表示されます。</div>
           </el-form-item>
           <el-form-item label="受付番号">
             <el-input v-model="progressUpdateForm.application_receipt_number" />
@@ -2221,6 +2239,10 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
 </template>
 
 <style scoped>
+.applied-at-hint {
+  color: var(--el-color-warning-dark-2);
+}
+
 .case-record-header {
   margin-bottom: 16px;
 }

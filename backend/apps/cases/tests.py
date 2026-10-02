@@ -869,6 +869,49 @@ class CaseStatusWorkflowTestCase(TestCase):
         self.assertEqual(str(self.case.applied_at), '2026-07-17')
         self.assertEqual(self.case.application_receipt_number, '阪在留第12345号')
 
+    def test_application_date_can_be_saved_when_jumping_past_applied(self):
+        """「申請済み」を経ずに審査中・許可へ進めても、申請日を同時に保存でき、審査期間が計算される。"""
+        response = self.client.post(f'/api/cases/{self.case.id}/change-status/', {
+            'new_status': Case.STATUS_UNDER_REVIEW,
+            'change_date': '2026-07-20',
+            'force': True,
+            'note': '申請済みを経ずに審査中へ',
+            'status_payload': {'applied_at': '2026-07-10', 'application_receipt_number': '阪在留第777号'},
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, Case.STATUS_UNDER_REVIEW)
+        self.assertEqual(str(self.case.applied_at), '2026-07-10')
+        self.assertEqual(self.case.application_receipt_number, '阪在留第777号')
+        detail = self.client.get(f'/api/cases/{self.case.id}/').json()
+        self.assertIsNotNone(detail['review_duration_days'])
+        self.assertIn('申請日：2026-07-10', Timeline.objects.filter(case=self.case).order_by('-id').first().content)
+
+    def test_application_date_is_not_guessed_when_jumping_past_applied(self):
+        response = self.client.post(f'/api/cases/{self.case.id}/change-status/', {
+            'new_status': Case.STATUS_UNDER_REVIEW, 'change_date': '2026-07-20', 'force': True, 'note': '日付不明',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.case.refresh_from_db()
+        self.assertIsNone(self.case.applied_at)  # 変更日を申請日として勝手に入れない
+        self.assertIsNone(self.client.get(f'/api/cases/{self.case.id}/').json()['review_duration_days'])
+        # 後から申請日だけを補える（進捗は変えない）
+        fixed = self.client.post(f'/api/cases/{self.case.id}/progress-info/', {'applied_at': '2026-07-10'}, format='json')
+        self.assertEqual(fixed.status_code, 200, fixed.content)
+        self.case.refresh_from_db()
+        self.assertEqual((self.case.status, str(self.case.applied_at)), (Case.STATUS_UNDER_REVIEW, '2026-07-10'))
+
+    def test_existing_application_date_is_kept_unless_a_new_one_is_given(self):
+        self.case.applied_at = '2026-07-01'
+        self.case.save(update_fields=['applied_at'])
+        response = self.client.post(f'/api/cases/{self.case.id}/change-status/', {
+            'new_status': Case.STATUS_APPROVED, 'change_date': '2026-08-01', 'force': True, 'note': '結果',
+            'status_payload': {'applied_at': None},
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.case.refresh_from_db()
+        self.assertEqual(str(self.case.applied_at), '2026-07-01')
+
     def test_additional_documents_and_under_review_submission_dates(self):
         response = self.client.post(f'/api/cases/{self.case.id}/change-status/', {
             'new_status': Case.STATUS_ADDITIONAL_DOCUMENTS,
