@@ -30,7 +30,9 @@ TAX_DIVISORS = {
 
 
 class VoucherCalculationError(ValueError):
-    pass
+    def __init__(self, message, row=None):
+        super().__init__(message)
+        self.row = row  # 1 始まりの明細行番号（分かる場合）
 
 
 def decimal_to_number(value):
@@ -98,15 +100,19 @@ def calculate_voucher_amounts(line_items):
     if not isinstance(line_items, list):
         line_items = []
 
-    for item in line_items:
+    for index, item in enumerate(line_items, start=1):
         if not isinstance(item, dict):
             continue
 
         item_name = str(item.get('item_name') or '').strip()
-        quantity = to_decimal(item.get('quantity'))
-        unit_price = to_decimal(item.get('unit_price'))
-        tax_category = normalize_tax_category(item.get('tax_category'))
-        price_type = normalize_price_type(item.get('price_type'))
+        try:
+            quantity = to_decimal(item.get('quantity'))
+            unit_price = to_decimal(item.get('unit_price'))
+            tax_category = normalize_tax_category(item.get('tax_category'))
+            price_type = normalize_price_type(item.get('price_type'))
+        except VoucherCalculationError as exc:
+            # どの行の誤りかを示す（画面はその行にだけ表示し、他の行の入力は消さない）
+            raise VoucherCalculationError(f'{index} 行目：{exc}', row=index) from exc
 
         if not item_name and quantity == 0 and unit_price == 0:
             continue

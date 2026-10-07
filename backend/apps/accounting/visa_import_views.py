@@ -29,7 +29,8 @@ from .visa_import import (
     to_application_payload,
     validate_rows,
 )
-from .visa_return_pdf import build_visa_return_pdf_filename, generate_visa_return_pdf
+from .visa_pdf_generation import generate_and_record, read_generated_pdf
+from .visa_return_pdf import VisaPdfError, build_visa_return_pdf_filename
 
 
 def _attachment(content, filename, content_type):
@@ -228,10 +229,19 @@ class VisaImportViewSet(BusinessScopedViewSetMixin, GenericViewSet):
         used_names = set()
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
             for application in applications:
-                try:
-                    content = generate_visa_return_pdf(application)
-                except Exception as exc:  # テンプレート不足など：他の申請は続ける
-                    failures.append(f'{application.import_row_number}行目（ID {application.id}）：{exc}')
+                # 単票と同じ正式な生成サービスを使う（成功した PDF は生成記録に残り、保存したファイルを ZIP に入れる）。
+                # 必須項目の不足・生成失敗は他の申請を止めず、結果.txt に理由を書く。
+                outcome = generate_and_record(application, request=request, source='batch_zip')
+                content = None
+                if outcome.ok:
+                    try:
+                        content = read_generated_pdf(outcome.generation)
+                    except VisaPdfError as exc:
+                        outcome.detail = exc.message
+                if content is None:
+                    labels = [f.get('label', '') if isinstance(f, dict) else str(f) for f in outcome.fields]
+                    reason = outcome.detail + (f'（{"、".join(labels)}）' if labels else '')
+                    failures.append(f'{application.import_row_number}行目（ID {application.id}）：{reason}')
                     continue
                 base = re.sub(r'[\\/:*?"<>|]', '_', build_visa_return_pdf_filename(application))
                 name = f'{application.import_row_number or 0:03d}_{base}'

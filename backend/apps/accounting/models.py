@@ -326,6 +326,89 @@ class VoucherItemTemplate(models.Model):
         return self.name
 
 
+class ServiceItem(models.Model):
+    """サービス価格マスタ（P4）。見積書・請求書の明細と新規受付で選ぶ。
+
+    - 委託底価（floor_price）は外部専門家への基本費用で、対客報価とは別。閲覧・変更は
+      accounting.view_service_floor_price を持つ人だけ（serializer が項目自体を出さない）。
+    - 帳票・案件は選んだ時点の内容をスナップショットとして持つため、ここを変えても過去の帳票は変わらない。
+    - 使われた項目は物理削除できない（first_used_at）。不要になったら無効化する。
+    """
+
+    PROFESSIONAL_GYOUSEI = 'gyousei'
+    PROFESSIONAL_TAX_ACCOUNTANT = 'tax_accountant'
+    PROFESSIONAL_JUDICIAL_SCRIVENER = 'judicial_scrivener'
+    PROFESSIONAL_LABOR_CONSULTANT = 'labor_consultant'
+    PROFESSIONAL_OTHER = 'other'
+    PROFESSIONAL_TYPE_CHOICES = (
+        ('', 'なし'),
+        (PROFESSIONAL_GYOUSEI, '行政書士'),
+        (PROFESSIONAL_TAX_ACCOUNTANT, '税理士'),
+        (PROFESSIONAL_JUDICIAL_SCRIVENER, '司法書士'),
+        (PROFESSIONAL_LABOR_CONSULTANT, '社会保険労務士'),
+        (PROFESSIONAL_OTHER, 'その他'),
+    )
+    TAX_CATEGORY_CHOICES = (
+        ('tax_10', '10％'),
+        ('tax_8', '8％'),
+        ('non_taxable', '非課税'),
+    )
+    PRICE_TYPE_CHOICES = (
+        ('tax_included', '税込'),
+        ('tax_excluded', '税抜'),
+    )
+
+    PRICE_PROVISIONAL = 'provisional'
+    PRICE_CONFIRMED = 'confirmed'
+    PRICE_STATUS_CHOICES = ((PRICE_PROVISIONAL, '暫定価格'), (PRICE_CONFIRMED, '確定価格'))
+
+    # P6：初期登録などに使う安定した識別子（名称で同一判定しない）。手作業の項目は空でよい
+    code = models.SlugField('コード', max_length=60, unique=True, null=True, blank=True)
+    category = models.CharField('分類', max_length=100, blank=True)
+    name = models.CharField('項目名', max_length=255)
+    default_price = models.DecimalField('対客標準価格', max_digits=12, decimal_places=0, null=True, blank=True)
+    # P6：価格の状態。暫定のまま帳票・受付に使えるが、画面に明示し、発行前に確認を求める
+    price_status = models.CharField('価格の状態', max_length=20, choices=PRICE_STATUS_CHOICES, default=PRICE_PROVISIONAL)
+    price_confirmed_at = models.DateTimeField('価格確定日時', null=True, blank=True)
+    price_confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='価格確定者',
+    )
+    price_type = models.CharField('価格の税区分', max_length=20, choices=PRICE_TYPE_CHOICES, default='tax_included')
+    floor_price = models.DecimalField('委託底価', max_digits=12, decimal_places=0, null=True, blank=True)
+    professional_type = models.CharField('委託専門家', max_length=30, choices=PROFESSIONAL_TYPE_CHOICES, blank=True)
+    tax_category = models.CharField('税区分', max_length=20, choices=TAX_CATEGORY_CHOICES, default='tax_10')
+    unit = models.CharField('単位', max_length=20, blank=True)
+    is_active = models.BooleanField('有効', default=True)
+    note = models.TextField('社内メモ', blank=True)
+    sort_order = models.PositiveIntegerField('並び順', default=0)
+    first_used_at = models.DateTimeField('初回使用日時', null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='作成者',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='更新者',
+    )
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+    updated_at = models.DateTimeField('更新日時', auto_now=True)
+
+    class Meta:
+        db_table = 'accounting_service_items'
+        permissions = [
+            ('use_service_item', 'サービス項目の閲覧・選択'),
+            ('manage_service_item', 'サービス項目の登録・変更'),
+            ('view_service_floor_price', '委託底価の閲覧・変更'),
+        ]
+        verbose_name = 'サービス項目'
+        verbose_name_plural = 'サービス項目'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
 class AccountingVoucher(models.Model):
     VOUCHER_TYPE_INVOICE = 'invoice'
     VOUCHER_TYPE_RECEIPT = 'receipt'
@@ -394,6 +477,9 @@ class AccountingVoucher(models.Model):
     paid_date = models.DateField('入金日', null=True, blank=True)
     status_changed_at = models.DateTimeField('状態変更日時', null=True, blank=True)
     issued_snapshot = models.JSONField('発行時の金額スナップショット', default=dict, blank=True)
+    # P4：サービス項目を選んだ明細行の委託底価スナップショット（line_key で行に対応）。社内用で、
+    # serializer は底価権限者にだけ返す。発行スナップショット・状態履歴・PDF・検索には含めない。
+    internal_line_costs = models.JSONField('明細の委託底価（社内）', default=list, blank=True)
     source_estimate = models.ForeignKey(
         'accounting.Estimate', verbose_name='元の見積書', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='vouchers',
@@ -604,6 +690,8 @@ class Estimate(BusinessDocumentFields):
     estimate_number = models.CharField('見積番号', max_length=50, unique=True, blank=True)
     status = models.CharField('状態', max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     valid_until = models.DateField('有効期限', null=True, blank=True)
+    # P4：請求書と同じ（明細の委託底価スナップショット。社内用）
+    internal_line_costs = models.JSONField('明細の委託底価（社内）', default=list, blank=True)
 
     class Meta:
         db_table = 'accounting_estimates'
@@ -657,6 +745,77 @@ class Contract(BusinessDocumentFields):
         return f'契約書 {self.contract_number}'
 
 
+class VoucherStatusHistory(models.Model):
+    """請求書・領収書の状態変更の履歴（追記のみ。API からの変更・削除は無い）。
+
+    変更前後の状態・操作者・時刻と、その時点の帳票内容のスナップショットを残す。下書きに戻して
+    再発行した場合も、以前の発行内容はこの履歴から追跡できる（version は発行の通し番号）。
+    帳票が削除されても履歴は残す（番号・種別を写して保持する）。
+    """
+
+    voucher = models.ForeignKey(
+        'AccountingVoucher', null=True, blank=True, on_delete=models.SET_NULL, related_name='status_history',
+        verbose_name='帳票',
+    )
+    document_kind = models.CharField('帳票種別', max_length=20)  # invoice / receipt
+    voucher_number = models.CharField('帳票番号', max_length=50, blank=True)
+    from_status = models.CharField('変更前の状態', max_length=20, blank=True)
+    to_status = models.CharField('変更後の状態', max_length=20)
+    version = models.PositiveIntegerField('発行の版', default=0)
+    snapshot = models.JSONField('変更時の帳票内容', default=dict, blank=True)
+    reason = models.CharField('理由・メモ', max_length=500, blank=True)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='操作者',
+    )
+    changed_at = models.DateTimeField('変更日時', auto_now_add=True)
+
+    class Meta:
+        db_table = 'accounting_voucher_status_history'
+        verbose_name = '請求書・領収書の状態履歴'
+        verbose_name_plural = '請求書・領収書の状態履歴'
+        ordering = ['-changed_at', '-id']
+
+    def __str__(self):
+        return f'{self.voucher_number} {self.from_status or "-"} → {self.to_status}'
+
+
+class IssuedLineCostSnapshot(models.Model):
+    """発行ごとの委託底価スナップショット（P4。追記のみ）。
+
+    見積書・請求書が下書きを離れて発行されるたびに、その時点の internal_line_costs を版ごとに残す。
+    下書きに戻して改価・再発行しても、以前の版の底価を追跡できる。帳票が削除されても残す。
+    底価権限者向けの API（internal-costs）からだけ読む。状態履歴・発行スナップショットには入れない。
+    """
+
+    document_kind = models.CharField('帳票種別', max_length=20)  # estimate / invoice
+    document_id = models.PositiveBigIntegerField('帳票 ID')
+    document_number = models.CharField('帳票番号', max_length=50, blank=True)
+    version = models.PositiveIntegerField('版')
+    status_history = models.ForeignKey(
+        VoucherStatusHistory, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='対応する状態履歴',
+    )
+    line_costs = models.JSONField('明細の委託底価', default=list, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='発行者',
+    )
+    created_at = models.DateTimeField('作成日時', auto_now_add=True)
+
+    class Meta:
+        db_table = 'accounting_issued_line_cost_snapshots'
+        verbose_name = '発行時の委託底価'
+        verbose_name_plural = '発行時の委託底価'
+        ordering = ['document_kind', 'document_id', 'version']
+        constraints = [
+            models.UniqueConstraint(fields=['document_kind', 'document_id', 'version'], name='uniq_issued_line_cost_version'),
+        ]
+
+    def __str__(self):
+        return f'{self.document_number} v{self.version}'
+
+
 class VisaReturnApplication(models.Model):
     GENDER_CHOICES = (
         ('male', '男性'),
@@ -688,6 +847,11 @@ class VisaReturnApplication(models.Model):
     guarantor_relationship = models.CharField('申請人との関係', max_length=100, blank=True)
     guarantor_occupation = models.CharField('保証人職業', max_length=100, blank=True)
     guarantor_snapshot = models.JSONField('保証人スナップショット', default=dict, blank=True)
+    # 主流程で選んだ在日担保人テンプレート（P1・2026-10）。スナップショットは選択時のテンプレート内容。
+    guarantor_template = models.ForeignKey(
+        'VisaGuarantorTemplate', null=True, blank=True, on_delete=models.SET_NULL, related_name='applications',
+        verbose_name='使用した担保人テンプレート',
+    )
     form_data = models.JSONField('表单数据', default=dict, blank=True)
     note = models.TextField('備考', blank=True)
     # CSV/XLSX 一括取込で作られた場合の取込元（P2）
@@ -801,6 +965,59 @@ class VisaGuarantorTemplate(models.Model):
         return self.name
 
 
+def visa_pdf_upload_to(instance, filename):
+    import uuid
+
+    from django.utils import timezone
+
+    return f'visa_return_pdfs/{timezone.localdate():%Y/%m}/{uuid.uuid4().hex}.pdf'
+
+
+class VisaReturnPdfGeneration(models.Model):
+    """返签 visa 表 PDF の生成記録（成功・失敗とも残す）。
+
+    ダウンロードは成功し、ファイルが実在する記録からだけ行う。使ったテンプレートの版（ファイルの
+    SHA-256）と生成方式（フォーム入力／座標描画）、担保人テンプレートを記録して失敗を追跡できるようにする。
+    """
+
+    STATUS_SUCCESS = 'success'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = ((STATUS_SUCCESS, '成功'), (STATUS_FAILED, '失敗'))
+    METHOD_FORM = 'form'
+    METHOD_COORDINATES = 'coordinates'
+    METHOD_CHOICES = ((METHOD_FORM, 'フォーム項目へ入力'), (METHOD_COORDINATES, '座標へ描画'))
+
+    application = models.ForeignKey(
+        VisaReturnApplication, on_delete=models.CASCADE, related_name='pdf_generations', verbose_name='申請',
+    )
+    status = models.CharField('結果', max_length=10, choices=STATUS_CHOICES)
+    method = models.CharField('生成方式', max_length=20, choices=METHOD_CHOICES, blank=True)
+    template_name = models.CharField('PDF テンプレート', max_length=100, blank=True)
+    template_version = models.CharField('PDF テンプレートの版', max_length=64, blank=True)
+    guarantor_template = models.ForeignKey(
+        'VisaGuarantorTemplate', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='担保人テンプレート',
+    )
+    guarantor_template_version = models.CharField('担保人テンプレートの版', max_length=40, blank=True)
+    file = models.FileField('PDF', upload_to=visa_pdf_upload_to, max_length=255, blank=True)
+    file_sha256 = models.CharField('SHA-256', max_length=64, blank=True)
+    file_size = models.PositiveIntegerField('サイズ', null=True, blank=True)
+    error_code = models.CharField('エラー種別', max_length=40, blank=True)
+    error_message = models.TextField('エラー内容', blank=True)
+    details = models.JSONField('詳細', default=dict, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='生成者',
+    )
+    created_at = models.DateTimeField('生成日時', auto_now_add=True)
+
+    class Meta:
+        db_table = 'accounting_visa_return_pdf_generations'
+        verbose_name = '返签visa表 PDF 生成記録'
+        verbose_name_plural = '返签visa表 PDF 生成記録'
+        ordering = ['-created_at', '-id']
+
+
 class SeifuNoticePdfRecord(models.Model):
     STATUS_DRAFT = 'draft'
     STATUS_COMPLETED = 'completed'
@@ -811,6 +1028,12 @@ class SeifuNoticePdfRecord(models.Model):
 
     title = models.CharField('记录名称', max_length=255)
     status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    # P5: 従原来可任意改坐标的 text_items 迁移到固定栏位。新列保持可空，
+    # 使未部署 P5 的旧代码仍可以向这张表 INSERT，也不要求回填旧记录。
+    recipient_name = models.CharField('宛名', max_length=100, blank=True, null=True)
+    permit_number = models.CharField('許可番号', max_length=30, blank=True, null=True)
+    issue_date = models.DateField('通知日', blank=True, null=True)
+    template_key = models.CharField('テンプレート', max_length=60, blank=True, null=True)
     text_items = models.JSONField('追加文字', default=list, blank=True)
     note = models.TextField('备注', blank=True)
     created_by = models.ForeignKey(
@@ -835,6 +1058,55 @@ class SeifuNoticePdfRecord(models.Model):
 
     def __str__(self):
         return self.title
+
+
+def seifu_pdf_upload_to(instance, filename):
+    import uuid
+
+    from django.utils import timezone
+
+    return f'seifu_notice_pdfs/{timezone.localdate():%Y/%m}/{uuid.uuid4().hex}.pdf'
+
+
+class SeifuNoticePdfGeneration(models.Model):
+    """清風合格通知書 PDF の生成記録（P5。成功だけを記録する）。
+
+    PDF を検証し、保存先に書き込んで実在とサイズを確かめてから作る。失敗は監査ログにだけ残し、記録・ファイルを
+    残さない。ダウンロードは成功し、ファイルが実在する記録からだけ行う。記録を消しても生成記録は残す（SET_NULL）。
+    request_id は画面の 1 回の操作ごとの識別子で、二重送信のときは同じ生成結果を返す。
+    """
+
+    STATUS_SUCCESS = 'success'
+    STATUS_CHOICES = ((STATUS_SUCCESS, '成功'),)
+
+    record = models.ForeignKey(
+        SeifuNoticePdfRecord, null=True, blank=True, on_delete=models.SET_NULL, related_name='generations',
+        verbose_name='記録',
+    )
+    status = models.CharField('結果', max_length=10, choices=STATUS_CHOICES, default=STATUS_SUCCESS)
+    request_id = models.CharField('操作 ID', max_length=64, unique=True, null=True, blank=True)
+    recipient_name = models.CharField('宛名', max_length=100)
+    permit_number = models.CharField('許可番号', max_length=30)
+    notice_number = models.CharField('通知書番号', max_length=40)
+    issue_date = models.DateField('通知日')
+    template_key = models.CharField('テンプレート', max_length=60)
+    template_version = models.CharField('テンプレートの版', max_length=64)
+    font_version = models.CharField('字体の版', max_length=64)
+    method = models.CharField('生成方式', max_length=30)
+    file = models.FileField('PDF', upload_to=seifu_pdf_upload_to, max_length=255)
+    file_sha256 = models.CharField('SHA-256', max_length=64)
+    file_size = models.PositiveIntegerField('サイズ')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='生成者',
+    )
+    created_at = models.DateTimeField('生成日時', auto_now_add=True)
+
+    class Meta:
+        db_table = 'accounting_seifu_notice_pdf_generations'
+        verbose_name = '清風合格通知書 PDF 生成記録'
+        verbose_name_plural = '清風合格通知書 PDF 生成記録'
+        ordering = ['-created_at', '-id']
 
 
 class TaxRenewalVoucherRecord(models.Model):

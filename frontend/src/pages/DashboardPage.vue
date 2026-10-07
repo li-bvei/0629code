@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dismissDeadline, getDashboardSummary, listDashboardDeadlines } from '../api/dashboard'
 import type { DashboardDeadline, DashboardSummary } from '../types/api'
-import { formatDate, formatDateTime } from '../utils/date'
+import { formatDate } from '../utils/date'
 
 const loading = ref(false)
 const errorMessage = ref('')
@@ -92,8 +92,13 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <div class="page-header">
+    <!-- 統計の概要だけを出す（案件の一覧は「案件一覧」、自分の作業は「毎日の計画」で見る：P3） -->
+    <div class="page-header dashboard-header">
       <h1>ダッシュボード</h1>
+      <div class="dashboard-links">
+        <router-link to="/daily-plan"><el-button type="primary" plain>毎日の計画</el-button></router-link>
+        <router-link to="/cases"><el-button>案件一覧</el-button></router-link>
+      </div>
     </div>
 
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
@@ -157,41 +162,24 @@ onMounted(() => {
         <p v-else class="empty-text">該当データなし</p>
       </el-card>
 
-      <el-card v-if="summary" shadow="never">
-        <template #header>最近更新された案件</template>
-        <el-table v-if="summary.recent_cases.length" :data="summary.recent_cases" stripe>
-          <el-table-column label="案件番号" min-width="150">
-            <template #default="{ row }">
-              <router-link class="text-link" :to="`/cases/${row.id}`">{{ row.case_number }}</router-link>
-            </template>
-          </el-table-column>
-          <el-table-column prop="customer_name" label="顧客名" min-width="130" />
-          <el-table-column prop="company_name" label="会社名" min-width="150">
-            <template #default="{ row }">{{ row.company_name || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="進捗" width="130">
-            <template #default="{ row }">{{ row.status_display }}</template>
-          </el-table-column>
-          <el-table-column label="担当" width="110">
-            <template #default="{ row }">{{ row.responsible_employee_name || '未設定' }}</template>
-          </el-table-column>
-          <el-table-column label="次の対応" min-width="160">
-            <template #default="{ row }">
-              <span v-if="row.next_action">{{ row.next_action }}<span v-if="row.next_action_due_at"> ({{ formatDate(row.next_action_due_at) }})</span></span>
-              <span v-else class="empty-text">未設定</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="更新日時" min-width="150">
-            <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
-          </el-table-column>
-        </el-table>
-        <p v-else class="empty-text">該当データなし</p>
-      </el-card>
     </div>
   </section>
 </template>
 
 <style scoped>
+.dashboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-links {
+  display: flex;
+  gap: 8px;
+}
+
 .stage-summary-grid,
 .kpi-grid {
   display: flex;

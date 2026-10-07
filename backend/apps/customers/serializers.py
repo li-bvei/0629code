@@ -243,18 +243,25 @@ class CustomerDetailSerializer(CustomerSerializer):
             'case': '案件関連',
         }
         result = []
+        policy = self.context.get('policy')
+        from apps.authentication.access_rules import COMPANY_RULE, VISIBLE_LEVELS
+
         for company in companies:
             relation = relation_map[company.id]
             relation_types = [
                 key for key in ('representative', 'staff', 'case')
                 if key in relation['types']
             ]
+            # P6：会社ページを開けるか（会社の閲覧範囲で判定）。開けない会社は名前と関係だけを返し、
+            # 連絡先も出さない（リンクから範囲外の会社へ入れないようにする）。銀行口座などは常に返さない。
+            can_open = policy is not None and COMPANY_RULE.level(policy, company) in VISIBLE_LEVELS
             result.append({
                 'id': company.id,
                 'name': company.name,
                 'name_kana': company.name_kana,
-                'phone': company.phone,
-                'email': company.email,
+                'can_open': can_open,
+                'phone': company.phone if can_open else '',
+                'email': company.email if can_open else '',
                 'relation_types': relation_types,
                 'relation_labels': [labels[key] for key in relation_types],
                 'positions': sorted(relation['positions']),

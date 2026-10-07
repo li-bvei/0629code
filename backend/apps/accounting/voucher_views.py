@@ -4,27 +4,31 @@
 （状態遷移・PDF・削除制限・監査の呼び出し方）だけで、どの帳票の状態も他の帳票に連動しない。
 「元の帳票から作成」は内容を写した下書きを作るだけで、元の帳票の状態は変えない。
 """
+from django.db import transaction as db_transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from apps.authentication.access_rules import CUSTOMER_RULE, COMPANY_RULE, VISIBLE_LEVELS
 from apps.authentication.drf import BusinessScopedViewSetMixin, business_api_view
 
-from .models import AccountingVoucher, Contract, Estimate
+from .models import AccountingVoucher, Contract, Estimate, IssuedLineCostSnapshot
 from .pdf import business_document_pdf_response, voucher_pdf_response
 from .serializers import (
     AccountingVoucherSerializer,
     ContractSerializer,
     EstimateSerializer,
+    VoucherStatusHistorySerializer,
     VoucherTransitionSerializer,
+    can_view_floor_price,
 )
+from .service_lines import strip_service_keys
 from .voucher_calculations import decimal_to_number
-from .voucher_infra import audit, transition, workflow_for
+from .voucher_infra import DocumentConflict, audit, same_version, transition, workflow_for
 
 COPY_FIELDS = (
     'recipient_name', 'recipient_honorific', 'recipient_postal_code', 'recipient_address', 'title', 'line_items',
@@ -42,7 +46,7 @@ class BusinessDocumentViewMixin:
 
     number_field = ''
     status_filter_field = 'status'
-    access_action_map = {'transition': 'change', 'pdf': 'view'}
+    access_action_map = {'transition': 'change', 'pdf': 'view', 'internal_costs': 'view'}
 
     def filter_common(self, queryset):
         params = self.request.query_params
@@ -73,6 +77,45 @@ class BusinessDocumentViewMixin:
     def after_update(self, instance):
         audit(self.request, instance, 'updated')
 
+    def perform_update(self, serializer):
+        """保存時に行をロックして確認する（P1・P4）。
+
+        - 画面を開いた時は下書きでも、保存時に発行済みなら保存しない（409）。
+        - version（画面で見ていた updated_at）が送られ、他の人の保存で変わっていれば保存しない（409）。
+          旧画面との互換のため version の無い保存は従来どおり受け付ける（現行の画面は常に送る）。
+        """
+        model = type(serializer.instance)
+        with db_transaction.atomic():
+            locked = model.objects.select_for_update().get(pk=serializer.instance.pk)  # access-reviewed: 変更権限を確認済みの同じ帳票をロックする
+            workflow = workflow_for(locked)
+            if workflow.is_editable(serializer.instance) and not workflow.is_editable(locked):
+                raise DocumentConflict(f'この{workflow.label}は他の操作で下書き以外の状態になったため、内容を保存していません。'
+                                       '画面を更新してください。')
+            if not same_version(locked, self.request.data.get('version')):
+                raise DocumentConflict(f'この{workflow.label}は他の人が先に保存しました。入力内容は保存していません。'
+                                       '画面を更新して最新の内容を確認してください。', code='version_conflict')
+            # ロックした最新の行に対して保存する（送られていない項目を古い内容で上書きしない）
+            serializer.instance = locked
+            super().perform_update(serializer)
+
+    @action(detail=True, methods=['get'], url_path='internal-costs')
+    def internal_costs(self, request, pk=None):
+        """委託底価（社内）：現在の明細の底価と、発行ごとの版。底価権限者だけが読める。"""
+        obj = self.get_object()
+        if not hasattr(obj, 'internal_line_costs'):
+            raise NotFound()
+        if not can_view_floor_price(self.get_serializer_context()):
+            raise PermissionDenied('委託底価を閲覧する権限がありません。')
+        workflow = workflow_for(obj)
+        versions = IssuedLineCostSnapshot.objects.filter(document_kind=workflow.kind, document_id=obj.pk)
+        return Response({
+            'current': obj.internal_line_costs or [],
+            'issued_versions': [
+                {'version': row.version, 'document_number': row.document_number, 'line_costs': row.line_costs,
+                 'created_at': row.created_at} for row in versions.order_by('version')
+            ],
+        })
+
     def perform_destroy(self, instance):
         workflow = workflow_for(instance)
         if not workflow.is_editable(instance):
@@ -86,7 +129,9 @@ class BusinessDocumentViewMixin:
         serializer = VoucherTransitionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        transition(obj, data['status'], request=request, reason=data.get('reason', ''), on_date=data.get('date'))
+        obj = transition(obj, data['status'], request=request, reason=data.get('reason', ''), on_date=data.get('date'),
+                         expected_status=data.get('expected_status'),
+                         confirm_provisional=data.get('confirm_provisional', False))
         return Response(self.get_serializer(obj).data)
 
     def pdf_response(self, obj, with_seal):
@@ -107,6 +152,12 @@ class BusinessDocumentViewMixin:
             raise PermissionDenied('作成先の帳票を利用する権限がありません。')
         data = {name: getattr(source, name) for name in COPY_FIELDS}
         data.update(extra)
+        # P4：サービス項目のスナップショットと底価は見積書→請求書のときだけ写す（契約書・領収書は使わない）
+        target_uses_services = model is Estimate or data.get('voucher_type') == AccountingVoucher.VOUCHER_TYPE_INVOICE
+        if target_uses_services and hasattr(source, 'internal_line_costs'):
+            data['internal_line_costs'] = list(source.internal_line_costs or [])
+        elif not target_uses_services:
+            data['line_items'] = strip_service_keys(data.get('line_items'))
         data.update(policy.rule(target_resource).prepare_create(policy, data))
         draft = model(issue_date=timezone.localdate(), **data)
         draft.save()
@@ -174,7 +225,8 @@ class AccountingVoucherViewSet(BusinessDocumentViewMixin, BusinessScopedViewSetM
     """請求書・領収書（既存の表）。状態は invoice_status / receipt_status をそれぞれ使う。"""
 
     access_resource = 'voucher'
-    access_action_map = {**BusinessDocumentViewMixin.access_action_map, 'create_receipt': 'change'}
+    access_action_map = {**BusinessDocumentViewMixin.access_action_map, 'create_receipt': 'change',
+                         'status_history': 'view'}
     queryset = AccountingVoucher.objects.select_related(
         'created_by', 'case', 'customer', 'company', 'source_estimate', 'source_contract', 'source_invoice',
     )
@@ -237,6 +289,13 @@ class AccountingVoucherViewSet(BusinessDocumentViewMixin, BusinessScopedViewSetM
 
     def pdf_response(self, obj, with_seal):
         return voucher_pdf_response(obj, with_seal=with_seal)
+
+    @action(detail=True, methods=['get'], url_path='status-history')
+    def status_history(self, request, pk=None):
+        """状態変更の履歴（新しい順）。各行に変更時点の帳票内容のスナップショットを含む。"""
+        voucher = self.get_object()
+        rows = voucher.status_history.select_related('changed_by', 'changed_by__employee')[:200]
+        return Response(VoucherStatusHistorySerializer(rows, many=True).data)
 
     @action(detail=True, methods=['post'], url_path='create-receipt')
     def create_receipt(self, request, pk=None):

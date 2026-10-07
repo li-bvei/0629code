@@ -40,6 +40,8 @@ from .models import (
     CaseTypeMaster,
     ChecklistItemPreset,
     ResponsiblePartyPreset,
+    WorkflowStage,
+    WorkflowTemplate,
 )
 from .serializers import (
     AcquisitionPlacePresetSerializer,
@@ -53,6 +55,10 @@ from .serializers import (
     CaseTypeMasterSerializer,
     ChecklistItemPresetSerializer,
     ResponsiblePartyPresetSerializer,
+    WORKFLOW_LOCKED_MESSAGE,
+    WorkflowStageSerializer,
+    WorkflowTemplateSerializer,
+    workflow_in_use,
 )
 from .status_service import (
     CaseStatusChangeError,
@@ -62,6 +68,8 @@ from .status_service import (
     update_case_progress_info,
 )
 from .utils import apply_checklist_template_to_case, generate_case_number
+from .settings_audit import SettingsAuditMixin, audit_setting, setting_values
+from .workflow_service import StageChangeError, change_stage as change_workflow_stage
 from .work_service import (
     CaseWorkError,
     complete_next_action,
@@ -87,15 +95,75 @@ class ActiveOrderingMixin:
         return queryset
 
 
-class CaseTypeMasterViewSet(BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+class CaseTypeMasterViewSet(SettingsAuditMixin, BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
     access_resource = 'case_settings'
-    queryset = CaseTypeMaster.objects.all()
+    queryset = CaseTypeMaster.objects.select_related('workflow_template')
     serializer_class = CaseTypeMasterSerializer
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.cases.exists():
             return Response({'detail': '使用中の案件種別は削除できません。無効化してください。'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+
+class WorkflowTemplateViewSet(SettingsAuditMixin, BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+    """業務フロー（P4）。変更は案件設定の権限者のみ（監査あり）。案件・種別で使われているものは削除できない。"""
+
+    access_resource = 'case_settings'
+    queryset = WorkflowTemplate.objects.prefetch_related('stages', 'case_types')
+    serializer_class = WorkflowTemplateSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.cases.exists() or instance.case_types.exists():
+            return Response({'detail': '案件または案件種別で使われている業務フローは削除できません。'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'])
+    def duplicate(self, request, pk=None):
+        """使われているフローを変えたいときの手順：複製して新しいフローを作り、案件種別を結び付け直す。
+        既存の案件は元のフローのまま。段階も含めて写し、監査に複製元を残す。"""
+        source = self.get_object()
+        serializer = WorkflowTemplateSerializer(data={
+            'code': request.data.get('code'), 'name': request.data.get('name') or f'{source.name}（新）',
+            'family': source.family, 'description': source.description, 'is_active': True,
+            'sort_order': source.sort_order,
+        }, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            template = serializer.save()
+            WorkflowStage.objects.bulk_create([
+                WorkflowStage(template=template, code=stage.code, name=stage.name, base_status=stage.base_status,
+                              sort_order=stage.sort_order, is_active=stage.is_active)
+                for stage in source.stages.order_by('sort_order', 'id')
+            ])
+        audit_setting(request, template, 'created', extra={'copied_from': source.code})
+        return Response(self.get_serializer(WorkflowTemplate.objects.get(pk=template.pk)).data,
+                        status=status.HTTP_201_CREATED)
+
+
+class WorkflowStageViewSet(SettingsAuditMixin, BusinessScopedViewSetMixin, ActiveOrderingMixin, ModelViewSet):
+    """業務フローの段階（P4）。案件で使われている段階は削除できない（無効化すると新しくは選べない）。"""
+
+    access_resource = 'case_settings'
+    queryset = WorkflowStage.objects.select_related('template')
+    serializer_class = WorkflowStageSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        template_id = self.request.query_params.get('template')
+        if template_id:
+            queryset = queryset.filter(template_id=template_id)
+        return queryset.order_by('template_id', 'sort_order', 'id')
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if workflow_in_use(instance.template_id):
+            # その段階がどの案件の現在の段階でなくても、フローが使われていれば削除しない
+            return Response({'detail': WORKFLOW_LOCKED_MESSAGE, 'code': 'workflow_in_use'},
+                            status=status.HTTP_400_BAD_REQUEST)
         return super().destroy(request, *args, **kwargs)
 
 
@@ -206,8 +274,19 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         'customer',
         'company',
         'responsible_employee',
+        'workflow_template',
+        'workflow_stage',
+        'parent_case',
     ).prefetch_related('tasks__responsible_employee')
     serializer_class = CaseSerializer
+
+    # 詳細（と段階変更の応答）では業務フローの段階一覧と関連案件も返す（P4）
+    RELATED_ACTIONS = {'retrieve', 'change_stage'}
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['include_related'] = self.action in self.RELATED_ACTIONS
+        return context
     # アーカイブ済みの案件でも実行できる変更系 action（それ以外の変更は復元が必要）
     ARCHIVED_ALLOWED_ACTIONS = {'archive', 'restore', 'change_registration_status'}
 
@@ -260,9 +339,13 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
 
     def perform_update(self, serializer):
         previous_responsible_id = serializer.instance.responsible_employee_id
+        previous_parent_id = serializer.instance.parent_case_id
         super().perform_update(serializer)
         instance = serializer.instance
         policy = self.business_policy
+        if instance.parent_case_id != previous_parent_id:
+            record(module='cases', action='case_parent_changed', request=self.request, obj=instance,
+                   changes={'parent_case_id': {'from': previous_parent_id, 'to': instance.parent_case_id}})
         if instance.responsible_employee_id != previous_responsible_id:
             record(
                 module='cases', action='case_reassign', request=self.request, obj=instance,
@@ -392,6 +475,29 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     def _work_response(self, case):
         case.refresh_from_db()
         return Response(self.get_serializer(case).data)
+
+    @action(detail=True, methods=['post'], url_path='checklist-batch')
+    def checklist_batch(self, request, pk=None):
+        """この案件の必要資料をまとめて更新する（案件をまたがない）。項目ごとの成功／失敗を返す。
+
+        案件の「変更」権限は get_object（BusinessAccessPolicy）が確認する。アーカイブ済み案件は不可。
+        """
+        from .checklist_batch import batch_update_checklist
+
+        case = self.get_object()
+        try:
+            result = batch_update_checklist(
+                case, item_ids=request.data.get('item_ids'), changes=request.data.get('changes'),
+                versions=request.data.get('versions'), actor=request.user, request=request,
+            )
+        except CaseWorkError as exc:
+            return self._work_error(exc)
+        progress = get_required_checklist_progress(case)
+        result['progress_summary'] = {
+            key: progress[key] for key in ('required_items_total', 'required_items_completed', 'required_items_remaining',
+                                           'required_items_progress_percent', 'all_required_items_completed')
+        }
+        return Response(result)
 
     @action(detail=True, methods=['post'], url_path='next-action')
     def next_action(self, request, pk=None):
@@ -546,6 +652,24 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
                extra={'previous': result.previous_status, 'new': result.new_status, 'forced': result.forced})
         return self._status_change_response(result)
 
+    @action(detail=True, methods=['post'], url_path='change-stage')
+    def change_stage(self, request, pk=None):
+        """業務フローを持つ案件（P4）の段階変更。案件の変更権限が必要で、監査と経過に前後の段階を残す。"""
+        case = self.get_object()
+        try:
+            case, previous, stage = change_workflow_stage(
+                case, request.data.get('stage'), actor=request.user,
+                expected_stage=request.data.get('expected_stage'), note=request.data.get('note') or '',
+            )
+        except StageChangeError as exc:
+            return Response({'detail': exc.detail, 'code': exc.code}, status=exc.status)
+        record(module='cases', action='case_stage_changed', request=request, obj=case,
+               changes={'workflow_stage': {'from': previous.name if previous else None, 'to': stage.name},
+                        'status': {'from': previous.base_status if previous else None, 'to': stage.base_status}},
+               reason=(request.data.get('note') or '')[:500],
+               extra={'from_stage_id': previous.pk if previous else None, 'to_stage_id': stage.pk})
+        return Response(self.get_serializer(case).data)
+
     @action(detail=True, methods=['post'], url_path='change-registration-status')
     def change_registration_status(self, request, pk=None):
         case = self.get_object()
@@ -641,6 +765,23 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
                 {'reason': '中止理由を入力してください。'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if case.workflow_template_id:
+            # P4：業務フローを持つ案件は、そのフローの「取下げ」段階へ変更する（監査・経過に前後の段階を残す）
+            stage = WorkflowStage.objects.filter(
+                template_id=case.workflow_template_id, base_status=Case.STATUS_WITHDRAWN, is_active=True,
+            ).order_by('sort_order', 'id').first()
+            if stage is None:
+                return Response({'detail': 'この案件の業務フローに有効な「取下げ」段階がありません。'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            try:
+                case, previous, stage = change_workflow_stage(case, stage.id, actor=request.user, note=reason)
+            except StageChangeError as exc:
+                return Response({'detail': exc.detail, 'code': exc.code}, status=exc.status)
+            record(module='cases', action='case_stage_changed', request=request, obj=case, reason=reason[:500],
+                   changes={'workflow_stage': {'from': previous.name if previous else None, 'to': stage.name}},
+                   extra={'source': 'cancel', 'from_stage_id': previous.pk if previous else None, 'to_stage_id': stage.pk})
+            return Response(self.get_serializer(case).data)
 
         with transaction.atomic():
             change_case_status(
@@ -854,7 +995,7 @@ class CaseViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         )
 
 
-class CaseChecklistTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+class CaseChecklistTemplateViewSet(SettingsAuditMixin, BusinessScopedViewSetMixin, ModelViewSet):
     access_resource = 'case_settings'
     queryset = CaseChecklistTemplate.objects.prefetch_related('items')
     serializer_class = CaseChecklistTemplateSerializer
@@ -881,6 +1022,7 @@ class CaseChecklistTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
 
     def _delete_template(self, instance):
         now = timezone.now()
+        audit_setting(self.request, instance, 'deleted', before=setting_values(instance))
         with transaction.atomic():
             instance.deleted_at = now
             instance.save(update_fields=['deleted_at', 'updated_at'])
@@ -910,6 +1052,7 @@ class CaseChecklistTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
             )
             normalize_template_item_orders(template)
             normalize_template_orders()
+        audit_setting(request, template, 'restored', before={'deleted_at': 'deleted'}, after={'deleted_at': None})
         serializer = self.get_serializer(template)
         return Response(serializer.data)
 
@@ -921,7 +1064,7 @@ class CaseChecklistTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         return Response(result, status=status.HTTP_201_CREATED)
 
 
-class CaseChecklistTemplateItemViewSet(BusinessScopedViewSetMixin, ModelViewSet):
+class CaseChecklistTemplateItemViewSet(SettingsAuditMixin, BusinessScopedViewSetMixin, ModelViewSet):
     access_resource = 'case_settings'
     queryset = CaseChecklistTemplateItem.objects.select_related('template')
     serializer_class = CaseChecklistTemplateItemSerializer
@@ -961,6 +1104,7 @@ class CaseChecklistTemplateItemViewSet(BusinessScopedViewSetMixin, ModelViewSet)
         item = serializer.save(sort_order=max_sort_order + 1)
         normalize_template_item_orders(template)
         item.refresh_from_db()
+        audit_setting(self.request, item, 'created')
 
     @action(detail=False, methods=['get'])
     def options(self, request):
@@ -1090,14 +1234,23 @@ class CaseChecklistTemplateItemViewSet(BusinessScopedViewSetMixin, ModelViewSet)
     @action(detail=True, methods=['post'], url_path='move-up')
     def move_up(self, request, pk=None):
         item = self.get_object()
-        return Response(self._move_item(item, -1))
+        result = self._move_item(item, -1)
+        if result['success']:
+            audit_setting(request, item, 'reordered', before={'position': result['position'] + 1},
+                          after={'position': result['position']})
+        return Response(result)
 
     @action(detail=True, methods=['post'], url_path='move-down')
     def move_down(self, request, pk=None):
         item = self.get_object()
-        return Response(self._move_item(item, 1))
+        result = self._move_item(item, 1)
+        if result['success']:
+            audit_setting(request, item, 'reordered', before={'position': result['position'] - 1},
+                          after={'position': result['position']})
+        return Response(result)
 
     def _delete_item(self, instance):
+        audit_setting(self.request, instance, 'deleted', before=setting_values(instance))
         instance.deleted_at = timezone.now()
         instance.deleted_with_template = False
         instance.save(update_fields=['deleted_at', 'deleted_with_template', 'updated_at'])

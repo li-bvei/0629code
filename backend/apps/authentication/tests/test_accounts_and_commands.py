@@ -2,7 +2,6 @@
 import importlib
 import json
 import os
-import shutil
 import tempfile
 from datetime import date
 from decimal import Decimal
@@ -21,6 +20,7 @@ from apps.authentication.models import ProtectedAccount
 from apps.authentication.roles import ACCOUNTING_ADMIN, BUSINESS_ADMIN, EXPENSE_VIEWER, SYSTEM_ADMIN
 from apps.authentication.testing import make_user
 from apps.employees.models import Employee
+from apps.common.test_isolation import safe_rmtree
 
 
 def run(*args, **kwargs):
@@ -181,7 +181,7 @@ class CommandTests(TestCase):
         Employee.objects.create(name='NAING')
 
     def tearDown(self):
-        shutil.rmtree(self.tmp, ignore_errors=True)
+        safe_rmtree(self.tmp)
 
     def test_setup_roles_dry_run_then_apply(self):
         Group.objects.all().delete()

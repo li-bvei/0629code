@@ -1,13 +1,16 @@
+import logging
+
 from django.db import transaction
 from decimal import Decimal
 
 from django.db.models import Count, DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from .models import (
     AccountingProject,
@@ -18,12 +21,14 @@ from .models import (
     ExpenseCategory,
     ExpenseCategorySuggestionRule,
     IncomeSource,
+    SeifuNoticePdfGeneration,
     SeifuNoticePdfRecord,
     TaxRenewalAgentTemplate,
     TaxRenewalVoucherRecord,
     VehicleUsage,
     VisaGuarantorTemplate,
     VisaReturnApplication,
+    VisaReturnPdfGeneration,
     VoucherItemTemplate,
 )
 from .category_suggestions import build_suggestions, ensure_category_master, remember_place_rule
@@ -38,12 +43,14 @@ from .serializers import (
     ExpenseCategorySuggestionRuleSerializer,
     ExpenseSerializer,
     IncomeSourceSerializer,
+    SeifuNoticePdfGenerationSerializer,
     SeifuNoticePdfRecordSerializer,
     TaxRenewalAgentTemplateSerializer,
     TaxRenewalVoucherRecordSerializer,
     VehicleUsageSerializer,
     VisaGuarantorTemplateSerializer,
     VisaReturnApplicationSerializer,
+    VisaReturnPdfGenerationSerializer,
     VoucherItemTemplateSerializer,
 )
 from apps.audit.services import record
@@ -51,10 +58,32 @@ from apps.timelines.models import Timeline
 from apps.timelines.services import record_case_event
 from apps.authentication.drf import BusinessScopedViewSetMixin, business_api_view
 
-from .seifu_notice_pdf import seifu_notice_pdf_response
+from .seifu_notice_pdf import (
+    SeifuPdfError,
+    content_disposition as seifu_content_disposition,
+    error_response as seifu_error_response,
+    http_status_for as seifu_http_status,
+    render_seifu_notice_pdf,
+)
+from .seifu_pdf_generation import generate_and_store, open_generated_pdf
 from .tax_renewal_pdf import SUPPORTED_TEMPLATE_KEYS, tax_renewal_pdf_response
 from .tax_renewal_templates import get_tax_renewal_templates
-from .visa_return_pdf import visa_return_pdf_response
+from .visa_pdf_generation import generate_and_record
+from .visa_return_pdf import (
+    build_visa_return_pdf_filename,
+    coordinate_assets_available,
+    form_assets_available,
+    missing_required_fields,
+    resolve_guarantor,
+)
+
+logger = logging.getLogger(__name__)
+
+# 旧 GET /visa-return-applications/{id}/pdf/（生成記録を残さず PDF を直接返していた）は廃止
+LEGACY_PDF_ENDPOINT_CODE = 'legacy_pdf_endpoint_disabled'
+LEGACY_PDF_ENDPOINT_DETAIL = (
+    '旧版の PDF 作成用 API は廃止しました。PDF は生成 API（generate-pdf）で作成し、生成記録からダウンロードしてください。'
+)
 
 
 def parse_bool(value):
@@ -715,9 +744,22 @@ class VoucherItemTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
         return queryset.order_by('sort_order', 'id')
 
 
+VISA_CHECK_FIELDS = (
+    ('applicant_name', '申請人氏名'), ('printed_name', 'PDF の氏名欄（英文姓名／中文姓名）'),
+    ('birth_date', '生年月日'), ('nationality', '国籍'),
+    ('passport_number', '旅券番号'), ('passport_expiry_date', '旅券の有効期限'), ('phone', '電話番号'),
+)
+GUARANTOR_CHECK_LABELS = {
+    'guarantor_name_jp': '担保人氏名', 'guarantor_name_en': '担保人氏名（英字）', 'guarantor_phone': '担保人電話番号',
+    'guarantor_address_jp': '担保人住所', 'guarantor_address_en': '担保人住所（英字）',
+    'guarantor_birth_date': '担保人の生年月日', 'guarantor_nationality': '担保人の国籍',
+    'guarantor_visa_status': '担保人の在留資格', 'guarantor_job': '担保人の職業', 'relation_to_applicant': '申請人との関係',
+}
+
+
 class VisaReturnApplicationViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     access_resource = 'visa'
-    queryset = VisaReturnApplication.objects.select_related('created_by')
+    queryset = VisaReturnApplication.objects.select_related('created_by', 'guarantor_template')
     serializer_class = VisaReturnApplicationSerializer
 
     def get_queryset(self):
@@ -766,9 +808,109 @@ class VisaReturnApplicationViewSet(BusinessScopedViewSetMixin, ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='pdf')
     def pdf(self, request, pk=None):
+        """廃止した旧接口（生成履歴を残さずに PDF を直接返していた）。PDF は一切作らず 410 を返す。
+
+        権限・範囲の確認（get_object）は従来どおり行い、外部の利用者を探せるよう監査だけ残す。
+        PDF は generate-pdf で作成し、生成記録のダウンロード先から取得する。
+        """
         application = self.get_object()
-        record(module='accounting', action='visa_pdf_export', request=request, obj=application)
-        return visa_return_pdf_response(application)
+        record(module='accounting', action='visa_pdf_legacy_endpoint_called', request=request, obj=application,
+               result='error', extra={'code': LEGACY_PDF_ENDPOINT_CODE})
+        return Response({'code': LEGACY_PDF_ENDPOINT_CODE, 'detail': LEGACY_PDF_ENDPOINT_DETAIL},
+                        status=status.HTTP_410_GONE)
+
+    @action(detail=True, methods=['get'], url_path='check')
+    def check(self, request, pk=None):
+        """生成前の確認（プレビュー）：必須項目の不足、使う値と出所（担保人テンプレート／手入力）、テンプレート。"""
+        application = self.get_object()
+        guarantor = resolve_guarantor(application)
+        snapshot = application.guarantor_snapshot if isinstance(application.guarantor_snapshot, dict) else {}
+        form_data = application.form_data if isinstance(application.form_data, dict) else {}
+        applicant_values = {
+            'applicant_name': application.applicant_name or form_data.get('pinyin_name1') or form_data.get('chinese_name1') or '',
+            'printed_name': ' '.join(filter(None, [form_data.get('pinyin_name1'), form_data.get('pinyin_name2')]))
+            or ''.join(filter(None, [form_data.get('chinese_name1'), form_data.get('chinese_name2')])),
+            'birth_date': application.birth_date.isoformat() if application.birth_date else form_data.get('birth_date', ''),
+            'nationality': form_data.get('nationality') or application.nationality,
+            'passport_number': form_data.get('passport_id') or application.passport_number,
+            'passport_expiry_date': form_data.get('passport_date2') or (
+                application.passport_expiry_date.isoformat() if application.passport_expiry_date else ''),
+            'phone': form_data.get('mobile_phone') or application.phone,
+        }
+        fields = [{'key': key, 'label': label, 'value': str(applicant_values.get(key) or ''), 'source': 'applicant'}
+                  for key, label in VISA_CHECK_FIELDS]
+        fields += [{'key': key, 'label': GUARANTOR_CHECK_LABELS[key], 'value': str(value or ''), 'source': source}
+                   for key, (value, source) in guarantor.items()]
+        template = application.guarantor_template
+        return Response({
+            'ready': not missing_required_fields(application) and (form_assets_available() or coordinate_assets_available()),
+            'missing': missing_required_fields(application),
+            'fields': fields,
+            'pdf_template': {
+                'method': 'form' if form_assets_available() else ('coordinates' if coordinate_assets_available() else ''),
+                'available': form_assets_available() or coordinate_assets_available(),
+            },
+            'guarantor_template': {
+                'id': application.guarantor_template_id,
+                'name': (template.name if template else snapshot.get('template_name', '')),
+                'version': snapshot.get('template_version', ''),
+                'is_active': bool(template and template.is_active),
+                # 選択後にテンプレート側が更新された（スナップショットが古い）
+                'updated_since_selected': bool(template and snapshot.get('template_version')
+                                               and template.updated_at.isoformat() != snapshot.get('template_version')),
+            },
+        })
+
+    @action(detail=True, methods=['post'], url_path='generate-pdf')
+    def generate_pdf(self, request, pk=None):
+        """PDF を生成して保存し、記録を残す。成功してファイルが実在するときだけダウンロード先を返す。
+
+        必須項目の不足は 400（記録しない）。テンプレート・書き込み・出力・保存の失敗は 422 とし、失敗記録を残す。
+        どちらの場合も申請の入力内容は変更しないので、修正して再試行できる。処理本体は generate_and_record。
+        """
+        application = self.get_object()
+        outcome = generate_and_record(application, request=request)
+        if outcome.ok:
+            return Response(VisaReturnPdfGenerationSerializer(outcome.generation).data, status=status.HTTP_201_CREATED)
+        body = {'code': outcome.code, 'detail': outcome.detail, 'fields': outcome.fields}
+        if outcome.generation is None:
+            return Response(body, status=status.HTTP_400_BAD_REQUEST)
+        body['generation'] = VisaReturnPdfGenerationSerializer(outcome.generation).data
+        return Response(body, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+    @action(detail=True, methods=['get'], url_path='pdf-generations')
+    def pdf_generations(self, request, pk=None):
+        application = self.get_object()
+        rows = application.pdf_generations.select_related('guarantor_template', 'created_by')[:50]
+        return Response(VisaReturnPdfGenerationSerializer(rows, many=True).data)
+
+    @action(detail=True, methods=['get'], url_path=r'pdf-generations/(?P<generation_id>\d+)/download')
+    def download_generation(self, request, pk=None, generation_id=None):
+        from django.http import FileResponse
+        from urllib.parse import quote
+
+        application = self.get_object()
+        generation = application.pdf_generations.filter(pk=generation_id).first()
+        if generation is None or generation.status != VisaReturnPdfGeneration.STATUS_SUCCESS:
+            return Response({'code': 'not_generated', 'detail': 'この PDF は生成に成功していません。'},
+                            status=status.HTTP_404_NOT_FOUND)
+        handle = None
+        try:
+            if generation.file and generation.file.storage.exists(generation.file.name):
+                handle = generation.file.storage.open(generation.file.name, 'rb')
+        except Exception:  # noqa: BLE001 保存先に読めない場合も「ファイルが無い」として扱う
+            logger.exception('visa PDF could not be opened (generation=%s)', generation.pk)
+        if handle is None:
+            record(module='accounting', action='visa_pdf_download_missing', request=request, obj=application,
+                   result='error', extra={'generation_id': generation.pk})
+            return Response({'code': 'file_missing', 'detail': 'PDF ファイルが見つかりません。もう一度生成してください。'},
+                            status=status.HTTP_404_NOT_FOUND)
+        record(module='accounting', action='visa_pdf_downloaded', request=request, obj=application,
+               extra={'generation_id': generation.pk})
+        filename = build_visa_return_pdf_filename(application)
+        response = FileResponse(handle, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="visa_return.pdf"; filename*=UTF-8\'\'{quote(filename)}'
+        return response
 
 
 class VisaGuarantorTemplateViewSet(BusinessScopedViewSetMixin, ModelViewSet):
@@ -813,17 +955,84 @@ class SeifuNoticePdfRecordViewSet(BusinessScopedViewSetMixin, ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
-        serializer.save(created_by=user)
+        record_obj = serializer.save(created_by=user)
+        record(module='accounting', action='seifu_notice_created', request=self.request, obj=record_obj)
+
+    def perform_update(self, serializer):
+        record_obj = serializer.save()
+        record(module='accounting', action='seifu_notice_updated', request=self.request, obj=record_obj)
+
+    def perform_destroy(self, instance):
+        record(module='accounting', action='seifu_notice_deleted', request=self.request, obj=instance)
+        instance.delete()
 
     @action(detail=True, methods=['post'], url_path='generate_pdf')
     def generate_pdf(self, request, pk=None):
-        record = self.get_object()
+        """PDF を作って保存し、成功記録を返す（PDF そのものは download/ から）。失敗時は記録もファイルも残さない。
+
+        request_id（画面の 1 回の操作ごと）を送ると、二重送信でも同じ生成結果を返す（replayed=true）。
+        """
+        record_obj = self.get_object()
+        outcome = generate_and_store(record_obj, request=request, request_id=request.data.get('request_id'))
+        if not outcome.ok:
+            return seifu_error_response(outcome.error, seifu_http_status(outcome.error))
+        data = SeifuNoticePdfGenerationSerializer(outcome.generation).data
+        data['replayed'] = outcome.replayed
+        return Response(data, status=status.HTTP_200_OK if outcome.replayed else status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='preview_pdf')
+    def preview_pdf(self, request, pk=None):
+        """確認用の PDF（保存しない・記録しない）。検証に通った PDF だけを返す。"""
+        record_obj = self.get_object()
         try:
-            return seifu_notice_pdf_response(record.text_items, title=record.title)
-        except FileNotFoundError as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except ValueError as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            result = render_seifu_notice_pdf(
+                record_obj.recipient_name, record_obj.permit_number, record_obj.issue_date,
+            )
+        except SeifuPdfError as exc:
+            return seifu_error_response(exc, seifu_http_status(exc))
+        record(module='accounting', action='seifu_notice_pdf_previewed', request=request, obj=record_obj,
+               extra={'template_version': result.template_version, 'font_version': result.font_version})
+        response = HttpResponse(result.content, content_type='application/pdf')
+        response['Content-Disposition'] = seifu_content_disposition(result.recipient_name, inline=True)
+        return response
+
+    @action(detail=True, methods=['get'], url_path='generations')
+    def generations(self, request, pk=None):
+        record_obj = self.get_object()
+        rows = record_obj.generations.select_related('created_by')[:50]
+        return Response(SeifuNoticePdfGenerationSerializer(rows, many=True).data)
+
+
+class SeifuNoticePdfGenerationViewSet(BusinessScopedViewSetMixin, ReadOnlyModelViewSet):
+    """清風合格通知書 PDF の生成記録（成功のみ）。ダウンロードは実在する成功記録のファイルだけ。"""
+
+    access_resource = 'seifu'
+    access_action_map = {'download': 'download'}
+    queryset = SeifuNoticePdfGeneration.objects.select_related('created_by', 'record')
+    serializer_class = SeifuNoticePdfGenerationSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.query_params.get('record'):
+            queryset = queryset.filter(record_id=self.request.query_params['record'])
+        return queryset.order_by('-created_at', '-id')
+
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        from django.http import FileResponse
+
+        generation = self.get_object()
+        handle = open_generated_pdf(generation)
+        if handle is None:
+            record(module='accounting', action='seifu_notice_pdf_download_missing', request=request,
+                   obj=generation.record, result='error', extra={'generation_id': generation.pk})
+            return Response({'code': 'file_missing', 'detail': 'PDF ファイルが見つかりません。もう一度作成してください。'},
+                            status=status.HTTP_404_NOT_FOUND)
+        record(module='accounting', action='seifu_notice_pdf_downloaded', request=request, obj=generation.record,
+               extra={'generation_id': generation.pk})
+        response = FileResponse(handle, content_type='application/pdf')
+        response['Content-Disposition'] = seifu_content_disposition(generation.recipient_name)
+        return response
 
 
 class TaxRenewalVoucherRecordViewSet(BusinessScopedViewSetMixin, ModelViewSet):

@@ -3,8 +3,10 @@ import RemoteSelect from './RemoteSelect.vue'
 import { getCustomer, listCustomers } from '../api/customers'
 import type { Customer } from '../types/api'
 
-defineProps<{
+const props = defineProps<{
   modelValue: number | null | undefined
+  /** 関連付けできる顧客だけを候補にする（会社の従業員・代表者など。判定は後端の check_link と同じ） */
+  linkableOnly?: boolean
   placeholder?: string
   clearable?: boolean
   disabled?: boolean
@@ -16,9 +18,10 @@ defineEmits<{
   (e: 'change', row: Customer | null): void
 }>()
 
+// 一覧 API の件数（count）も返し、候補に出ていない分があれば「絞り込んでください」と案内する
 const fetcher = async (search: string) => {
-  const data = await listCustomers({ search: search || undefined, page_size: 20 })
-  return data.results
+  const data = await listCustomers({ search: search || undefined, page_size: 20, linkable: props.linkableOnly || undefined })
+  return { results: data.results, count: data.count }
 }
 
 const fetchOne = async (id: number) => {

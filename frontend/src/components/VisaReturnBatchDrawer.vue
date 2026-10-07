@@ -384,26 +384,13 @@ const importPastedRows = () => {
 const guarantorPayload = (template: VisaGuarantorTemplate | null) => {
   if (!template) return {}
   return {
+    // テンプレートを明示的に記録する（スナップショットは後端が DB のテンプレートから作り直す）
+    guarantor_template: template.id,
     guarantor_name: template.guarantor_name,
     guarantor_phone: template.guarantor_phone,
     guarantor_address: template.guarantor_address,
     guarantor_relationship: template.guarantor_relationship,
     guarantor_occupation: template.guarantor_occupation,
-    guarantor_snapshot: {
-      guarantor_template_id: String(template.id),
-      template_name: template.name,
-      guarantor_name: template.guarantor_name,
-      guarantor_name_en: template.guarantor_name_en,
-      guarantor_phone: template.guarantor_phone,
-      guarantor_address: template.guarantor_address,
-      guarantor_address_en: template.guarantor_address_en,
-      guarantor_birth_date: template.guarantor_birth_date || '',
-      guarantor_nationality: template.guarantor_nationality,
-      guarantor_visa_status: template.guarantor_visa_status,
-      guarantor_occupation: template.guarantor_occupation,
-      guarantor_relationship: template.guarantor_relationship,
-      guarantor_company_name: template.guarantor_company_name,
-    },
   }
 }
 

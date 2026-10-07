@@ -148,17 +148,11 @@ class VisaGuarantorTemplateAdmin(admin.ModelAdmin):
 
 @admin.register(SeifuNoticePdfRecord)
 class SeifuNoticePdfRecordAdmin(admin.ModelAdmin):
-    list_display = ('title', 'status', 'text_count', 'created_by', 'updated_at')
+    list_display = ('title', 'recipient_name', 'permit_number', 'issue_date', 'status', 'created_by', 'updated_at')
     list_filter = ('status', 'updated_at')
     search_fields = ('title', 'note')
     readonly_fields = ('created_by', 'created_at', 'updated_at')
 
-    def text_count(self, obj):
-        if not isinstance(obj.text_items, list):
-            return 0
-        return len([item for item in obj.text_items if str(item.get('text') or '').strip()])
-
-    text_count.short_description = '文字数量'
 
 
 @admin.register(TaxRenewalVoucherRecord)

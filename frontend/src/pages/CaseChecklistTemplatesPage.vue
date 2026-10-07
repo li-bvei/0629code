@@ -55,6 +55,9 @@ import type {
   ResidenceStatusMasterPayload,
 } from '../types/api'
 import { formatDateTime } from '../utils/date'
+import WorkflowTemplatesPanel from '../components/settings/WorkflowTemplatesPanel.vue'
+import { listWorkflowTemplates } from '../api/cases'
+import type { WorkflowTemplate } from '../types/api'
 
 // seed 系ボタンは開発環境（dev_tools_enabled）でのみ表示。本番は後端でも 404。
 const auth = useAuthStore()
@@ -104,7 +107,12 @@ const settingForm = ref({
   number_abbreviation: '',
   sort_order: 0,
   is_active: true,
+  // P4：案件種別だけ（業務フローと申請区分の要否）
+  workflow_template: null as number | null,
+  requires_application_category: true,
 })
+const workflowTemplates = ref<WorkflowTemplate[]>([])
+const canEditCaseSettings = computed(() => auth.can('cases.manage_case_settings'))
 
 const checklistItemPresets = ref<ChecklistItemPreset[]>([])
 const checklistItemPresetCurrentPage = ref(1)
@@ -324,12 +332,14 @@ const formatApiError = (error: unknown, fallback: string) => {
 
 const fetchSettingData = async () => {
   try {
-    const [caseTypeData, applicationCategoryData] = await Promise.all([
+    const [caseTypeData, applicationCategoryData, workflowData] = await Promise.all([
       listCaseTypeMasters({ ordering: 'sort_order' }),
       listCaseApplicationCategories({ ordering: 'sort_order' }),
+      listWorkflowTemplates({ ordering: 'sort_order', page_size: 100 }),
     ])
     caseTypes.value = caseTypeData.results
     applicationCategories.value = applicationCategoryData.results
+    workflowTemplates.value = workflowData.results
   } catch {
     ElMessage.error('設定データの取得に失敗しました。')
   }
@@ -361,6 +371,8 @@ const resetSettingForm = () => {
     number_abbreviation: '',
     sort_order: 0,
     is_active: true,
+    workflow_template: null,
+    requires_application_category: true,
   }
   settingFormRef.value?.clearValidate()
 }
@@ -377,6 +389,11 @@ const openSettingDialog = (
     settingForm.value.number_abbreviation = 'number_abbreviation' in row ? row.number_abbreviation : ''
     settingForm.value.sort_order = 'sort_order' in row ? row.sort_order : 0
     settingForm.value.is_active = 'is_active' in row ? row.is_active : true
+    if (type === 'case-type') {
+      const caseType = row as CaseTypeMaster
+      settingForm.value.workflow_template = caseType.workflow_template ?? null
+      settingForm.value.requires_application_category = caseType.requires_application_category !== false
+    }
   }
   settingDialogVisible.value = true
 }
@@ -394,6 +411,8 @@ const submitSetting = async () => {
         number_abbreviation: settingForm.value.number_abbreviation.trim(),
         sort_order: settingForm.value.sort_order,
         is_active: settingForm.value.is_active,
+        workflow_template: settingForm.value.workflow_template,
+        requires_application_category: settingForm.value.requires_application_category,
       }
       if (id) await updateCaseTypeMaster(id, payload)
       else await createCaseTypeMaster(payload)
@@ -1258,10 +1277,19 @@ onMounted(() => {
           <el-table :data="caseTypes" stripe>
             <el-table-column prop="name" label="表示名称" min-width="180" />
             <el-table-column prop="number_abbreviation" label="案件番号略称" width="130" />
+            <el-table-column label="業務フロー" min-width="170">
+              <template #default="{ row }">{{ row.workflow_template_name || '入管申請（13 段階）' }}</template>
+            </el-table-column>
+            <el-table-column label="申請区分" width="90">
+              <template #default="{ row }">{{ row.requires_application_category === false ? '不要' : '必要' }}</template>
+            </el-table-column>
             <el-table-column prop="sort_order" label="順番" width="90" />
             <el-table-column label="状態" width="90"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '有効' : '無効' }}</el-tag></template></el-table-column>
             <el-table-column label="操作" width="90"><template #default="{ row }"><el-button text type="primary" @click="openSettingDialog('case-type', row)">編集</el-button></template></el-table-column>
           </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="業務フロー" name="workflows">
+          <WorkflowTemplatesPanel :can-edit="canEditCaseSettings" @changed="fetchSettingData" />
         </el-tab-pane>
         <el-tab-pane label="申請区分" name="application-categories">
           <div class="setting-card-header">
@@ -1585,6 +1613,17 @@ onMounted(() => {
         <el-form-item v-if="['case-type', 'application-category'].includes(settingDialogType)" label="案件番号略称">
           <el-input v-model="settingForm.number_abbreviation" />
         </el-form-item>
+        <template v-if="settingDialogType === 'case-type'">
+          <el-form-item label="業務フロー（変更しても既存の案件は作成時のフローのまま）">
+            <el-select v-model="settingForm.workflow_template" clearable placeholder="入管申請（従来の 13 段階）" class="form-control">
+              <el-option v-for="template in workflowTemplates" :key="template.id" :label="template.name" :value="template.id"
+                         :disabled="!template.is_active" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="申請区分">
+            <el-switch v-model="settingForm.requires_application_category" active-text="必要（入管申請）" inactive-text="不要" />
+          </el-form-item>
+        </template>
         <el-form-item label="表示順">
           <el-input-number v-model="settingForm.sort_order" :min="0" class="form-control" />
         </el-form-item>

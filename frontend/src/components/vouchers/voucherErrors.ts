@@ -10,6 +10,14 @@ export const apiErrorText = (error: unknown, fallback: string) => {
   return Array.isArray(first) && typeof first[0] === 'string' ? first[0] : fallback
 }
 
+// P6：暫定価格のサービス項目を含む見積書・請求書を発行しようとしたときの応答（確認すれば発行できる）
+export const provisionalPriceNotice = (error: unknown): string | null => {
+  const response = (error as { response?: { status?: number; data?: Record<string, unknown> } })?.response
+  const data = response?.data
+  if (response?.status !== 400 || !data || data.code !== 'provisional_price_confirmation_required') return null
+  return typeof data.detail === 'string' ? data.detail : '暫定価格のサービス項目が含まれています。'
+}
+
 export const extractFilename = (contentDisposition?: string, fallback = 'document.pdf') => {
   if (!contentDisposition) return fallback
   const encoded = contentDisposition.match(/filename\*=UTF-8''([^;]+)/)

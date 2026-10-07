@@ -77,3 +77,24 @@ export const seedStandardResidenceStatusMasters = async () => {
   )
   return response.data
 }
+
+// P6：マイナンバーの表示（専用操作）。返った値は画面の一時表示だけに使い、保存・記録しない
+export interface MyNumberRevealResponse {
+  registered: boolean
+  my_number: string
+}
+
+export type MyNumberTargetKind = 'customer' | 'family_member' | 'company_staff'
+
+const REVEAL_BASES: Record<MyNumberTargetKind, string> = {
+  customer: '/customers/',
+  family_member: '/family-members/',
+  company_staff: '/company-staff/',
+}
+
+// 会社職員：既存顧客に関連付いていればその顧客の値（後端が判定）、旧形式の職員は職員自身の値
+export const revealMyNumber = async (kind: MyNumberTargetKind, id: number) => {
+  const base = REVEAL_BASES[kind]
+  const response = await http.post<MyNumberRevealResponse>(`${base}${id}/reveal-my-number/`, {})
+  return response.data
+}

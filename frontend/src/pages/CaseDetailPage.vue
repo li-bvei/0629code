@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowDown, Check, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -25,7 +25,13 @@ import {
   updateCase,
   updateCaseChecklistItem,
   updateCaseProgressInfo,
+  batchUpdateCaseChecklist,
 } from '../api/cases'
+import {
+  batchErrorText, buildChanges, completeOnlyChanges, confirmMessage, emptyBatchForm, failedRows, groupState, hasChanges,
+  notApplicableCount, pruneSelection, resultSummary, selectionAfterResult, toggleGroup, toggleSelection,
+  type BatchChanges, type BatchResponse,
+} from '../utils/checklistBatch'
 import { listCompanies } from '../api/companies'
 import { listCustomers } from '../api/customers'
 import { listEmployees } from '../api/employees'
@@ -65,6 +71,9 @@ import type { CaseStageDisplay } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
 import { defaultAppliedAt, isAppliedAtMissing, shouldShowAppliedFields } from '../utils/caseProgress'
 import CaseActionBar from '../components/case/CaseActionBar.vue'
+import CaseWorkflowCard from '../components/case/CaseWorkflowCard.vue'
+import { caseProgressLabel, isWorkflowCase } from '../utils/caseWorkflow'
+import { serviceSummary } from '../utils/serviceItems'
 import CaseAccountingSummary from '../components/case/CaseAccountingSummary.vue'
 import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
 import RecordFormLayout from '../components/layout/RecordFormLayout.vue'
@@ -128,7 +137,14 @@ const basicInfoForm = ref<{
 })
 
 const caseId = computed(() => Number(route.params.id))
-const displayStatus = computed(() => getCaseDisplayStatus(caseDetail.value?.status))
+// P4：業務フローを持つ案件は段階名、従来の案件は 13 段階の名称
+const displayStatus = computed(() => caseProgressLabel(caseDetail.value))
+const isWorkflow = computed(() => isWorkflowCase(caseDetail.value))
+const workflowCardRef = ref<InstanceType<typeof CaseWorkflowCard> | null>(null)
+const onStageChanged = async (updated: Case) => {
+  caseDetail.value = updated
+  await fetchTimelines()
+}
 const canCancelCase = computed(() => (
   caseDetail.value
   && !['withdrawn', 'completed'].includes(caseDetail.value.status)
@@ -538,6 +554,12 @@ const openEditTimelineDialog = (timeline: Timeline) => {
 
 const openProgressUpdateDialog = (suggestedStatus?: string) => {
   if (!caseDetail.value) return
+  if (isWorkflow.value) {
+    // P4：業務フローを持つ案件は段階の変更（13 段階の進捗更新は使わない）
+    if (suggestedStatus) workflowCardRef.value?.openForStatus(suggestedStatus)
+    else workflowCardRef.value?.open()
+    return
+  }
   progressUpdateWarnings.value = []
   progressUpdateNoteVisible.value = false
   const today = getTodayDate()
@@ -1115,6 +1137,88 @@ const submitChecklistItem = async () => {
   }
 }
 
+// --- 必要資料の一括操作（P2：この案件の中だけ） -------------------------------------------------
+const checklistBatchMode = ref(false)
+const selectedChecklistIds = ref<number[]>([])
+const checklistBatchDialogVisible = ref(false)
+const checklistBatchForm = ref(emptyBatchForm())
+const checklistBatchRunning = ref(false)
+const checklistBatchConfirming = ref(false)
+const checklistBatchResult = ref<BatchResponse | null>(null)
+const checklistBatchError = ref('')
+
+watch(checklistItems, (items) => {
+  selectedChecklistIds.value = pruneSelection(selectedChecklistIds.value, items.map((item) => item.id))
+})
+
+const partyLabel = (value: string) => responsiblePartyOptions.find((option) => option.value === value)?.label || value
+const toggleChecklistBatchMode = () => {
+  checklistBatchMode.value = !checklistBatchMode.value
+  selectedChecklistIds.value = []
+  checklistBatchResult.value = null
+  checklistBatchError.value = ''
+}
+const toggleChecklistSelection = (id: number) => {
+  selectedChecklistIds.value = toggleSelection(selectedChecklistIds.value, id)
+}
+const groupSelectionState = (group: { items: CaseChecklistItem[] }) => groupState(selectedChecklistIds.value, group.items.map((item) => item.id))
+const toggleGroupSelection = (group: { items: CaseChecklistItem[] }) => {
+  selectedChecklistIds.value = toggleGroup(selectedChecklistIds.value, group.items.map((item) => item.id))
+}
+const clearChecklistSelection = () => {
+  selectedChecklistIds.value = []
+}
+const checklistBatchChanges = computed(() => buildChanges(checklistBatchForm.value))
+const checklistBatchNotApplicable = computed(() => (
+  notApplicableCount(checklistBatchChanges.value, checklistItems.value, selectedChecklistIds.value)
+))
+const openChecklistBatchDialog = () => {
+  checklistBatchForm.value = emptyBatchForm()
+  checklistBatchDialogVisible.value = true
+}
+
+// 実行前に件数と変更内容を確認し、項目ごとの結果を表示する。失敗した項目は選択に残す。
+const runChecklistBatch = async (changes: BatchChanges) => {
+  if (!caseDetail.value || !selectedChecklistIds.value.length || checklistBatchRunning.value || checklistBatchConfirming.value) return
+  if (!hasChanges(changes)) {
+    ElMessage.warning('変更する項目を 1 つ以上選んでください。')
+    return
+  }
+  // 確認に出した件数と同じ項目を送る（確認中に選択が変わっても、確認した内容で実行する）
+  const ids = [...selectedChecklistIds.value]
+  checklistBatchConfirming.value = true
+  try {
+    const message = confirmMessage(ids.length, changes, partyLabel)
+    await ElMessageBox.confirm(h('div', { style: 'white-space: pre-line' }, message), '必要資料の一括更新', {
+      confirmButtonText: '実行', cancelButtonText: 'キャンセル', type: 'warning',
+    })
+  } catch {
+    return
+  } finally {
+    checklistBatchConfirming.value = false
+  }
+  const versions = Object.fromEntries(checklistItems.value.filter((item) => ids.includes(item.id)).map((item) => [String(item.id), item.updated_at]))
+  checklistBatchRunning.value = true
+  checklistBatchError.value = ''
+  checklistBatchResult.value = null
+  try {
+    const result = await batchUpdateCaseChecklist(caseDetail.value.id, { item_ids: ids, changes, versions })
+    checklistBatchResult.value = result
+    selectedChecklistIds.value = selectionAfterResult(result)
+    checklistBatchDialogVisible.value = false
+    if (result.failed) ElMessage.warning(resultSummary(result))
+    else ElMessage.success(resultSummary(result))
+  } catch (error) {
+    checklistBatchError.value = batchErrorText(error)
+  } finally {
+    checklistBatchRunning.value = false  // 失敗しても操作できない状態のまま残さない
+    await Promise.all([fetchChecklistItems(), fetchCaseDetail()]).catch(() => undefined)
+  }
+}
+const completeSelectedChecklist = () => runChecklistBatch(completeOnlyChanges())
+const submitChecklistBatchDialog = () => runChecklistBatch(checklistBatchChanges.value)
+const checklistBatchFailures = computed(() => (checklistBatchResult.value ? failedRows(checklistBatchResult.value) : []))
+
 const toggleChecklistItemCompleted = async (item: CaseChecklistItem) => {
   try {
     const isCompleted = !item.is_completed
@@ -1451,6 +1555,28 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
           <el-descriptions-item label="担当者">
             {{ displayValue(caseDetail.responsible_employee_name) }}
           </el-descriptions-item>
+          <el-descriptions-item label="業務フロー">
+            {{ caseDetail.workflow_template_name || '入管申請（従来の 13 段階）' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="関連元の案件">
+            <router-link v-if="caseDetail.parent_case" class="text-link" :to="`/cases/${caseDetail.parent_case}`">{{ caseDetail.parent_case_number }}</router-link>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="caseDetail.child_cases?.length" label="関連する案件" :span="2">
+            <div class="related-cases">
+              <router-link v-for="child in caseDetail.child_cases" :key="child.id" class="text-link" :to="`/cases/${child.id}`">
+                {{ child.case_number }}（{{ child.case_type }}・{{ child.status_display }}）
+              </router-link>
+            </div>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="caseDetail.service_items?.length" label="サービス項目（受付時の参考）" :span="2">
+            <ul class="service-snapshot-list">
+              <li v-for="item in caseDetail.service_items" :key="`${item.id}-${item.selected_at}`">
+                {{ item.name }} × {{ item.quantity }}<span class="muted">（{{ serviceSummary(item) }}・受付時点の内容）</span>
+                <el-tag v-if="item.price_status === 'provisional'" size="small" type="warning" effect="plain">暫定価格</el-tag>
+              </li>
+            </ul>
+          </el-descriptions-item>
         </el-descriptions>
       </el-card>
 
@@ -1464,6 +1590,9 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
             </div>
           </div>
         </template>
+        <CaseWorkflowCard v-if="caseDetail && isWorkflow" ref="workflowCardRef" :case-detail="caseDetail"
+                          :disabled="isArchived" @changed="onStageChanged" />
+        <template v-else>
         <div v-if="caseDetail" class="case-stage-stepper">
           <template v-for="(stage, index) in stageDisplays.slice(0, 4)" :key="stage.key">
             <div
@@ -1565,6 +1694,7 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
             </div>
           </el-collapse-item>
         </el-collapse>
+        </template>
       </el-card>
 
       <el-card id="case-checklist" shadow="never" class="case-record-section">
@@ -1572,6 +1702,9 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
           <div class="card-header-row">
             <span>案件進捗・必要資料</span>
             <div class="header-actions">
+              <el-button :type="checklistBatchMode ? 'primary' : 'default'" plain @click="toggleChecklistBatchMode">
+                {{ checklistBatchMode ? 'まとめて操作を終了' : 'まとめて操作' }}
+              </el-button>
               <el-button plain @click="openCustomerNoticeDialog">顧客通知文案</el-button>
               <el-button plain @click="openApplyTemplateDialog">テンプレートから追加</el-button>
               <el-button type="primary" @click="openCreateChecklistItemDialog">項目追加</el-button>
@@ -1601,10 +1734,37 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
             </el-button>
           </template>
         </el-alert>
+        <div v-if="checklistBatchMode" class="checklist-batch-bar" role="region" aria-label="必要資料の一括操作">
+          <span><strong>{{ selectedChecklistIds.length }}</strong> 件選択中（この案件の項目だけ）</span>
+          <el-button size="small" :disabled="!selectedChecklistIds.length || checklistBatchRunning" @click="clearChecklistSelection">選択を解除</el-button>
+          <el-button size="small" type="success" plain :loading="checklistBatchRunning"
+                     :disabled="!selectedChecklistIds.length" @click="completeSelectedChecklist">まとめて完了</el-button>
+          <el-button size="small" type="primary" :disabled="!selectedChecklistIds.length || checklistBatchRunning"
+                     @click="openChecklistBatchDialog">まとめて設定…</el-button>
+        </div>
+        <el-alert v-if="checklistBatchError" :title="checklistBatchError" type="error" show-icon class="checklist-batch-result"
+                  @close="checklistBatchError = ''" />
+        <el-alert v-if="checklistBatchResult" :type="checklistBatchResult.failed ? 'warning' : 'success'" show-icon
+                  :title="`一括更新：成功 ${checklistBatchResult.succeeded} 件・失敗 ${checklistBatchResult.failed} 件`"
+                  class="checklist-batch-result" @close="checklistBatchResult = null">
+          <ul v-if="checklistBatchFailures.length" class="checklist-batch-failures">
+            <li v-for="row in checklistBatchFailures" :key="row.id">{{ row.name || `ID ${row.id}` }}：{{ row.detail }}</li>
+          </ul>
+          <p v-if="checklistBatchFailures.length" class="muted-text">失敗した項目は選択したままです。内容を確認して再実行できます。</p>
+        </el-alert>
         <el-empty v-if="!checklistItems.length" description="案件事項がありません" />
         <div v-else class="checklist-groups">
           <section v-for="group in checklistGroups" :key="group.category" class="checklist-group">
-            <h3>{{ group.category }}</h3>
+            <h3 class="checklist-group-title">
+              <el-checkbox
+                v-if="checklistBatchMode"
+                :model-value="groupSelectionState(group) === 'all'"
+                :indeterminate="groupSelectionState(group) === 'some'"
+                :aria-label="`${group.category}をすべて選択`"
+                @change="toggleGroupSelection(group)"
+              />
+              {{ group.category }}
+            </h3>
             <div
               v-for="item in group.items"
               :key="item.id"
@@ -1612,6 +1772,14 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
               :class="[`importance-${item.importance_level || 'normal'}`, { 'is-completed': item.is_completed }]"
             >
               <el-checkbox
+                v-if="checklistBatchMode"
+                class="checklist-select"
+                :model-value="selectedChecklistIds.includes(item.id)"
+                :aria-label="`${item.name}を選択`"
+                @change="toggleChecklistSelection(item.id)"
+              />
+              <el-checkbox
+                v-else
                 :model-value="item.is_completed"
                 @change="toggleChecklistItemCompleted(item)"
               />
@@ -1631,6 +1799,7 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
                 </div>
                 <div class="checklist-detail-grid">
                   <span v-if="item.acquisition_place">手続先：{{ item.acquisition_place }}</span>
+                  <span v-if="item.received_at">受領日：{{ formatDate(item.received_at) }}</span>
                   <span v-if="item.responsible_party">
                     準備者：{{ responsiblePartyOptions.find((option) => option.value === item.responsible_party)?.label || item.responsible_party }}
                   </span>
@@ -1731,6 +1900,50 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
       </template>
       </RecordFormLayout>
     </div>
+
+    <el-dialog v-model="checklistBatchDialogVisible" title="必要資料をまとめて設定" width="min(520px, 96vw)">
+      <p class="muted-text">選択した {{ selectedChecklistIds.length }} 件に、チェックした項目だけを設定します（この案件の項目だけ）。</p>
+      <el-form label-position="top" class="checklist-batch-form">
+        <el-form-item>
+          <el-checkbox v-model="checklistBatchForm.setStatus">状態</el-checkbox>
+          <el-radio-group v-model="checklistBatchForm.isCompleted" :disabled="!checklistBatchForm.setStatus" class="batch-field">
+            <el-radio :value="true">完了</el-radio>
+            <el-radio :value="false">未完了</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="checklistBatchForm.setReceivedAt">受領日</el-checkbox>
+          <el-date-picker v-model="checklistBatchForm.receivedAt" type="date" value-format="YYYY-MM-DD" placeholder="空欄にすると受領日を消します"
+                          :disabled="!checklistBatchForm.setReceivedAt" class="batch-field" />
+          <div v-if="checklistBatchNotApplicable" class="field-hint">選択中の {{ checklistBatchNotApplicable }} 件は書類ではないため受領日を設定できません（その項目は失敗として表示されます）。</div>
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="checklistBatchForm.setResponsibleParty">準備者</el-checkbox>
+          <el-select v-model="checklistBatchForm.responsibleParty" clearable placeholder="空欄にすると消します"
+                     :disabled="!checklistBatchForm.setResponsibleParty" class="batch-field">
+            <el-option v-for="option in responsiblePartyOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="checklistBatchForm.setAcquisitionPlace">取得先・手続先</el-checkbox>
+          <el-input v-model="checklistBatchForm.acquisitionPlace" maxlength="255" placeholder="空欄にすると消します"
+                    :disabled="!checklistBatchForm.setAcquisitionPlace" class="batch-field" />
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="checklistBatchForm.setNote">備考</el-checkbox>
+          <el-radio-group v-model="checklistBatchForm.noteMode" :disabled="!checklistBatchForm.setNote" class="batch-field">
+            <el-radio value="append">追記</el-radio>
+            <el-radio value="replace">置き換え</el-radio>
+          </el-radio-group>
+          <el-input v-model="checklistBatchForm.note" type="textarea" :rows="2" :disabled="!checklistBatchForm.setNote" class="batch-field" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="checklistBatchDialogVisible = false">キャンセル</el-button>
+        <el-button type="primary" :loading="checklistBatchRunning" :disabled="!hasChanges(checklistBatchChanges)"
+                   @click="submitChecklistBatchDialog">確認して実行</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="progressUpdateDialogVisible" title="進捗を更新" width="480px">
       <el-form :model="progressUpdateForm" label-position="top">
@@ -2526,6 +2739,22 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
   margin-top: 4px;
 }
 
+.related-cases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.service-snapshot-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.service-snapshot-list .muted {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
 .progress-correction-link {
   margin-top: 8px;
   text-align: right;
@@ -2573,6 +2802,46 @@ const headerActions = computed<ActionItem[]>(() => isArchived.value
 .checklist-group h3 {
   margin: 0 0 8px;
   font-size: 15px;
+}
+
+.checklist-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checklist-batch-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 8px;
+  background: var(--el-color-primary-light-9);
+  font-size: 13px;
+}
+
+.checklist-batch-bar .el-button + .el-button {
+  margin-left: 0;
+}
+
+.checklist-batch-result {
+  margin-bottom: 12px;
+}
+
+.checklist-batch-failures {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.checklist-batch-form .batch-field {
+  width: 100%;
+  margin-top: 4px;
 }
 
 .checklist-item {

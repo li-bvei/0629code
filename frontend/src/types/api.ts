@@ -19,6 +19,8 @@ export interface ListParams {
   company?: number
   case?: number
   exclude_dependents?: boolean
+  // 関連付けできる顧客だけ（会社の従業員・代表者の選択候補用）
+  linkable?: boolean
 }
 
 export interface ResidenceStatusMaster {
@@ -105,6 +107,8 @@ export interface CustomerRelatedCompany {
   id: number
   name: string
   name_kana: string
+  /** P6：会社ページを開けるか（会社の閲覧範囲）。開けない会社は連絡先も空 */
+  can_open?: boolean
   phone: string
   email: string
   relation_types: Array<'representative' | 'staff' | 'case'>
@@ -229,7 +233,9 @@ export interface CompanyStaff {
   email: string
   postal_code: string
   address: string
-  my_number: string
+  /** 書き込み専用（API は返さない）。登録済みかどうかは has_my_number */
+  my_number?: string
+  has_my_number?: boolean
   employment_start_date: string | null
   employment_end_date: string | null
   note: string
@@ -258,9 +264,83 @@ export const CASE_WAITING_REASON_OPTIONS: Array<{ value: CaseWaitingReason; labe
   { value: 'other', label: 'その他' },
 ]
 
+// --- P4 業務フロー・関連案件・サービス項目（参考） ---
+export type WorkflowFamily = 'immigration' | 'professional' | 'employee_procedure' | 'general'
+
+export interface WorkflowStageOption {
+  id: number
+  name: string
+  code: string
+  base_status: CaseStatus
+  is_withdrawn: boolean
+  is_active: boolean
+}
+
+export interface WorkflowStage extends WorkflowStageOption {
+  template: number
+  base_status_display: string
+  sort_order: number
+  case_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowTemplate {
+  id: number
+  code: string
+  name: string
+  family: WorkflowFamily
+  family_display: string
+  description: string
+  is_active: boolean
+  sort_order: number
+  stages: WorkflowStage[]
+  case_type_names: string[]
+  /** 案件で使われたフローは変更できない（複製して結び付け直す） */
+  case_count: number
+  in_use: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseServiceItemSnapshot {
+  id: number
+  category: string
+  name: string
+  default_price: number | null
+  price_type: 'tax_included' | 'tax_excluded'
+  tax_category: string
+  unit: string
+  professional_type: string
+  professional_type_display: string
+  quantity: number
+  selected_at: string
+  /** P6：受付時点の価格状態 */
+  price_status?: 'provisional' | 'confirmed'
+}
+
+export interface RelatedCaseSummary {
+  id: number
+  case_number: string
+  case_type: string
+  status_display: string
+}
+
 export interface Case {
   id: number
   case_number: string
+  workflow_template?: number | null
+  workflow_template_name?: string
+  workflow_family?: WorkflowFamily | ''
+  workflow_stage?: number | null
+  workflow_stage_name?: string
+  /** 詳細のみ */
+  workflow_stages?: WorkflowStageOption[]
+  parent_case?: number | null
+  parent_case_number?: string
+  /** 詳細のみ（閲覧できる案件だけ） */
+  child_cases?: RelatedCaseSummary[]
+  service_items?: CaseServiceItemSnapshot[]
   case_type: string
   case_type_master: number | null
   case_type_master_name: string
@@ -389,6 +469,10 @@ export interface CaseTypeMaster {
   number_abbreviation: string
   sort_order: number
   is_active: boolean
+  /** P4：空なら従来の 13 段階（入管申請） */
+  workflow_template?: number | null
+  workflow_template_name?: string
+  requires_application_category?: boolean
   created_at: string
   updated_at: string
 }
@@ -399,6 +483,8 @@ export interface CaseTypeMasterPayload {
   number_abbreviation?: string
   sort_order?: number
   is_active?: boolean
+  workflow_template?: number | null
+  requires_application_category?: boolean
 }
 
 export interface CaseApplicationCategory {
@@ -822,7 +908,8 @@ export interface EmployeePayload {
 
 export interface Task {
   id: number
-  case: number
+  // 毎日の計画の社内作業（P3）は案件なし
+  case: number | null
   case_number: string
   title: string
   description: string
@@ -833,6 +920,40 @@ export interface Task {
   due_date: string | null
   planned_completion_date: string | null
   completed_at: string | null
+  created_at: string
+  updated_at: string
+  // --- 毎日の計画（P3） ---
+  case_customer_name?: string
+  status_display?: string
+  work_date?: string | null
+  priority?: TaskPriority
+  priority_display?: string
+  result_note?: string
+  carried_from?: number | null
+  carried_from_date?: string | null
+  carried_to?: { id: number; work_date: string | null } | null
+}
+
+export type TaskPriority = 'high' | 'normal' | 'low'
+
+export interface DailyWorkReport {
+  id: number
+  employee: number
+  employee_name: string
+  report_date: string
+  status: 'draft' | 'confirmed'
+  status_display: string
+  snapshot: {
+    items?: Array<{ id: number; title: string; status: string; status_display: string; result_note: string;
+      description: string; priority_display: string; carried_to_date: string | null; carried_from_date: string | null;
+      case: { id: number; case_number: string; customer_name: string } | null }>
+    summary?: { total: number; completed: number; unfinished: number; carried_over: number }
+  }
+  generated_text: string
+  final_text: string
+  is_edited: boolean
+  generated_at: string | null
+  confirmed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -914,6 +1035,10 @@ export interface Document {
   archive_reason?: string
   replacement_count?: number
   checklist_items?: Array<{ id: number; name: string; received_at: string | null }>
+  // P6：資料内容（登録者の入力）・表示名（資料内容-顧客名.拡張子、後端が作る）・ダウンロード名（表示名、旧ファイルは元の名前）
+  content_label?: string
+  display_name?: string
+  download_name?: string
   file_name: string
   file_path: string
   file_size: number | null
@@ -933,6 +1058,8 @@ export interface DocumentPayload {
   category?: DocumentCategory
   checklist_item?: number | null
   replace_reason?: string
+  /** P6：資料内容（新しく登録するファイルでは必須） */
+  content_label?: string
 }
 
 export type DocumentCategory =
@@ -1068,6 +1195,10 @@ export interface ReceptionCasePayload {
   application_category: number | null
   responsible_employee?: number | null
   accepted_at?: string | null
+  /** P4：関連元の案件（任意） */
+  parent_case?: number | null
+  /** P4：サービス項目（参考。任意・複数可） */
+  service_items?: { service_item: number; quantity: number }[]
 }
 
 export interface ReceptionPayload {

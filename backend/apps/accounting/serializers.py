@@ -14,15 +14,29 @@ from .models import (
     ExpenseCategory,
     ExpenseCategorySuggestionRule,
     IncomeSource,
+    SeifuNoticePdfGeneration,
     SeifuNoticePdfRecord,
+    ServiceItem,
     TaxRenewalAgentTemplate,
     TaxRenewalVoucherRecord,
     VehicleUsage,
     VisaGuarantorTemplate,
     VisaReturnApplication,
+    VisaReturnPdfGeneration,
     VoucherItemTemplate,
+    VoucherStatusHistory,
 )
-from .seifu_notice_pdf import template_doc, validate_items
+from .seifu_notice_pdf import (
+    TEMPLATE_KEY,
+    TEMPLATE_NAME,
+    SeifuPdfError,
+    check_layout,
+    derive_notice_number,
+    normalize_issue_date,
+    normalize_permit_number,
+    normalize_recipient_name,
+)
+from .service_lines import ServiceLineError, apply_service_lines, mark_used, strip_service_keys
 from .tax_renewal_templates import get_tax_renewal_templates
 from .voucher_calculations import VoucherCalculationError, calculate_voucher_amounts, decimal_to_number
 from .voucher_infra import (
@@ -35,6 +49,14 @@ from .voucher_infra import (
 
 INVOICE_WORKFLOW_DRAFT = AccountingVoucher.INVOICE_STATUS_DRAFT
 RECEIPT_WORKFLOW_DRAFT = AccountingVoucher.RECEIPT_STATUS_DRAFT
+
+FLOOR_PRICE_PERMISSION = 'accounting.view_service_floor_price'
+
+
+def can_view_floor_price(context):
+    """委託底価を見られるか（BusinessAccessPolicy の明示権限のみ。is_superuser では判定しない）。"""
+    policy = (context or {}).get('policy')
+    return policy is not None and policy.has(FLOOR_PRICE_PERMISSION)
 
 
 class ExpenseCategorySerializer(serializers.ModelSerializer):
@@ -263,12 +285,45 @@ class BusinessDocumentSerializerMixin:
         try:
             normalized_items, summary = calculate_voucher_amounts(line_items or [])
         except VoucherCalculationError as exc:
-            raise serializers.ValidationError({'line_items': str(exc)})
-        attrs['line_items'] = normalized_items
+            error = {'line_items': str(exc)}
+            if exc.row:
+                error['line_item_row'] = exc.row  # 1 始まり。画面はこの行にだけ誤りを表示する
+            raise serializers.ValidationError(error)
         attrs['amount'] = summary['subtotal']
         attrs['tax_amount'] = summary['tax_total']
         attrs['total_amount'] = summary['total']
+        if self.uses_service_items(attrs):
+            # P4：line_key・サービス項目のスナップショット・委託底価は後端が作る（客户端の値は使わない）
+            try:
+                normalized_items, costs, self._newly_used_service_items = apply_service_lines(
+                    normalized_items,
+                    getattr(self.instance, 'line_items', None),
+                    getattr(self.instance, 'internal_line_costs', None),
+                )
+            except ServiceLineError as exc:
+                error = {'line_items': str(exc)}
+                if exc.row:
+                    error['line_item_row'] = exc.row
+                raise serializers.ValidationError(error)
+            attrs['internal_line_costs'] = costs
+        else:
+            normalized_items = strip_service_keys(normalized_items)
+        attrs['line_items'] = normalized_items
         return attrs
+
+    def uses_service_items(self, attrs):
+        """サービス項目を明細で使える帳票か（P4 第 1 段階：見積書・請求書のみ）。"""
+        return False
+
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        mark_used(getattr(self, '_newly_used_service_items', None))
+        return instance
+
+    def update(self, instance, validated_data):
+        instance = super().update(instance, validated_data)
+        mark_used(getattr(self, '_newly_used_service_items', None))
+        return instance
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -287,6 +342,9 @@ class BusinessDocumentSerializerMixin:
         data['case_number'] = instance.case.case_number if instance.case_id else ''
         data['customer_name'] = instance.customer.name if instance.customer_id else ''
         data['company_name'] = instance.company.name if instance.company_id else ''
+        # 委託底価は底価権限者にだけ返す（それ以外の人には項目自体を出さない）
+        if hasattr(instance, 'internal_line_costs') and can_view_floor_price(self.context):
+            data['internal_line_costs'] = instance.internal_line_costs or []
         return data
 
 
@@ -299,7 +357,7 @@ class AccountingVoucherSerializer(BusinessDocumentSerializerMixin, serializers.M
 
     class Meta:
         model = AccountingVoucher
-        fields = '__all__'
+        exclude = ('internal_line_costs',)  # 底価は to_representation で権限者にだけ付ける
         read_only_fields = (
             'voucher_number', 'invoice_status', 'receipt_status', 'paid_date',
         ) + BusinessDocumentSerializerMixin.COMMON_READ_ONLY
@@ -307,6 +365,10 @@ class AccountingVoucherSerializer(BusinessDocumentSerializerMixin, serializers.M
     def get_workflow(self, instance=None, attrs=None):
         voucher_type = (attrs or {}).get('voucher_type') or getattr(instance, 'voucher_type', None)
         return INVOICE_WORKFLOW if voucher_type == AccountingVoucher.VOUCHER_TYPE_INVOICE else RECEIPT_WORKFLOW
+
+    def uses_service_items(self, attrs):
+        voucher_type = attrs.get('voucher_type') or getattr(self.instance, 'voucher_type', None)
+        return voucher_type == AccountingVoucher.VOUCHER_TYPE_INVOICE
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -335,11 +397,14 @@ class AccountingVoucherSerializer(BusinessDocumentSerializerMixin, serializers.M
 class EstimateSerializer(BusinessDocumentSerializerMixin, serializers.ModelSerializer):
     class Meta:
         model = Estimate
-        fields = '__all__'
+        exclude = ('internal_line_costs',)  # 底価は to_representation で権限者にだけ付ける
         read_only_fields = ('estimate_number', 'status') + BusinessDocumentSerializerMixin.COMMON_READ_ONLY
 
     def get_workflow(self, instance=None, attrs=None):
         return ESTIMATE_WORKFLOW
+
+    def uses_service_items(self, attrs):
+        return True
 
 
 class ContractSerializer(BusinessDocumentSerializerMixin, serializers.ModelSerializer):
@@ -366,6 +431,38 @@ class VoucherTransitionSerializer(serializers.Serializer):
     status = serializers.CharField()
     reason = serializers.CharField(required=False, allow_blank=True, max_length=500)
     date = serializers.DateField(required=False, allow_null=True)
+    # 画面で見ていた現在の状態（任意）。現在と違えば 409（古い画面・二重操作の防止）
+    expected_status = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # P6：暫定価格のサービス項目を含む帳票を発行するときの明示的な確認
+    confirm_provisional = serializers.BooleanField(required=False, default=False)
+
+
+class VoucherStatusHistorySerializer(serializers.ModelSerializer):
+    from_status_display = serializers.SerializerMethodField()
+    to_status_display = serializers.SerializerMethodField()
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VoucherStatusHistory
+        fields = ('id', 'document_kind', 'voucher_number', 'from_status', 'from_status_display', 'to_status',
+                  'to_status_display', 'version', 'reason', 'snapshot', 'changed_by_name', 'changed_at')
+
+    def _label(self, obj, value):
+        field = 'invoice_status' if obj.document_kind == 'invoice' else 'receipt_status'
+        return dict(AccountingVoucher._meta.get_field(field).choices).get(value, '状態未設定（旧データ）')
+
+    def get_from_status_display(self, obj):
+        return self._label(obj, obj.from_status)
+
+    def get_to_status_display(self, obj):
+        return self._label(obj, obj.to_status)
+
+    def get_changed_by_name(self, obj):
+        user = obj.changed_by
+        if user is None:
+            return ''
+        employee = getattr(user, 'employee', None) if hasattr(user, 'employee') else None
+        return employee.name if employee is not None else user.get_username()
 
 
 class VoucherItemTemplateSerializer(serializers.ModelSerializer):
@@ -374,11 +471,146 @@ class VoucherItemTemplateSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class ServiceItemSerializer(serializers.ModelSerializer):
+    """サービス項目（P4）。委託底価は底価権限者にだけ返し、それ以外の人からの変更は拒否する。"""
+
+    professional_type_display = serializers.CharField(source='get_professional_type_display', read_only=True)
+    tax_category_display = serializers.CharField(source='get_tax_category_display', read_only=True)
+    price_type_display = serializers.CharField(source='get_price_type_display', read_only=True)
+    price_status_display = serializers.CharField(source='get_price_status_display', read_only=True)
+    price_confirmed_by_name = serializers.SerializerMethodField()
+    is_used = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ServiceItem
+        fields = (
+            'id', 'code', 'category', 'name', 'default_price', 'price_type', 'price_type_display', 'floor_price',
+            'professional_type', 'professional_type_display', 'tax_category', 'tax_category_display', 'unit',
+            'price_status', 'price_status_display', 'price_confirmed_at', 'price_confirmed_by_name',
+            'is_active', 'note', 'sort_order', 'is_used', 'created_at', 'updated_at',
+        )
+        # 価格の状態は「価格を確定」操作（confirm-price）でだけ変わる。価格を変えると暫定に戻る（views 側）
+        read_only_fields = ('code', 'price_status', 'price_confirmed_at', 'created_at', 'updated_at')
+
+    def get_price_confirmed_by_name(self, obj):
+        user = obj.price_confirmed_by
+        if user is None:
+            return ''
+        employee = getattr(user, 'employee', None) if hasattr(user, 'employee') else None
+        return employee.name if employee else user.get_username()
+
+    def get_is_used(self, obj):
+        return obj.first_used_at is not None
+
+    def validate_name(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('項目名を入力してください。')
+        return value
+
+    def validate(self, attrs):
+        if 'floor_price' in self.initial_data and not can_view_floor_price(self.context):
+            raise serializers.ValidationError({'floor_price': '委託底価を変更する権限がありません。'})
+        for name in ('default_price', 'floor_price'):
+            value = attrs.get(name)
+            if value is not None and value < 0:
+                raise serializers.ValidationError({name: '金額は 0 以上で入力してください。'})
+        category = (attrs.get('category', getattr(self.instance, 'category', '')) or '').strip()
+        name = attrs.get('name', getattr(self.instance, 'name', ''))
+        duplicate = ServiceItem.objects.filter(category=category, name=name)
+        if self.instance is not None:
+            duplicate = duplicate.exclude(pk=self.instance.pk)
+        if duplicate.exists():
+            raise serializers.ValidationError({'name': '同じ分類に同じ名前の項目があります。'})
+        attrs['category'] = category
+        return attrs
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not can_view_floor_price(self.context):
+            data.pop('floor_price', None)
+        return data
+
+
+GUARANTOR_TEMPLATE_SNAPSHOT_FIELDS = (
+    'guarantor_name', 'guarantor_name_en', 'guarantor_phone', 'guarantor_address', 'guarantor_address_en',
+    'guarantor_birth_date', 'guarantor_nationality', 'guarantor_visa_status', 'guarantor_occupation',
+    'guarantor_relationship', 'guarantor_company_name',
+)
+
+
+def guarantor_template_snapshot(template):
+    """担保人テンプレートの内容を、選択した時点のスナップショットにする（後端が DB から作る）。"""
+    data = {name: getattr(template, name) for name in GUARANTOR_TEMPLATE_SNAPSHOT_FIELDS}
+    data['guarantor_birth_date'] = template.guarantor_birth_date.isoformat() if template.guarantor_birth_date else ''
+    data.update({
+        'guarantor_template_id': str(template.pk), 'template_name': template.name,
+        'template_version': template.updated_at.isoformat() if template.updated_at else '',
+    })
+    return {key: ('' if value is None else value) for key, value in data.items()}
+
+
 class VisaReturnApplicationSerializer(serializers.ModelSerializer):
+    guarantor_template_name = serializers.CharField(source='guarantor_template.name', read_only=True, default='')
+
     class Meta:
         model = VisaReturnApplication
         fields = '__all__'
-        read_only_fields = ('created_by', 'created_at', 'updated_at')
+        # guarantor_snapshot は後端だけが作る（画面・API から送られた値は受け付けない）
+        read_only_fields = ('created_by', 'created_at', 'updated_at', 'guarantor_snapshot')
+
+    def validate_guarantor_template(self, template):
+        current = getattr(self.instance, 'guarantor_template_id', None)
+        if template is not None and not template.is_active and template.pk != current:
+            raise serializers.ValidationError('停止中の担保人テンプレートは選択できません。')
+        return template
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # guarantor_snapshot は読み取り専用で、ここで後端が決める（どの項目をどう送っても迂回できない）。
+        #  - テンプレートを選んだ（変えた）、または保存済みの快照が別のテンプレートのもの：DB のテンプレートから作り直す。
+        #  - 同じテンプレートのまま：保存済みを保つ。
+        #  - テンプレートを外した：空にする（画面の担保人欄は手入力として列・form_data に残る）。
+        #  - テンプレートなし（旧データ）：保存済みのまま変えない。
+        # 手入力の担保人は guarantor_* 列と form_data に入り、スナップショットより優先される（resolve_guarantor）。
+        instance = self.instance
+        stored = instance.guarantor_snapshot if instance is not None and isinstance(instance.guarantor_snapshot, dict) else {}
+        template = attrs['guarantor_template'] if 'guarantor_template' in attrs else getattr(instance, 'guarantor_template', None)
+        if template is not None:
+            changed = template.pk != getattr(instance, 'guarantor_template_id', None)
+            if changed or str(stored.get('guarantor_template_id') or '') != str(template.pk):
+                attrs['guarantor_snapshot'] = guarantor_template_snapshot(template)
+        elif 'guarantor_template' in attrs and getattr(instance, 'guarantor_template_id', None):
+            attrs['guarantor_snapshot'] = {}
+        return attrs
+
+
+class VisaReturnPdfGenerationSerializer(serializers.ModelSerializer):
+    method_display = serializers.CharField(source='get_method_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    guarantor_template_name = serializers.CharField(source='guarantor_template.name', read_only=True, default='')
+    created_by_name = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VisaReturnPdfGeneration
+        fields = ('id', 'application', 'status', 'status_display', 'method', 'method_display', 'template_name',
+                  'template_version', 'guarantor_template', 'guarantor_template_name', 'guarantor_template_version',
+                  'file_sha256', 'file_size', 'error_code', 'error_message', 'details', 'created_by_name',
+                  'created_at', 'download_url')
+
+    def get_created_by_name(self, obj):
+        user = obj.created_by
+        if user is None:
+            return ''
+        employee = getattr(user, 'employee', None) if hasattr(user, 'employee') else None
+        return employee.name if employee is not None else user.get_username()
+
+    def get_download_url(self, obj):
+        # 成功してファイルが実在する記録だけにダウンロード先を返す
+        if obj.status != obj.STATUS_SUCCESS or not obj.file or not obj.file.storage.exists(obj.file.name):
+            return None
+        return f'/accounting/visa-return-applications/{obj.application_id}/pdf-generations/{obj.pk}/download/'
 
 
 class VisaGuarantorTemplateSerializer(serializers.ModelSerializer):
@@ -387,44 +619,121 @@ class VisaGuarantorTemplateSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class SeifuNoticePdfGenerationSerializer(serializers.ModelSerializer):
+    """生成記録（成功のみ）。ダウンロードは download/ から（ファイルの実在を確認する）。"""
+
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True, default='')
+
+    class Meta:
+        model = SeifuNoticePdfGeneration
+        fields = ('id', 'record', 'status', 'recipient_name', 'permit_number', 'notice_number', 'issue_date',
+                  'template_key', 'template_version', 'font_version', 'method', 'file_sha256', 'file_size',
+                  'created_by', 'created_by_username', 'created_at')
+        read_only_fields = fields
+
+
 class SeifuNoticePdfRecordSerializer(serializers.ModelSerializer):
+    """P5：入力は宛名・許可番号・通知日だけ。通知書番号・テンプレート・座標・字体は後端が決める。
+
+    旧データの text_items（任意文字）は読み取り専用で残し、更新でも消さない（旧記録の内容を保つため）。
+    """
+
     text_count = serializers.SerializerMethodField()
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    notice_number = serializers.SerializerMethodField()
+    template_name = serializers.SerializerMethodField()
+    text_items = serializers.JSONField(read_only=True)
+    is_legacy = serializers.SerializerMethodField()
+    latest_generation = serializers.SerializerMethodField()
+    generation_count = serializers.SerializerMethodField()
 
     class Meta:
         model = SeifuNoticePdfRecord
         fields = '__all__'
-        read_only_fields = ('created_by', 'created_at', 'updated_at')
+        read_only_fields = ('created_by', 'created_at', 'updated_at', 'text_items')
 
     def get_text_count(self, obj):
-        if not isinstance(obj.text_items, list):
-            return 0
-        return len([item for item in obj.text_items if str(item.get('text') or '').strip()])
+        return sum(bool(value) for value in (obj.recipient_name, obj.permit_number, obj.issue_date))
+
+    def get_notice_number(self, obj):
+        return derive_notice_number(obj.permit_number)
+
+    def get_template_name(self, obj):
+        return TEMPLATE_NAME if (obj.template_key or TEMPLATE_KEY) == TEMPLATE_KEY else obj.template_key
+
+    def get_is_legacy(self, obj):
+        # P5 以前の任意文字の記録（固定 3 項目が無い）。編集して 3 項目を入れると生成できる
+        return not (obj.recipient_name and obj.permit_number and obj.issue_date)
+
+    def _generations(self, obj):
+        cache = getattr(obj, '_generation_cache', None)
+        if cache is None:
+            cache = list(obj.generations.order_by('-created_at', '-id')[:1])
+            obj._generation_cache = cache
+        return cache
+
+    def get_latest_generation(self, obj):
+        rows = self._generations(obj)
+        return SeifuNoticePdfGenerationSerializer(rows[0]).data if rows else None
+
+    def get_generation_count(self, obj):
+        return obj.generations.count()
 
     def validate_title(self, value):
         if not str(value or '').strip():
             raise serializers.ValidationError('记录名称不能为空。')
         return str(value).strip()
 
-    def validate_text_items(self, value):
-        if value is None:
-            value = []
-        if not isinstance(value, list):
-            raise serializers.ValidationError('text_items 必须是 list。')
-        if not value:
-            return []
-
+    @staticmethod
+    def _run(normalizer, value):
         try:
-            doc = template_doc()
-        except FileNotFoundError as exc:
-            raise serializers.ValidationError(str(exc))
+            return normalizer(value)
+        except SeifuPdfError as exc:
+            raise serializers.ValidationError(exc.message) from exc
 
-        try:
-            return validate_items(doc, value, allow_empty_text=True, require_non_empty=False)
-        except ValueError as exc:
-            raise serializers.ValidationError(str(exc))
-        finally:
-            doc.close()
+    def validate_recipient_name(self, value):
+        return self._run(normalize_recipient_name, value)
+
+    def validate_permit_number(self, value):
+        return self._run(normalize_permit_number, value)
+
+    def validate_issue_date(self, value):
+        return self._run(normalize_issue_date, value)
+
+    def validate_template_key(self, value):
+        value = value or TEMPLATE_KEY
+        if value != TEMPLATE_KEY:
+            raise serializers.ValidationError('現在利用できるテンプレートではありません。')
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        unknown = sorted(set(getattr(self, 'initial_data', {}) or {}) & {
+            'notice_number', 'text_items', 'x', 'y', 'font', 'font_size', 'font_family', 'items', 'coordinates',
+            'background', 'template_version', 'course_years', 'enrollment_period'})
+        if unknown:
+            # 派生値・座標・字体などは客户端から指定できない（黙って無視せず、誤用として知らせる）
+            raise serializers.ValidationError({name: 'この項目は指定できません（サーバーが決めます）。' for name in unknown})
+        if self.instance is None:
+            attrs.setdefault('template_key', TEMPLATE_KEY)
+            required = {
+                'recipient_name': '宛名を入力してください。',
+                'permit_number': '許可番号を入力してください。',
+                'issue_date': '通知日を入力してください。',
+            }
+            for field, message in required.items():
+                if not attrs.get(field):
+                    raise serializers.ValidationError({field: message})
+        name = attrs.get('recipient_name', getattr(self.instance, 'recipient_name', None))
+        permit = attrs.get('permit_number', getattr(self.instance, 'permit_number', None))
+        if name and permit:
+            # 保存の時点で字形・版面に収まるかを確認する（字体が未設定なら生成時に字体エラーとして止める）
+            try:
+                check_layout(name, permit)
+            except SeifuPdfError as exc:
+                if exc.code not in ('font_missing', 'font_broken', 'font_mismatch'):
+                    raise serializers.ValidationError({exc.field or 'recipient_name': exc.message}) from exc
+        return attrs
 
 
 class TaxRenewalVoucherRecordSerializer(serializers.ModelSerializer):

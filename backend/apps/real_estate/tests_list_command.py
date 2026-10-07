@@ -1,5 +1,4 @@
 """LIST.xlsx の正式取込コマンド（import_real_estate_list）：dry-run・件数一致・権限・再実行・回滚。"""
-import shutil
 import tempfile
 from io import StringIO
 from pathlib import Path
@@ -12,13 +11,14 @@ from apps.audit.models import AuditLog
 from apps.real_estate.models import RealEstateImportRun, RealEstateTransaction
 from apps.real_estate.tests import RealEstateFixture
 from apps.real_estate.tests_import import ROWS, SENTINEL, workbook_bytes
+from apps.common.test_isolation import safe_rmtree
 
 
 class ListImportCommandTests(RealEstateFixture, TestCase):
     def setUp(self):
         super().setUp()
         self.dir = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.addCleanup(safe_rmtree, self.dir)
         self.path = self.dir / 'LIST.xlsx'
         self.path.write_bytes(workbook_bytes(ROWS))
 

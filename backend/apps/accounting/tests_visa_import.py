@@ -1,9 +1,10 @@
 """返签 visa 表の CSV/XLSX 一括取込：読込・対応付け・検証・重複・作成方式・再試行・PDF ZIP・監査・権限。"""
 import io
+import tempfile
 import zipfile
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from openpyxl import Workbook
 
 from apps.accounting.models import VisaImportBatch, VisaReturnApplication
@@ -11,6 +12,7 @@ from apps.accounting.visa_import import parse_date_value, read_csv
 from apps.audit.models import AuditLog
 from apps.authentication.roles import ACCOUNTING_ADMIN, BUSINESS_ADMIN, EXPENSE_VIEWER, SYSTEM_ADMIN
 from apps.authentication.testing import make_user
+from apps.common.test_isolation import safe_rmtree
 
 CSV_TEXT = (
     '氏名,性別,生年月日,旅券番号,電話番号,メール\n'
@@ -22,7 +24,15 @@ CSV_TEXT = (
 )
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())  # PDF ZIP は生成記録としてファイルを保存するため
 class VisaImportTests(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        from django.conf import settings
+
+        safe_rmtree(settings.MEDIA_ROOT)
+        super().tearDownClass()
+
     def setUp(self):
         self.li = make_user('li', roles=[SYSTEM_ADMIN, ACCOUNTING_ADMIN, BUSINESS_ADMIN], superuser=True, employee_name='李')
         self.jiao = make_user('jiao_like', roles=[BUSINESS_ADMIN, EXPENSE_VIEWER], superuser=True, employee_name='焦')

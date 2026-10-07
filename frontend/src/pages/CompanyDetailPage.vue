@@ -22,6 +22,8 @@ import type { ActionItem } from '../components/layout/actions'
 import { bankAccountTypeOptions, fiscalMonthOptions } from '../constants/options'
 import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster, Company, CompanyStaff, CompanyStaffPayload, CreateCompanyPayload, CreateCustomerPayload, Customer, Employee, ResidenceStatusMaster } from '../types/api'
 import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
+import { formatBirthDateWithEra } from '../utils/wareki'
+import MyNumberReveal from '../components/customers/MyNumberReveal.vue'
 import { formatDate, formatDateTime } from '../utils/date'
 
 const route = useRoute()
@@ -171,6 +173,12 @@ const companyRules: FormRules<CreateCompanyPayload> = {
 const displayValue = (value?: string | null) => value || '-'
 const formatFiscalMonth = (value?: string | null) => (value ? `${value}月` : '-')
 const formatGender = (value?: string | null) => ({ male: '男性', female: '女性', other: 'その他' }[value || ''] || displayValue(value))
+const representativeInitialOption = computed(() => (
+  company.value?.representative_customer
+    ? { value: company.value.representative_customer, label: getRepresentativeName(company.value) || `顧客 #${company.value.representative_customer}` }
+    : null
+))
+
 const getRepresentativeName = (companyData: Company) => (
   companyData.representative_customer_name || companyData.representative_name
 )
@@ -324,16 +332,20 @@ const resetStaffForm = () => {
   staffFormRef.value?.clearValidate()
 }
 
-const openCreateStaffDialog = async () => {
-  if (!customers.value.length) {
-    await fetchCaseOptions()
-  }
+// 編集時に現在関連付いている顧客を表示する（検索結果のページに無くても、閲覧範囲外でも消さない）
+const staffCustomerInitialOption = ref<{ value: number, label: string } | null>(null)
+
+const openCreateStaffDialog = () => {
   resetStaffForm()
+  staffCustomerInitialOption.value = null
   staffDialogVisible.value = true
 }
 
 const openEditStaffDialog = (staff: CompanyStaff) => {
   editingStaffId.value = staff.id
+  staffCustomerInitialOption.value = staff.customer
+    ? { value: staff.customer, label: staff.customer_name || staff.name || `顧客 #${staff.customer}` }
+    : null
   staffForm.value = {
     company: companyId.value,
     customer: staff.customer,
@@ -494,7 +506,7 @@ const headerActions = computed<ActionItem[]>(() => [
               <div v-if="staffMembers.length" class="staff-member-list">
                 <article v-for="staff in sortedStaffMembers" :key="staff.id" class="staff-member-block" :class="{ 'is-retired': staff.employment_end_date }">
                   <div class="staff-member-header"><div class="staff-member-title"><strong>{{ displayValue(staff.name) }}</strong><el-tag v-if="staff.employment_end_date" size="small" type="info">退社済み</el-tag><el-tag v-else size="small" type="success">在職中</el-tag><span>{{ displayValue(staff.position) }}</span></div><el-dropdown trigger="click"><el-button text type="primary">操作 <el-icon><ArrowDown /></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item v-if="staff.customer" @click="router.push(`/customers/${staff.customer}`)">顧客ページへ</el-dropdown-item><el-dropdown-item @click="openEditStaffDialog(staff)">編集</el-dropdown-item><el-dropdown-item divided class="danger-item" @click="confirmDeleteStaff(staff)">削除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
-                  <div class="staff-info-grid"><dl class="record-field-list"><div><dt>フリガナ</dt><dd>{{ displayValue(staff.name_kana) }}</dd></div><div><dt>生年月日</dt><dd>{{ formatDate(staff.birth_date) }}</dd></div><div><dt>性別・国籍</dt><dd>{{ formatGender(staff.gender) }} / {{ displayValue(staff.nationality) }}</dd></div><div><dt>連絡先</dt><dd>{{ [staff.phone, staff.email].filter(Boolean).join(' / ') || '-' }}</dd></div><div><dt>住所</dt><dd>〒{{ displayValue(staff.postal_code) }} {{ displayValue(staff.address) }}</dd></div></dl><dl class="record-field-list"><div><dt>在留資格</dt><dd>{{ displayValue(staff.residence_status) }}</dd></div><div><dt>在留カード番号</dt><dd>{{ displayValue(staff.residence_card_no) }}</dd></div><div><dt>在留期限</dt><dd>{{ formatDate(staff.residence_expiry) }}</dd></div><div><dt>パスポート番号</dt><dd>{{ displayValue(staff.passport_no) }}</dd></div><div><dt>パスポート期限</dt><dd>{{ formatDate(staff.passport_expiry) }}</dd></div><div><dt>在籍期間</dt><dd>{{ formatDate(staff.employment_start_date) }} ～ {{ formatDate(staff.employment_end_date) }}</dd></div></dl></div>
+                  <div class="staff-info-grid"><dl class="record-field-list"><div><dt>フリガナ</dt><dd>{{ displayValue(staff.name_kana) }}</dd></div><div><dt>生年月日</dt><dd>{{ formatBirthDateWithEra(staff.birth_date) }}</dd></div><div><dt>性別・国籍</dt><dd>{{ formatGender(staff.gender) }} / {{ displayValue(staff.nationality) }}</dd></div><div><dt>連絡先</dt><dd>{{ [staff.phone, staff.email].filter(Boolean).join(' / ') || '-' }}</dd></div><div><dt>住所</dt><dd>〒{{ displayValue(staff.postal_code) }} {{ displayValue(staff.address) }}</dd></div></dl><dl class="record-field-list"><div><dt>在留資格</dt><dd>{{ displayValue(staff.residence_status) }}</dd></div><div><dt>在留カード番号</dt><dd>{{ displayValue(staff.residence_card_no) }}</dd></div><div><dt>在留期限</dt><dd>{{ formatDate(staff.residence_expiry) }}</dd></div><div><dt>パスポート番号</dt><dd>{{ displayValue(staff.passport_no) }}</dd></div><div><dt>パスポート期限</dt><dd>{{ formatDate(staff.passport_expiry) }}</dd></div><div><dt>マイナンバー</dt><dd><MyNumberReveal kind="company_staff" :target-id="staff.id" :registered="Boolean(staff.has_my_number)" :reset-key="`${activeSection}:${staffDialogVisible}`" /></dd></div><div><dt>在籍期間</dt><dd>{{ formatDate(staff.employment_start_date) }} ～ {{ formatDate(staff.employment_end_date) }}</dd></div></dl></div>
                 </article>
               </div><p v-else class="empty-text">従業員情報はありません。</p>
             </el-tab-pane>
@@ -521,7 +533,7 @@ const headerActions = computed<ActionItem[]>(() => [
         <div class="form-grid">
           <el-form-item label="会社名フリガナ" prop="name_kana"><el-input v-model="companyForm.name_kana" /></el-form-item>
           <el-form-item label="会社名" prop="name"><el-input v-model="companyForm.name" /></el-form-item>
-          <el-form-item label="代表者顧客" prop="representative_customer" class="form-grid-full"><RemoteCustomerSelect v-model="companyForm.representative_customer" placeholder="氏名・カナ・電話・案件番号で検索" /></el-form-item>
+          <el-form-item label="代表者顧客" prop="representative_customer" class="form-grid-full"><RemoteCustomerSelect v-model="companyForm.representative_customer" linkable-only :initial-option="representativeInitialOption" placeholder="氏名・カナ・電話・案件番号で検索" /></el-form-item>
           <el-form-item label="代表者フリガナ" prop="representative_name_kana"><el-input v-model="companyForm.representative_name_kana" /></el-form-item>
           <el-form-item label="代表者氏名" prop="representative_name"><el-input v-model="companyForm.representative_name" /></el-form-item>
           <el-form-item label="代表者郵便番号" prop="representative_postal_code"><el-input v-model="companyForm.representative_postal_code" /></el-form-item>
@@ -559,15 +571,14 @@ const headerActions = computed<ActionItem[]>(() => [
             <el-input v-model="staffForm.position" />
           </el-form-item>
           <el-form-item label="既存の顧客から選択" class="form-grid-full">
-            <el-select
+            <!-- 候補は後端で検索・関連付けできる顧客に限定（先頭ページだけの固定候補にしない）。編集時は現在の関連を表示 -->
+            <RemoteCustomerSelect
               v-model="staffForm.customer"
+              linkable-only
               clearable
-              filterable
-              placeholder="既に顧客として登録済みの場合はここで選択（未選択なら下で新規登録）"
-              class="form-control"
-            >
-              <el-option v-for="customer in customers" :key="customer.id" :label="customer.name" :value="customer.id" />
-            </el-select>
+              :initial-option="staffCustomerInitialOption"
+              placeholder="登録済みの顧客を検索（氏名・カナ・電話・案件番号）。未選択なら下で新規登録"
+            />
           </el-form-item>
         </div>
 

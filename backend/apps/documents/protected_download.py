@@ -34,8 +34,10 @@ def resolve_document_path(document, subdir=DOCUMENT_SUBDIR):
 
 
 def display_filename(document):
-    name = document.file_name or os.path.basename(document.file.name or '') or f'document-{document.pk}'
-    return os.path.basename(name.replace('\\', '/'))
+    """ダウンロード名：P6 の表示名（資料内容-顧客名.拡張子）、旧データは元のファイル名。ZIP と同じ規則。"""
+    from .naming import download_name
+
+    return download_name(document)
 
 
 def content_disposition(filename, inline=False):

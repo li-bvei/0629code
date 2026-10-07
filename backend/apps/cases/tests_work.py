@@ -11,6 +11,7 @@ from apps.cases.models import Case, CaseApplicationCategory, CaseTypeMaster
 from apps.customers.models import Customer
 from apps.employees.models import Employee
 from apps.timelines.models import Timeline
+from apps.common.test_isolation import safe_rmtree
 
 
 class WorkFixture:
@@ -211,7 +212,7 @@ class ChecklistReceiveTests(WorkFixture, TestCase):
         from apps.documents.models import Document
 
         self.media = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.media, True)
+        self.addCleanup(safe_rmtree, self.media)
         self.override = override_settings(MEDIA_ROOT=self.media)
         self.override.enable()
         self.addCleanup(self.override.disable)

@@ -15,16 +15,103 @@ from .models import (
     CaseTypeMaster,
     ChecklistItemPreset,
     ResponsiblePartyPreset,
+    WorkflowStage,
+    WorkflowTemplate,
 )
 from .status_service import get_required_checklist_progress
 
 
+WORKFLOW_LOCKED_MESSAGE = (
+    '案件で使われている業務フローは変更できません（段階の追加・名称・順番・有効状態・削除を含む）。'
+    '「複製」で新しいフローを作り、案件種別を新しいフローに結び付け直してください。既存の案件は元のフローのまま使います。'
+)
+
+
+def workflow_in_use(template_id):
+    """案件がこのフローで作られているか。使われているフローは内容を固定する（既存案件の意味を変えない）。"""
+    return template_id is not None and Case.objects.filter(workflow_template_id=template_id).exists()  # access-reviewed: 設定の整合性確認（件数のみ）
+
+
+class WorkflowStageSerializer(serializers.ModelSerializer):
+    base_status_display = serializers.CharField(source='get_base_status_display', read_only=True)
+    is_withdrawn = serializers.BooleanField(read_only=True)
+    case_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkflowStage
+        fields = ['id', 'template', 'code', 'name', 'base_status', 'base_status_display', 'is_withdrawn',
+                  'sort_order', 'is_active', 'case_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_case_count(self, obj):
+        return obj.cases.count()
+
+    def validate(self, attrs):
+        template = attrs.get('template') or getattr(self.instance, 'template', None)
+        if template is not None and workflow_in_use(template.pk):
+            # 案件で使われているフローの段階は、まだどの案件の現在の段階でなくても追加・変更しない
+            raise serializers.ValidationError({'detail': WORKFLOW_LOCKED_MESSAGE, 'code': 'workflow_in_use'})
+        if self.instance is not None:
+            # 段階の所属フローとコードは作成後に変えない（既存案件の段階の意味を変えないため）
+            for name in ('template', 'code'):
+                if name in attrs and attrs[name] != getattr(self.instance, name):
+                    raise serializers.ValidationError({name: '作成後は変更できません。'})
+            if 'base_status' in attrs and attrs['base_status'] != self.instance.base_status and self.instance.cases.exists():
+                raise serializers.ValidationError({'base_status': '案件で使われている段階の対応する進捗は変更できません。'})
+        return attrs
+
+
+class WorkflowTemplateSerializer(serializers.ModelSerializer):
+    family_display = serializers.CharField(source='get_family_display', read_only=True)
+    stages = WorkflowStageSerializer(many=True, read_only=True)
+    case_type_names = serializers.SerializerMethodField()
+    case_count = serializers.SerializerMethodField()
+    in_use = serializers.SerializerMethodField()
+
+    # 案件で使われた後も変更できるのは説明と並び順だけ（案件の意味に関わらない）
+    LOCKED_FIELDS = ('code', 'name', 'family', 'is_active')
+
+    class Meta:
+        model = WorkflowTemplate
+        fields = ['id', 'code', 'name', 'family', 'family_display', 'description', 'is_active', 'sort_order',
+                  'stages', 'case_type_names', 'case_count', 'in_use', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_case_type_names(self, obj):
+        return [case_type.name for case_type in obj.case_types.all()]
+
+    def get_case_count(self, obj):
+        return obj.cases.count()
+
+    def get_in_use(self, obj):
+        return workflow_in_use(obj.pk)
+
+    def validate(self, attrs):
+        if self.instance is not None and 'code' in attrs and attrs['code'] != self.instance.code:
+            raise serializers.ValidationError({'code': '作成後は変更できません。'})
+        if self.instance is not None and workflow_in_use(self.instance.pk):
+            changed = [name for name in self.LOCKED_FIELDS
+                       if name in attrs and attrs[name] != getattr(self.instance, name)]
+            if changed:
+                raise serializers.ValidationError({'detail': WORKFLOW_LOCKED_MESSAGE, 'code': 'workflow_in_use',
+                                                   'locked_fields': changed})
+        return attrs
+
+
 class CaseTypeMasterSerializer(serializers.ModelSerializer):
+    workflow_template_name = serializers.CharField(source='workflow_template.name', read_only=True, default='')
+
     class Meta:
         model = CaseTypeMaster
-        fields = ['id', 'name', 'code', 'number_abbreviation', 'sort_order', 'is_active', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'code', 'number_abbreviation', 'sort_order', 'is_active', 'workflow_template',
+                  'workflow_template_name', 'requires_application_category', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {'code': {'read_only': True}}
+
+    def validate_workflow_template(self, value):
+        if value is not None and not value.is_active and getattr(self.instance, 'workflow_template_id', None) != value.pk:
+            raise serializers.ValidationError('無効な業務フローは選べません。')
+        return value
 
     def create(self, validated_data):
         name = validated_data.get('name', '')
@@ -128,12 +215,30 @@ class CaseSerializer(serializers.ModelSerializer):
     work_status_display = serializers.CharField(source='get_work_status_display', read_only=True)
     waiting_reason_display = serializers.CharField(source='get_waiting_reason_display', read_only=True)
     waiting_days = serializers.SerializerMethodField()
+    # --- 業務フロー・関連案件・サービス項目（P4） ---
+    workflow_template_name = serializers.CharField(source='workflow_template.name', read_only=True, default='')
+    workflow_family = serializers.CharField(source='workflow_template.family', read_only=True, default='')
+    workflow_stage_name = serializers.CharField(source='workflow_stage.name', read_only=True, default='')
+    parent_case = serializers.PrimaryKeyRelatedField(
+        queryset=Case.objects.all(), required=False, allow_null=True,  # access-reviewed: validate_parent_case で閲覧範囲を確認する
+        # 存在しない案件と見られない案件で同じ文言にする（存在を推測させない）
+        error_messages={'does_not_exist': '関連元の案件が見つかりません。', 'incorrect_type': '関連元の案件が見つかりません。'},
+    )
+    parent_case_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Case
         fields = [
             'id',
             'case_number',
+            'workflow_template',
+            'workflow_template_name',
+            'workflow_family',
+            'workflow_stage',
+            'workflow_stage_name',
+            'parent_case',
+            'parent_case_number',
+            'service_items',
             'case_type',
             'case_type_master',
             'case_type_master_name',
@@ -219,6 +324,11 @@ class CaseSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id',
             'case_number',
+            # 業務フロー・段階は作成時に固定し、段階は専用 action（change-stage）でのみ変更する
+            'workflow_template',
+            'workflow_stage',
+            # サービス項目（参考）は新規受付で選んだ時点のスナップショット
+            'service_items',
             'case_type',
             # registration_status / status は通常の PUT/PATCH では変更させない。
             # 状態遷移チェック・warning・Timeline 記録・操作者記録が必要なため、
@@ -276,12 +386,61 @@ class CaseSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
 
+    def get_parent_case_number(self, obj):
+        return obj.parent_case.case_number if obj.parent_case_id else ''
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.workflow_stage_id:
+            # フローを持つ案件は段階名を進捗として表示する（status は既存処理用の対応先）
+            data['status_display'] = instance.workflow_stage.name
+        if self.context.get('include_related'):
+            stages = []
+            if instance.workflow_template_id:
+                stages = [
+                    {'id': stage.id, 'name': stage.name, 'code': stage.code, 'base_status': stage.base_status,
+                     'is_withdrawn': stage.is_withdrawn, 'is_active': stage.is_active}
+                    for stage in instance.workflow_template.stages.order_by('sort_order', 'id')
+                    if stage.is_active or stage.pk == instance.workflow_stage_id
+                ]
+            data['workflow_stages'] = stages
+            policy = self.context.get('policy')
+            children = policy.queryset('case', 'list').filter(parent_case=instance) if policy is not None else []
+            data['child_cases'] = [
+                {'id': child.id, 'case_number': child.case_number, 'case_type': child.case_type,
+                 'status_display': child.workflow_stage.name if child.workflow_stage_id else child.get_status_display()}
+                for child in (children.select_related('workflow_stage').order_by('created_at') if policy is not None else [])
+            ]
+        return data
+
+    def validate_parent_case(self, value):
+        if value is None:
+            return value
+        policy = self.context.get('policy')
+        if policy is None or not policy.queryset('case', 'view').filter(pk=value.pk).exists():
+            raise serializers.ValidationError('関連元の案件が見つかりません。')
+        # 関連元をたどって循環しないことを確かめる（段数の上限なし。既存データに循環があっても止まる）
+        own_id = getattr(self.instance, 'pk', None)
+        seen = set()
+        current_id = value.pk
+        while current_id is not None:
+            if current_id == own_id:
+                raise serializers.ValidationError('この案件自身や、この案件から作られた案件は関連元にできません。')
+            if current_id in seen:
+                raise serializers.ValidationError('関連元の案件の関連が循環しています。管理者に確認してください。')
+            seen.add(current_id)
+            current_id = Case.objects.filter(pk=current_id).values_list('parent_case_id', flat=True).first()  # access-reviewed: 関連の循環確認（ID のみ。応答には出さない）
+        return value
+
     def validate(self, attrs):
         if self.instance is None:
             if not attrs.get('case_type_master'):
                 raise serializers.ValidationError({'case_type_master': '案件種別を選択してください。'})
-            if not attrs.get('application_category'):
+            if attrs['case_type_master'].requires_application_category and not attrs.get('application_category'):
                 raise serializers.ValidationError({'application_category': '申請区分を選択してください。'})
+        elif self.instance.workflow_template_id:
+            # 業務フローを持つ案件の status は段階で決まる（通常の保存では変えない）
+            attrs.pop('status', None)
         case_type_master = attrs.get('case_type_master') or getattr(self.instance, 'case_type_master', None)
         application_category = attrs.get('application_category') or getattr(self.instance, 'application_category', None)
         if case_type_master and case_type_master.is_active and not case_type_master.number_abbreviation.strip():
@@ -395,18 +554,23 @@ class CaseSerializer(serializers.ModelSerializer):
             return ''
         return obj.responsible_employee.name
 
+    @staticmethod
+    def _case_tasks(obj):
+        # 案件タスクだけを数える。毎日の計画の項目（work_date あり・P3）は案件に関連付いていても含めない
+        return obj.tasks.filter(work_date__isnull=True)
+
     def get_task_total_count(self, obj):
-        return obj.tasks.count()
+        return self._case_tasks(obj).count()
 
     def get_task_completed_count(self, obj):
-        return obj.tasks.filter(status=Task.STATUS_COMPLETED).count()
+        return self._case_tasks(obj).filter(status=Task.STATUS_COMPLETED).count()
 
     def get_next_task(self, obj):
         cached_name = '_case_serializer_next_task'
         if hasattr(obj, cached_name):
             return getattr(obj, cached_name)
         task = (
-            obj.tasks
+            self._case_tasks(obj)
             .exclude(status__in=[Task.STATUS_COMPLETED, Task.STATUS_CANCELLED])
             .select_related('responsible_employee')
             .order_by('sort_order', 'id')

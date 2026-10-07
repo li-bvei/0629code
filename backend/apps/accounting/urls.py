@@ -14,6 +14,7 @@ from .zei_pdf_position_debug import (
     zei_pdf_position_templates,
     zei_pdf_position_test_pdf,
 )
+from .service_item_views import ServiceItemViewSet
 from .visa_import_views import VisaImportViewSet
 from .voucher_views import AccountingVoucherViewSet, ContractViewSet, EstimateViewSet, voucher_links
 from .views import (
@@ -24,6 +25,7 @@ from .views import (
     ExpenseCategoryViewSet,
     ExpenseViewSet,
     IncomeSourceViewSet,
+    SeifuNoticePdfGenerationViewSet,
     SeifuNoticePdfRecordViewSet,
     TaxRenewalAgentTemplateViewSet,
     TaxRenewalVoucherRecordViewSet,
@@ -49,10 +51,12 @@ router.register('vouchers', AccountingVoucherViewSet, basename='accounting-vouch
 router.register('estimates', EstimateViewSet, basename='accounting-estimate')
 router.register('contracts', ContractViewSet, basename='accounting-contract')
 router.register('voucher-item-templates', VoucherItemTemplateViewSet, basename='accounting-voucher-item-template')
+router.register('service-items', ServiceItemViewSet, basename='accounting-service-item')
 router.register('visa-return-applications', VisaReturnApplicationViewSet, basename='visa-return-application')
 router.register('visa-imports', VisaImportViewSet, basename='visa-import')
 router.register('visa-guarantor-templates', VisaGuarantorTemplateViewSet, basename='visa-guarantor-template')
 router.register('seifu-notice-records', SeifuNoticePdfRecordViewSet, basename='seifu-notice-record')
+router.register('seifu-notice-generations', SeifuNoticePdfGenerationViewSet, basename='seifu-notice-generation')
 router.register('tax-renewal-records', TaxRenewalVoucherRecordViewSet, basename='tax-renewal-record')
 router.register('tax-renewal-agent-templates', TaxRenewalAgentTemplateViewSet, basename='tax-renewal-agent-template')
 

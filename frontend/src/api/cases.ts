@@ -1,4 +1,5 @@
 import http from '../services/http'
+import type { BatchChanges, BatchResponse } from '../utils/checklistBatch'
 import type {
   Case,
   Document,
@@ -22,6 +23,8 @@ import type {
   CaseStatusSettingPayload,
   CaseTypeMaster,
   CaseTypeMasterPayload,
+  WorkflowStage,
+  WorkflowTemplate,
   CaseStatusPayload,
   CaseStatusChangePayload,
   CaseStatusChangeResponse,
@@ -95,6 +98,41 @@ export const createCaseTypeMaster = async (payload: CaseTypeMasterPayload) => {
 
 export const updateCaseTypeMaster = async (id: number, payload: Partial<CaseTypeMasterPayload>) => {
   const response = await http.patch<CaseTypeMaster>(`/case-type-masters/${id}/`, payload)
+  return response.data
+}
+
+// --- 業務フロー（P4）。変更は案件設定の権限者のみ（後端で判定・監査） ---
+
+export const listWorkflowTemplates = async (params?: ListParams & { is_active?: boolean | string }) => {
+  const response = await http.get<PaginatedResponse<WorkflowTemplate>>('/workflow-templates/', { params })
+  return response.data
+}
+
+export const saveWorkflowTemplate = async (id: number | null, payload: Partial<Pick<WorkflowTemplate, 'code' | 'name' | 'family' | 'description' | 'is_active' | 'sort_order'>>) => {
+  const response = id
+    ? await http.patch<WorkflowTemplate>(`/workflow-templates/${id}/`, payload)
+    : await http.post<WorkflowTemplate>('/workflow-templates/', payload)
+  return response.data
+}
+
+export const duplicateWorkflowTemplate = async (id: number, payload: { code: string; name: string }) => {
+  const response = await http.post<WorkflowTemplate>(`/workflow-templates/${id}/duplicate/`, payload)
+  return response.data
+}
+
+export const saveWorkflowStage = async (id: number | null, payload: Partial<Pick<WorkflowStage, 'template' | 'code' | 'name' | 'base_status' | 'sort_order' | 'is_active'>>) => {
+  const response = id
+    ? await http.patch<WorkflowStage>(`/workflow-stages/${id}/`, payload)
+    : await http.post<WorkflowStage>('/workflow-stages/', payload)
+  return response.data
+}
+
+export const deleteWorkflowStage = async (id: number) => {
+  await http.delete(`/workflow-stages/${id}/`)
+}
+
+export const changeCaseStage = async (id: number, payload: { stage: number; expected_stage?: number | null; note?: string }) => {
+  const response = await http.post<Case>(`/cases/${id}/change-stage/`, payload)
   return response.data
 }
 
@@ -384,6 +422,17 @@ export const receiveCaseChecklistItem = async (
   const response = await http.post<CaseChecklistItem & { progress_summary?: unknown }>(
     `/case-checklist-items/${id}/receive/`,
     payload,
+  )
+  return response.data
+}
+
+// 案件内の必要資料の一括更新（P2）。対象はこの案件の項目だけ。項目ごとの成功／失敗が返る。
+export const batchUpdateCaseChecklist = async (
+  caseId: number,
+  payload: { item_ids: number[]; changes: BatchChanges; versions?: Record<string, string> },
+) => {
+  const response = await http.post<BatchResponse & { progress_summary?: Record<string, number | boolean> }>(
+    `/cases/${caseId}/checklist-batch/`, payload,
   )
   return response.data
 }

@@ -20,6 +20,7 @@ DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 # Key used to encrypt sensitive PII fields (e.g. マイナンバー) at rest.
 # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 FIELD_ENCRYPTION_KEY = os.getenv('FIELD_ENCRYPTION_KEY', 'Xbl6ZzuVAEiN7PrpPSbZlEYiYKOsJQU8fZQuecZP0QM=')
+SEIFU_MS_MINCHO_FONT_PATH = os.getenv('SEIFU_MS_MINCHO_FONT_PATH', '')
 
 def env_list(name, default=''):
     value = os.getenv(name, default)
@@ -194,6 +195,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# テスト実行中は MEDIA_ROOT を一時ディレクトリにする（2026-10-07 の誤削除事故の再発防止。apps/common/test_isolation.py）
+TEST_RUNNER = 'config.test_runner.IsolatedMediaTestRunner'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

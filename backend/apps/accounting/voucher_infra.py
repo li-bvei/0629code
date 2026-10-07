@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
+from rest_framework import status as http_status
+from rest_framework.exceptions import APIException, ValidationError
 
 from apps.audit.services import record
 
@@ -52,6 +53,24 @@ SNAPSHOT_FIELDS = (
 )
 
 
+def same_version(obj, version):
+    """画面で見ていた版（updated_at の ISO 文字列）と一致するか。版を送らない場合は確認しない（旧画面互換）。"""
+    if not version:
+        return True
+    from django.utils.dateparse import parse_datetime
+
+    seen = parse_datetime(str(version))
+    return seen is not None and obj.updated_at is not None and abs((obj.updated_at - seen).total_seconds()) < 0.001
+
+
+class DocumentConflict(APIException):
+    """画面で見ていた状態と現在の状態が違う（他の操作が先に行われた）。全体を中止する。"""
+
+    status_code = http_status.HTTP_409_CONFLICT
+    default_detail = '他の操作で状態が変わりました。画面を更新してからもう一度操作してください。'
+    default_code = 'document_conflict'
+
+
 @dataclass(frozen=True)
 class Workflow:
     kind: str                      # 監査・表示用の帳票名（estimate / contract / invoice / receipt）
@@ -62,8 +81,14 @@ class Workflow:
     void_states: frozenset         # 取消・無効（スナップショットを取らない遷移先）
     date_on_enter: dict = field(default_factory=dict)  # 遷移先 → 日付を記録する列
     locked_fields: tuple = SNAPSHOT_FIELDS
+    # 状態を自由に切り替えられる帳票（請求書・領収書）：有効な状態どうしを相互に変更でき、終端の状態を持たない。
+    # 内容の編集は editable_states（下書き）のときだけ。発行後に直す場合は下書きに戻してから再発行する。
+    free_transitions: bool = False
+    history_kind: str = ''  # 状態履歴（VoucherStatusHistory）を残す帳票の種別
 
     def allowed_targets(self, current):
+        if self.free_transitions:
+            return [state for state in self.transitions[''] if state != (current or '')]
         return list(self.transitions.get(current or '', ()))
 
     def is_editable(self, obj):
@@ -94,32 +119,32 @@ CONTRACT_WORKFLOW = Workflow(
     locked_fields=SNAPSHOT_FIELDS + ('start_date', 'end_date', 'payment_terms', 'body'),
 )
 
-# 請求書・領収書は既存の表に同居しているが、状態の列も遷移も別。
-# 空（''）は P2-C11 以前の旧データで、状態未設定のまま一覧・編集できる。
+# 請求書・領収書は既存の表に同居しているが、状態の列も遷移も別（互いに連動しない）。
+# 空（''）は P2-C11 以前の旧データで、状態未設定のまま一覧・編集できる（空へ戻すことはできない）。
+# 2026-10（P1）：有効な状態の間はどこからでも人工で切り替えられる。発行済み・無効からも下書きに戻せる。
 INVOICE_WORKFLOW = Workflow(
     kind='invoice', label='請求書', status_field='invoice_status',
-    transitions={
-        '': ('draft', 'issued', 'sent', 'paid', 'cancelled'),
-        'draft': ('issued', 'cancelled'),
-        'issued': ('sent', 'paid', 'cancelled'),
-        'sent': ('paid', 'cancelled'),
-    },
+    transitions={'': ('draft', 'issued', 'sent', 'paid', 'cancelled')},
     editable_states=frozenset({'', 'draft'}),
     void_states=frozenset({'cancelled'}),
     date_on_enter={'paid': 'paid_date'},
     locked_fields=SNAPSHOT_FIELDS + ('details', 'payment_due_date', 'payment_method', 'bank_info', 'voucher_type'),
+    free_transitions=True, history_kind='invoice',
 )
 
 RECEIPT_WORKFLOW = Workflow(
     kind='receipt', label='領収書', status_field='receipt_status',
-    transitions={
-        '': ('draft', 'issued', 'voided'),
-        'draft': ('issued', 'voided'),
-        'issued': ('voided',),
-    },
+    transitions={'': ('draft', 'issued', 'voided')},
     editable_states=frozenset({'', 'draft'}),
     void_states=frozenset({'voided'}),
     locked_fields=SNAPSHOT_FIELDS + ('details', 'payment_method', 'voucher_type'),
+    free_transitions=True, history_kind='receipt',
+)
+
+# 状態履歴のスナップショットに含める項目（発行時スナップショットより広く、帳票の内容をすべて残す）
+HISTORY_SNAPSHOT_FIELDS = SNAPSHOT_FIELDS + (
+    'voucher_type', 'details', 'note', 'payment_due_date', 'payment_method', 'bank_info', 'paid_date',
+    'invoice_status', 'receipt_status',
 )
 
 
@@ -143,8 +168,8 @@ def _json_value(value):
     return value
 
 
-def build_snapshot(obj, user):
-    data = {name: _json_value(getattr(obj, name)) for name in SNAPSHOT_FIELDS if hasattr(obj, name)}
+def build_snapshot(obj, user, fields=SNAPSHOT_FIELDS):
+    data = {name: _json_value(getattr(obj, name)) for name in fields if hasattr(obj, name)}
     data['number'] = obj.number
     data['snapshot_at'] = timezone.now().isoformat()
     data['snapshot_by'] = user.get_username() if user is not None else ''
@@ -175,21 +200,69 @@ def reject_locked_changes(workflow, instance, attrs):
         if name in attrs and _comparable(name, attrs[name]) != _comparable(name, getattr(instance, name))
     ]
     if changed:
+        hint = '「下書き」に戻してから変更し、再発行してください' if workflow.free_transitions else '変更する場合は取消して作り直してください'
         raise ValidationError({
-            'detail': f'{workflow.label}は発行後のため内容を変更できません（変更する場合は取消して作り直してください）。',
+            'detail': f'{workflow.label}は下書き以外の状態のため内容を変更できません（{hint}）。',
             'locked_fields': changed,
         })
 
 
-def transition(obj, target, *, request, reason='', on_date=None):
+# P4：発行ごとに委託底価を版として残す帳票（サービス項目を使う帳票）
+COST_SNAPSHOT_KINDS = ('estimate', 'invoice')
+
+
+def record_issued_line_costs(obj, workflow, user, history=None):
+    """発行時点の internal_line_costs を版ごとに残す（状態履歴・発行スナップショットとは別の表）。"""
+    from .models import IssuedLineCostSnapshot
+
+    previous = IssuedLineCostSnapshot.objects.filter(document_kind=workflow.kind, document_id=obj.pk).count()
+    return IssuedLineCostSnapshot.objects.create(
+        document_kind=workflow.kind, document_id=obj.pk, document_number=obj.number, version=previous + 1,
+        status_history=history, line_costs=list(getattr(obj, 'internal_line_costs', None) or []), created_by=user,
+    )
+
+
+def _next_issue_version(obj, workflow):
+    from .models import VoucherStatusHistory
+
+    issued = VoucherStatusHistory.objects.filter(voucher=obj, document_kind=workflow.history_kind, to_status='issued')
+    return issued.count() + 1
+
+
+@transaction.atomic
+def transition(obj, target, *, request, reason='', on_date=None, expected_status=None, confirm_provisional=False):
+    """状態を変更する。行をロックしてから現在の状態を確認し、履歴と監査を同じトランザクションで残す。
+
+    expected_status（画面で見ていた状態）が渡され、現在と違えば 409 で中止する（二重操作・古い画面の防止）。
+    """
+    from .models import VoucherStatusHistory
+
+    obj = type(obj).objects.select_for_update().get(pk=obj.pk)
     workflow = workflow_for(obj)
     current = getattr(obj, workflow.status_field) or ''
+    if expected_status is not None and (expected_status or '') != current:
+        raise DocumentConflict()
+    if target == current:
+        raise ValidationError({'status': f'{workflow.label}は既にこの状態です。'})
     if target not in workflow.allowed_targets(current):
         raise ValidationError({'status': f'{workflow.label}をこの状態に変更できません。'})
     leaving_draft = current in workflow.editable_states and target not in workflow.editable_states
-    if leaving_draft and target not in workflow.void_states:
+    issuing = leaving_draft and target not in workflow.void_states
+    provisional = []
+    if issuing:
         if not (obj.line_items or obj.total_amount):
             raise ValidationError({'line_items': '明細または金額がないため発行できません。'})
+        # P6：暫定価格のサービス項目から作った行がある場合は、発行の前に明示的な確認を求める（止めはしない）
+        from .service_lines import provisional_lines
+
+        provisional = provisional_lines(obj.line_items) if workflow.kind in COST_SNAPSHOT_KINDS else []
+        if provisional and not confirm_provisional:
+            raise ValidationError({
+                'code': 'provisional_price_confirmation_required',
+                'detail': f'{workflow.label}に暫定価格のサービス項目（{"・".join(f"{n} 行目" for n in provisional)}）が含まれています。'
+                          '価格を確認したうえで発行してください。',
+                'provisional_rows': provisional,
+            })
         obj.issued_snapshot = build_snapshot(obj, request.user)
     setattr(obj, workflow.status_field, target)
     obj.status_changed_at = timezone.now()
@@ -198,9 +271,24 @@ def transition(obj, target, *, request, reason='', on_date=None):
         setattr(obj, date_field, on_date or getattr(obj, date_field) or timezone.localdate())
     obj.updated_by = request.user
     obj.save()
+    version = 0
+    history = None
+    if workflow.history_kind:
+        version = _next_issue_version(obj, workflow) if target == 'issued' else 0
+        history = VoucherStatusHistory.objects.create(
+            voucher=obj, document_kind=workflow.history_kind, voucher_number=obj.number,
+            from_status=current, to_status=target, version=version, reason=(reason or '')[:500],
+            snapshot=build_snapshot(obj, request.user, HISTORY_SNAPSHOT_FIELDS), changed_by=request.user,
+        )
+    if issuing and workflow.kind in COST_SNAPSHOT_KINDS:
+        record_issued_line_costs(obj, workflow, request.user, history)
+    extra = {'version': version} if version else {}
+    if provisional:
+        extra['provisional_price_confirmed_rows'] = provisional
     record(
         module=AUDIT_MODULE, action=f'{workflow.kind}_status_changed', request=request, obj=obj,
         object_repr=f'{workflow.label} {obj.number}', changes={'status': [current, target]}, reason=reason,
+        extra=extra or None,
     )
     return obj
 

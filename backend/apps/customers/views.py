@@ -21,6 +21,7 @@ from .serializers import (
     FamilyMemberSerializer,
     ResidenceStatusMasterSerializer,
 )
+from .my_number import reveal_response
 
 
 class ActiveOrderingMixin:
@@ -62,7 +63,7 @@ class CustomerViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     案件の無い顧客（基本情報のみ）に限る。証件番号は担当範囲外で伏せる。"""
 
     access_resource = 'customer'
-    access_action_map = {'match': 'list'}
+    access_action_map = {'match': 'list', 'reveal_my_number': 'view'}
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 
@@ -96,6 +97,10 @@ class CustomerViewSet(BusinessScopedViewSetMixin, ModelViewSet):
             if case_customer_ids:
                 column_q |= Q(pk__in=case_customer_ids)
             queryset = queryset.filter(column_q).order_by('name', 'id')
+
+        # 選択候補用：関連付け（会社の従業員・代表者など）できる顧客だけに絞る（check_link と同じ条件）
+        if self.request.query_params.get('linkable') in ('true', '1'):
+            queryset = self.access_rule.linkable(self.business_policy, queryset)
 
         exclude_dependents = self.request.query_params.get('exclude_dependents')
         if exclude_dependents in ('true', '1'):
@@ -142,6 +147,11 @@ class CustomerViewSet(BusinessScopedViewSetMixin, ModelViewSet):
             record(module='customers', action='sensitive_identity_view', request=request, obj=instance,
                    via_permission=CUSTOMER_RULE.SENSITIVE)
         return Response(self.get_serializer(instance).data)
+
+    @action(detail=True, methods=['post'], url_path='reveal-my-number')
+    def reveal_my_number(self, request, pk=None):
+        """マイナンバーの表示（P6）。customers.reveal_my_number ＋ この顧客を見られること。成功・拒否を監査する。"""
+        return reveal_response(self, request, pk, 'customer')
 
     @action(detail=False, methods=['post'], url_path='match')
     def match(self, request):
@@ -206,8 +216,14 @@ class CustomerViewSet(BusinessScopedViewSetMixin, ModelViewSet):
 
 class FamilyMemberViewSet(BusinessScopedViewSetMixin, ModelViewSet):
     access_resource = 'family_member'
+    access_action_map = {'reveal_my_number': 'view'}
     queryset = FamilyMember.objects.select_related('customer', 'family_customer')
     serializer_class = FamilyMemberSerializer
+
+    @action(detail=True, methods=['post'], url_path='reveal-my-number')
+    def reveal_my_number(self, request, pk=None):
+        """家族のマイナンバーの表示（P6）。顧客と同じ規則。関連付いた人物があればその人物の値。"""
+        return reveal_response(self, request, pk, 'family_member')
 
     def get_queryset(self):
         queryset = super().get_queryset()

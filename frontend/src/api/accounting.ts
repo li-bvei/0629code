@@ -29,7 +29,7 @@ import type {
   ExpenseSummary,
   IncomeSource,
   IncomeSourcePayload,
-  SeifuNoticeGeneratePayload,
+  SeifuNoticeGeneration,
   SeifuNoticePdfRecord,
   SeifuNoticeRecordPayload,
   SeifuNoticeTemplateInfo,
@@ -46,6 +46,9 @@ import type {
   VisaGuarantorTemplatePayload,
   VisaReturnApplication,
   VisaReturnApplicationPayload,
+  VisaCheckResult,
+  VisaPdfGeneration,
+  VoucherStatusHistoryRow,
   VoucherItemTemplate,
   VoucherItemTemplatePayload,
 } from '../types/accounting'
@@ -414,37 +417,9 @@ export const deleteVisaGuarantorTemplate = async (id: number | string) => {
   await http.delete(`/accounting/visa-guarantor-templates/${id}/`)
 }
 
-export const downloadVisaReturnApplicationPdf = async (id: number | string) => {
-  const response = await http.get<Blob>(`/accounting/visa-return-applications/${id}/pdf/`, {
-    responseType: 'blob',
-  })
-  return {
-    blob: response.data,
-    contentDisposition: response.headers['content-disposition'] as string | undefined,
-  }
-}
-
 export const getSeifuNoticeTemplateInfo = async () => {
   const response = await http.get<SeifuNoticeTemplateInfo>('/accounting/seifu-notice-pdf/template/')
   return response.data
-}
-
-export const getSeifuNoticePreview = async (page: number) => {
-  const response = await http.get<Blob>('/accounting/seifu-notice-pdf/preview/', {
-    params: { page },
-    responseType: 'blob',
-  })
-  return response.data
-}
-
-export const generateSeifuNoticePdf = async (payload: SeifuNoticeGeneratePayload) => {
-  const response = await http.post<Blob>('/accounting/seifu-notice-pdf/generate/', payload, {
-    responseType: 'blob',
-  })
-  return {
-    blob: response.data,
-    contentDisposition: response.headers['content-disposition'] as string | undefined,
-  }
 }
 
 export const listSeifuNoticeRecords = async (params?: AccountingListParams) => {
@@ -477,14 +452,30 @@ export const deleteSeifuNoticeRecord = async (id: number | string) => {
   await http.delete(`/accounting/seifu-notice-records/${id}/`)
 }
 
-export const downloadSeifuNoticeRecordPdf = async (id: number | string) => {
-  const response = await http.post<Blob>(`/accounting/seifu-notice-records/${id}/generate_pdf/`, undefined, {
+// PDF を作って保存する（成功時は生成記録。PDF 本体は downloadSeifuNoticeGeneration で取得する）
+export const generateSeifuNoticePdf = async (id: number | string, requestId: string) => {
+  const response = await http.post<SeifuNoticeGeneration>(`/accounting/seifu-notice-records/${id}/generate_pdf/`, {
+    request_id: requestId,
+  })
+  return response.data
+}
+
+export const downloadSeifuNoticeGeneration = async (generationId: number | string) => {
+  const response = await http.get<Blob>(`/accounting/seifu-notice-generations/${generationId}/download/`, {
     responseType: 'blob',
   })
   return {
     blob: response.data,
     contentDisposition: response.headers['content-disposition'] as string | undefined,
   }
+}
+
+// 確認用の PDF（保存・記録しない）
+export const previewSeifuNoticeRecordPdf = async (id: number | string) => {
+  const response = await http.post<Blob>(`/accounting/seifu-notice-records/${id}/preview_pdf/`, undefined, {
+    responseType: 'blob',
+  })
+  return response.data
 }
 
 export const listTaxRenewalTemplates = async () => {
@@ -644,10 +635,26 @@ export const deleteBusinessDocument = async (endpoint: BusinessDocumentEndpoint,
 export const transitionBusinessDocument = async (
   endpoint: BusinessDocumentEndpoint,
   id: number,
-  body: { status: string; reason?: string; date?: string | null },
+  body: { status: string; reason?: string; date?: string | null; expected_status?: string; confirm_provisional?: boolean },
 ) => {
   const response = await http.post(`/accounting/${endpoint}/${id}/transition/`, body)
   return response.data
+}
+
+// 請求書・領収書の状態履歴（変更前後・操作者・時刻・その時点の内容）
+export const listVoucherStatusHistory = async (id: number) =>
+  (await http.get<VoucherStatusHistoryRow[]>(`/accounting/vouchers/${id}/status-history/`)).data
+
+// 返签 visa 表：生成前の確認・生成・生成記録・ダウンロード（成功し実在するファイルだけ）
+export const checkVisaReturnApplication = async (id: number) =>
+  (await http.get<VisaCheckResult>(`/accounting/visa-return-applications/${id}/check/`)).data
+export const generateVisaReturnPdf = async (id: number) =>
+  (await http.post<VisaPdfGeneration>(`/accounting/visa-return-applications/${id}/generate-pdf/`)).data
+export const listVisaPdfGenerations = async (id: number) =>
+  (await http.get<VisaPdfGeneration[]>(`/accounting/visa-return-applications/${id}/pdf-generations/`)).data
+export const downloadVisaPdfGeneration = async (downloadUrl: string) => {
+  const response = await http.get<Blob>(downloadUrl.replace(/^\//, ''), { responseType: 'blob' })
+  return { blob: response.data, contentDisposition: response.headers['content-disposition'] as string | undefined }
 }
 
 // 元の帳票から下書きを作る（元の帳票の状態は変わらない）

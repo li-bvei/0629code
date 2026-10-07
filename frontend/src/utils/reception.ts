@@ -8,9 +8,22 @@ const hasAnyValue = (data: Record<string, unknown>) =>
   Object.values(data).some((v) => v !== '' && v !== null && v !== undefined && v !== false)
 
 // この画面は常に「新規顧客＋業務情報」を送る。既存顧客の照合・再利用（existing_customer_id）は送らない。
+export interface ReceptionServiceSelection {
+  service_item: number
+  quantity: number | string
+}
+
 export const buildReceptionPayload = (
   form: ReceptionPayload,
-  options: { requestId: string; companyMode: ReceptionCompanyMode; existingCompanyId: number | null },
+  options: {
+    requestId: string
+    companyMode: ReceptionCompanyMode
+    existingCompanyId: number | null
+    /** P4：案件種別が申請区分を必要としない場合は送らない（false のときだけ） */
+    requiresCategory?: boolean
+    /** P4：サービス項目（参考。任意・複数可）。価格はマスタから後端が写す */
+    serviceItems?: ReceptionServiceSelection[]
+  },
 ): ReceptionCreatePayload => {
   const payload: ReceptionCreatePayload = {
     request_id: options.requestId,
@@ -25,9 +38,13 @@ export const buildReceptionPayload = (
     company: { ...form.company },
     case: {
       case_type_master: form.case.case_type_master,
-      application_category: form.case.application_category,
+      application_category: options.requiresCategory === false ? (form.case.application_category || null) : form.case.application_category,
       responsible_employee: form.case.responsible_employee || null,
       accepted_at: form.case.accepted_at || null,
+      parent_case: form.case.parent_case || null,
+      service_items: (options.serviceItems ?? [])
+        .filter((row) => Number(row.quantity) > 0)
+        .map((row) => ({ service_item: row.service_item, quantity: Number(row.quantity) })),
     },
   }
   if (options.companyMode === 'existing') {
@@ -54,6 +71,8 @@ export const RECEPTION_ERROR_LABELS: Record<string, string> = {
   'case.application_category': '申請区分',
   'case.responsible_employee': '担当者',
   'case.accepted_at': '受任日',
+  'case.parent_case': '関連元の案件',
+  'case.service_items': 'サービス項目（参考）',
   company: '関連会社',
   'company.name': '会社名',
   'company.email': '会社のメール',

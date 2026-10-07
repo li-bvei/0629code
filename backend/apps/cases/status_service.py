@@ -41,7 +41,7 @@ def get_required_checklist_progress(case):
     all_completed = total > 0 and remaining == 0
     suggested_status = ''
     suggestion_message = ''
-    if all_completed and case.status == Case.STATUS_COLLECTING_DOCUMENTS:
+    if all_completed and case.status == Case.STATUS_COLLECTING_DOCUMENTS and not case.workflow_template_id:
         suggested_status = Case.STATUS_PREPARING_DOCUMENTS
         suggestion_message = '必須事項がすべて完了しました。現在の進捗を「書類作成中」に変更できます。'
     return {
@@ -272,6 +272,9 @@ def change_case_status(
 
     with transaction.atomic():
         locked_case = Case.objects.select_for_update().get(pk=case.pk)
+        if locked_case.workflow_template_id:
+            # P4：業務フローを持つ案件は段階変更（workflow_service）で管理する
+            raise CaseStatusChangeError('この案件は業務フローの段階で管理しています。段階の変更を使ってください。')
         warnings = build_case_status_warnings(locked_case, new_status)
         if warnings and not force:
             raise CaseStatusChangeError('進捗変更には確認が必要です。', warnings=warnings, requires_force=True)

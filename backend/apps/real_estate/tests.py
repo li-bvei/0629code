@@ -1,5 +1,4 @@
 """不動産の協同台帳、明示権限、操作履歴、法定台帳と保護ファイルの回帰テスト。"""
-import shutil
 import tempfile
 from datetime import date
 from decimal import Decimal
@@ -13,6 +12,7 @@ from apps.audit.models import AuditLog
 from apps.authentication.roles import ACCOUNTING_ADMIN, BUSINESS_ADMIN, EXPENSE_VIEWER, STAFF, SYSTEM_ADMIN
 from apps.authentication.testing import make_user
 from apps.real_estate.models import InternalProfitDistribution, RealEstateTransaction
+from apps.common.test_isolation import safe_rmtree
 
 PDF = b'%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n'
 
@@ -140,7 +140,7 @@ class FileAndAccountingTests(RealEstateFixture, TestCase):
 
     def tearDown(self):
         self.override.disable()
-        shutil.rmtree(self.media, ignore_errors=True)
+        safe_rmtree(self.media)
 
     def upload(self, user, name='contract.pdf', content=PDF):
         self.client.force_login(user)

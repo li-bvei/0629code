@@ -306,3 +306,275 @@ P1～P3 追加的 NOT NULL 列中，以下 9 列原本没有数据库级默认�
 - 其余新增列均可空或属于旧代码不写入的新表（P0 的 `owner` 等、各关联 FK、OfficeSettings、不动产、帳票新表）。
 - 以后若 `AlterField` 这些列，Django 会去掉默认值；`apps/cases/tests_db_defaults.py` 会失败，需在新 migration 中用 `apps.common.db_defaults` 重新设置。
 - 旧代码删除被新表（見積書・契約書・不動産・审计日志等）引用的父记录时会被外键拒绝（`scripts/rollback_compat/inventory.py` 列出全部此类外键）。
+
+### 11.11 2026-10-03 规划中的数据结构（A 与 Visa 生成记录已由 P1 实施，C 已由 P3 实施，B、D 已由 P4 实施，F 已由 P5 单模板实施，G 为 P6 追加）
+
+以下为已确认需求对应的推荐数据方向，用于后续 migration 设计。实际字段名应在实施阶段结合现有命名规范最终确认。P1 已实施部分以本节末尾的「P1 实际结构」为准。
+
+#### A. 单据状态历史（已实施，见「P1 实际结构」）
+
+建议新增不可变的单据状态历史记录，或提供等价的不可变审计存储：
+
+- 单据类型与单据 ID。
+- `from_status`、`to_status`。
+- 状态变更时的单据快照／快照引用。
+- 操作者、变更时间、可选原因。
+
+现有单据状态不再设置终态限制；任意有效状态可互相切换。单据正文仍只在草稿状态修改，切回草稿后产生的新发行版本必须保留可追溯信息。
+
+#### B. 服务价格主数据
+
+建议新增服务价格主表，核心字段包括：
+
+- `category`、`code`、`name`、`description`。
+- `default_customer_price`：默认对客报价。
+- `outsourcing_floor_price`：委托底价。
+- `professional_type`：税理士／行政书士／司法书士／翻译等。
+- `tax_category`、`unit`、`is_active`、`sort_order`、`notes`。
+- 创建／更新人和时间。
+
+单据明细或案件服务项需要保存名称、价格、税区分、委托底价等快照，不得只保存主表外键。
+
+#### C. 每日计划与工作报告
+
+优先扩展现有任务模型：
+
+- `case` 改为可空，以支持内部任务。
+- 新增工作日期、显示顺序、优先级、完成备注、结转来源／结转目标等字段。
+- 保留负责人、完成时间和审计信息。
+
+建议新增每日工作报告表：
+
+- 员工／用户、报告日期、状态。
+- 生成文本、人工编辑后的最终文本。
+- 生成时的任务快照（已完成、未完成／结转、备注、案件摘要）。
+- 生成时间、最后编辑人和时间。
+
+工作报告不保存外部发送状态，因为已确认本阶段不自动外发。
+
+**P3 实际结构（2026-10-05 本地已实现；migration `tasks/0003_daily_plan_and_reports`、`tasks/0004_db_defaults_for_rollback_compat`；生产未部署）**
+
+`case_tasks`（Task）的变更：
+
+| 列 | 说明 |
+|---|---|
+| `case_id` | 改为可空。为空表示不关联案件的内部工作，仅限有 `work_date` 的计划项 |
+| `work_date` | 作业日，可空，带索引。有值的是每日计划项，为空的是原有案件任务 |
+| `priority` | `high` / `normal` / `low`，默认 `normal`（DB 默认值 `'normal'`） |
+| `result_note` | 完成后的结果备注（DB 表达式默认值 `''`） |
+| `carried_from_id` | 结转来源（OneToOne → 自身，SET_NULL）。反向关联 `carried_to` 即结转目标 |
+| `created_by_id` | 登记人（User，SET_NULL） |
+| `status` | 增加 `carried_over`（结转完毕） |
+| 索引 | `task_plan_owner_date_idx`（`responsible_employee_id`, `work_date`） |
+
+新表 `daily_work_reports`（DailyWorkReport）：
+
+| 列 | 说明 |
+|---|---|
+| `employee_id` | 担当者（PROTECT） |
+| `report_date` | 报告日期；`employee`＋`report_date` 唯一（每人每天一份） |
+| `status` | `draft` / `confirmed` |
+| `snapshot` | 生成时的计划项（标题、状态、备注、结果备注、优先级、结转来源和目标日期、关联案件摘要）及汇总 |
+| `generated_text` / `final_text` | 生成的正文 / 人工编辑后的正文 |
+| `generated_at` / `generated_by_id`、`confirmed_at` / `confirmed_by_id`、`updated_by_id` | 生成、确定、最后编辑的记录 |
+| `created_at` / `updated_at` | `updated_at` 用作并发核对的版本 |
+
+**兼容性与回滚**
+- 已有任务的 `work_date` 为空，仍按原有案件任务处理，不需要回填。
+- 新增列都可空或带 DB 默认值，旧代码不写入新列也能 INSERT，`tasks/tests_daily_plan.py` 中有测试。
+- 回滚到旧代码时：
+  - 旧代码读取 `case_id` 为空的内部工作时，序列化器的 `case_number` 会被省略，不会报错；但旧的 `CaseChildRule` 只让有全件查看权限的人看到这些记录。
+  - 旧代码删除担当者时，如果该担当者已有工作报告，会被外键拒绝（PROTECT）。
+- 生产部署时需执行 `migrate`。
+
+#### D. 案件工作流模板
+
+建议将案件类型与状态流程解耦：
+
+- 工作流模板：名称、工作流族、适用案件类型、是否启用、版本。
+- 工作流步骤：模板、步骤代码、名称、顺序、默认期限、默认负责人角色。
+- 必要资料模板：工作流／步骤、资料名称、是否必需、取得先等默认值。
+- 案件保存所使用的模板和版本；历史案件继续保留原状态语义。
+- 对复合服务使用案件关联关系（主案件／子案件或关联案件），不要把多个业务结果塞进同一状态字段。
+
+**P4 实际结构（2026-10-06 本地已实现；migration `accounting/0022_service_items_line_costs`、`cases/0022_workflow_templates`、`cases/0023_db_defaults_for_rollback_compat_p4`、`cases/0024_seed_p4_workflows_and_case_types`；生产未部署）**
+
+B 的实现与规划的差别：
+- 不设 `code`、`description` 两列。
+- 增加 `price_type`（价格是税込还是税抜）和 `first_used_at`（首次被使用的时间，用来禁止物理删除）。
+- 快照沿用明细行 JSON，不另建关联表；底价单独存放在内部列。
+
+新表 `accounting_service_items`（ServiceItem）：
+
+| 列 | 说明 |
+|---|---|
+| `category` / `name` | 分类 / 项目名称（同一分类内名称不重复，由 serializer 检查） |
+| `default_price` | 对客标准价，`DECIMAL(12,0)`，可空 |
+| `price_type` | `tax_included` / `tax_excluded` |
+| `floor_price` | 委托底价，`DECIMAL(12,0)`，可空。只有拥有 `accounting.view_service_floor_price` 的人能看到和修改 |
+| `professional_type` | 空（なし）/ `gyousei` / `tax_accountant` / `judicial_scrivener` / `labor_consultant` / `other` |
+| `tax_category` / `unit` | `tax_10` / `tax_8` / `non_taxable`，单位 |
+| `is_active` / `sort_order` / `note` | 启用 / 排序 / 内部备注（不打印到 PDF） |
+| `first_used_at` | 首次被单据或案件使用的时间。不为空时禁止物理删除 |
+| `created_by_id` / `updated_by_id` / `created_at` / `updated_at` | `updated_at` 用作版本确认 |
+| 权限 | `use_service_item`、`manage_service_item`、`view_service_floor_price` |
+
+新表 `accounting_issued_line_cost_snapshots`（IssuedLineCostSnapshot，只追加）：
+
+| 列 | 说明 |
+|---|---|
+| `document_kind` / `document_id` / `document_number` | `estimate` / `invoice`，单据 ID 和编号。不设外键，单据删除后仍保留 |
+| `version` | 该单据的第几次发行；`document_kind`＋`document_id`＋`version` 唯一 |
+| `status_history_id` | 对应的状态履历（仅请求书），SET_NULL |
+| `line_costs` | 发行时的 `internal_line_costs` |
+| `created_by_id` / `created_at` | 发行人和时间 |
+
+已有表的变更：
+
+| 表 / 列 | 说明 |
+|---|---|
+| `accounting_vouchers.internal_line_costs`、`accounting_estimates.internal_line_costs` | JSON（MySQL 表达式默认值 `[]`）。每项为 `{line_key, service_item_id, floor_price, professional_type, captured_at}`。API 只返回给底价权限者 |
+| `line_items` 中每行的键（无结构变化） | `line_key`（后端生成），选了服务项目的行另有 `service_item_id` 和 `service`。`service` 是选择时的 `{id, category, name, default_price, price_type, tax_category, unit, professional_type, professional_type_display, selected_at}`，不含底价 |
+| `cases.service_items` | JSON（表达式默认值 `[]`），受付时服务项目的快照（同上，另有 `quantity`），不含底价 |
+| `cases.parent_case_id` | 关联元案件，自身外键，可空，SET_NULL |
+| `cases.workflow_template_id` / `workflow_stage_id` | 创建时固定的流程和当前阶段，可空，PROTECT。为空表示原 13 阶段 |
+| `case_type_masters.workflow_template_id` | 该种别使用的流程，可空，PROTECT |
+| `case_type_masters.requires_application_category` | 是否需要申请区分，默认 True（DB 默认值 1） |
+
+新表 `case_workflow_templates`（WorkflowTemplate）：`code`（唯一）、`name`、`family`（`immigration` / `professional` / `employee_procedure` / `general`）、`description`、`is_active`、`sort_order`。
+
+新表 `case_workflow_stages`（WorkflowStage）：
+
+| 列 | 说明 |
+|---|---|
+| `template_id` | 所属流程（CASCADE；被案件引用的阶段受案件的 PROTECT 约束） |
+| `code` | `template`＋`code` 唯一；创建后不能修改 |
+| `name` / `sort_order` / `is_active` | 段阶名 / 排序 / 启用（停用后不能新选，已在该阶段的案件仍显示） |
+| `base_status` | 对应的旧 `Case.status`，供一览、仪表盘、期限、完了判断等现有处理使用 |
+
+流程一旦被案件使用（有 `cases.workflow_template_id` 指向它），流程的 `name`、`family`、`is_active` 和它的所有阶段都不能修改（API 层检查）。需要改动时复制为新流程，再把种别重新绑定；已有案件继续使用原流程。
+
+初始数据（`cases/0024`，用户 2026-10-06 确认）：
+- 汎用、専門家委託、従業員・社会保険手続三个流程及其阶段，详见 `DEVELOPMENT_PLAN.md` §5.12。
+- 新增税理士委託、会社解散、就労ビザ社員入社手続、年金脱退・加入手続四个种别。
+- 「その他」绑定汎用流程，并改为不需要申请区分。
+- 每个种别建一个空的必要资料模板（`application_category` 为空）。
+- 不写入任何服务项目数据。
+
+**兼容性与回滚**
+- 已有案件的 `workflow_template` 为空，继续使用 13 阶段，不回填。
+- 已有单据没有 `line_key`，下次修改明细时才补上，不回填。
+- 旧代码不写入新列也能 INSERT：JSON 列有表达式默认值，布尔列有 DB 默认值，`tests_db_defaults` 会检查。
+- `cases/0024` 可以反向执行，`cases` 和 `accounting` 都可以回滚到 0021（已在独立 QA 库验证回滚和再迁移）。
+- 回滚会丢失流程绑定、服务项目、底价快照、关联案件和受付快照；明细行 JSON 中的 `line_key` 和 `service` 会留下，旧代码会忽略。
+
+#### E. 文件批量操作
+
+批量上传与 ZIP 下载原则上复用现有逐文件记录，不要求把多个文件合并成一个数据库对象。需要确保每个文件均保存案件、资料分类、原始文件名、存储键、大小、校验值、上传人和时间。ZIP 为即时或短期生成物，不作为永久业务文件写入，除非后续另有归档要求。
+
+P2 已实施（2026-10-04，本地）：**没有结构变化，也没有 migration**。
+- 现有的 `case_documents` 已有所需字段：`case_id`、`category`、`file_name`（原始文件名）、`file`（UUID 存储键）、`file_size`、`sha256`、`uploaded_by_id`、`created_at`。批量上传时每个文件仍建一条记录。
+- ZIP 只写在临时文件里，不建记录，也不保存文件；只有审计（`document_zip_download` 等）留下记录。
+- 必要资料批量更新只修改现有 `case_checklist_items` 的列：`is_completed`、`completed_at`、`completed_by`、`received_at`、`responsible_party`、`acquisition_place`、`note`。
+
+#### F. 清風模板元数据
+
+PSD／背景文件应作为受版本控制的模板资产保存，数据库只记录必要元数据：模板版本、资产校验值、姓名／日期区域配置、所需字体标识、启用状态。生成记录保存模板版本、输入姓名、日期、输出文件和生成结果。不得把“任意文字覆盖项”继续作为主要业务接口。
+
+**P5 单模板实际结构（2026-10-06 本地已实现，含同日独立审查修正；migration `accounting/0023_seifu_notice_fixed_fields`、`accounting/0024_seifu_notice_pdf_generations`；生产未部署）**
+
+记录表 `accounting_seifu_notice_pdf_records` 新增的列（都可空，旧代码仍能 INSERT，旧记录不回填）：
+
+| 列 | 说明 |
+|---|---|
+| `recipient_name` | 宛名。生成时必填；规则见 `DEVELOPMENT_PLAN.md` §5.13（最长 40 字，列长 100） |
+| `permit_number` | 許可番号。NFKC 规范化并大写；3～12 位英数字，可含连字符 |
+| `issue_date` | 通知日。2000～2099 年 |
+| `template_key` | 当前固定为 `seifu_2year_2027`，是将来扩展多模板的入口 |
+
+新表 `accounting_seifu_notice_pdf_generations`（`SeifuNoticePdfGeneration`，只记录成功的生成）：
+
+| 列 | 说明 |
+|---|---|
+| `record_id` | 所属记录，SET_NULL。删除记录后生成记录仍保留 |
+| `status` | 只有 `success`。失败不建记录，只写审计 |
+| `request_id` | 画面每次操作的 ID，唯一，可空。同一 ID 重复提交时返回已有记录 |
+| `recipient_name`、`permit_number`、`notice_number`、`issue_date` | 生成时的输入值和派生的编号（快照） |
+| `template_key`、`template_version`、`font_version` | 模板标识，以及模板文件和字体文件 SHA-256 的前 16 位 |
+| `method` | 生成方式，`server_fixed_layout` |
+| `file`、`file_sha256`、`file_size` | 存储中的 PDF（`seifu_notice_pdfs/YYYY/MM/<uuid>.pdf`）及其摘要和大小。确认存储中存在且大小一致后才写入 |
+| `created_by_id`、`created_at` | 生成人和生成时间 |
+
+- 旧列 `text_items` 保留，API 只读；修改旧记录时不再清空（审查前的实现会清空，已修正）。
+- 课程年数和在籍期間是模板常量，不写进每条记录。
+- 模板 PDF 放在受版本控制的 `backend/assets/pdf_templates/seifu/`。MS Mincho 属于需单独授权的运行资产，通过 `SEIFU_MS_MINCHO_FONT_PATH` 配置，开发环境的默认路径在 Git 忽略的 media 目录中。`backend/.dockerignore` 会把 media 排除在镜像之外。
+- 回滚：
+  - 回滚 `0024` 会删除生成记录表，已生成的 PDF 文件留在存储中，需要另行清理；
+  - 回滚 `0023` 只删除上述四列，旧的 `title/status/text_items/note` 数据保留；
+  - 回滚后旧代码会恢复任意文字工具，正式回滚时应同时限制旧 URL 的访问。
+
+#### P1 实际结构（2026-10-03 本地已实现，migration `accounting/0021_voucher_history_visa_generations`；生产未部署）
+
+**`accounting_voucher_status_history`**（`VoucherStatusHistory`，请求书・领受书状态履历；只追加，API 不提供修改或删除）
+
+| 列 | 说明 |
+|---|---|
+| `voucher_id` | FK → `accounting_vouchers`，可空，`on_delete=SET_NULL`。单据删除后履历仍保留 |
+| `document_kind` | `invoice` / `receipt` |
+| `voucher_number` | 变更时的单据编号（单据删除后仍可识别） |
+| `from_status` / `to_status` | 变更前后的状态（旧数据的空状态 `''` 按草稿处理） |
+| `version` | 到 `issued` 的变更为第 N 版（以前的发行次数 + 1），其他变更为 0 |
+| `snapshot` | 变更后的单据内容：编号、日期、收件人、明细（含 `unit`、`note`）、金额、备注、付款信息、两种状态 |
+| `reason` | 理由／备注（最长 500） |
+| `changed_by_id` / `changed_at` | 操作者（SET_NULL）与时间 |
+
+**`accounting_visa_return_pdf_generations`**（`VisaReturnPdfGeneration`，Visa PDF 生成记录；成功和失败都记录）
+
+| 列 | 说明 |
+|---|---|
+| `application_id` | FK → Visa 申请（CASCADE） |
+| `status` | `success` / `failed` |
+| `method` | `form`（表单字段写入）/ `coordinates`（坐标绘制） |
+| `template_name` / `template_version` | 使用的 PDF 模板与版本（模板 PDF + 映射／坐标 JSON 的 SHA-256 前 16 位） |
+| `guarantor_template_id` / `guarantor_template_version` | 担保人模板（SET_NULL）与选择时的模板 `updated_at` |
+| `file` / `file_sha256` / `file_size` | 成功时的文件（`visa_return_pdfs/YYYY/MM/<uuid>.pdf`）及其校验值和大小 |
+| `error_code` / `error_message` | 失败的种别与可读说明 |
+| `details` | 写入统计，例如 `drawn_fallback`（无法写入表单字段、改为绘制的字段）；`source` 表示生成来源，`single`（generate-pdf）或 `batch_zip`（批量 ZIP） |
+| `created_by_id` / `created_at` | 生成者与时间 |
+
+**`accounting_visa_return_applications.guarantor_template_id`**：可空 FK → `VisaGuarantorTemplate`（SET_NULL）。
+- `guarantor_snapshot` 在 API 中为只读，只由服务器按该模板生成，并带上 `guarantor_template_id`、`template_name`、`template_version`。
+- 取消模板时清空快照；没有模板的旧数据保持原样。
+- 手入力的担保人信息保存在 `guarantor_*` 列和 `form_data`，生成 PDF 时优先于快照。
+
+**兼容性**
+- 只新增两张表和一个可空列，不改已有列，也不需要数据回填。
+- 旧记录的 `guarantor_template` 为 NULL，仍按以前的快照和手入力值生成 PDF。
+- 回滚到旧代码时，旧代码不会写入这些表。但旧代码删除带履历的单据或带生成记录的 Visa 申请时，会被外键拒绝（Django 的 SET_NULL／CASCADE 在应用层执行），与 11.10 末条的情况相同。
+- 生成记录的 PDF 文件约 20MB／份，保存在 media 卷中，需要关注磁盘空间。
+
+#### G. P6 追加（2026-10-07 本地已实现；生产未部署）
+
+migration：`accounting/0025_service_item_price_status`、`0026_db_defaults_for_rollback_compat_p6`、`0027_seed_provisional_service_items`、`customers/0011_reveal_my_number_permission`、`documents/0006_document_content_label`、`0007_db_defaults_for_rollback_compat_p6`。
+
+`accounting_service_items`（ServiceItem）：
+
+| 列 | 说明 |
+|---|---|
+| `code` | 基本项目的固定代码（唯一，可空；手动建立的项目为空） |
+| `price_status` | `provisional` / `confirmed`，默认 `provisional`（DB 默认值 `'provisional'`） |
+| `price_confirmed_at` / `price_confirmed_by_id` | 确定时间和确定人（User，SET_NULL）；回到暂定时清空 |
+
+- 明细快照（`line_items[].service`）和案件快照（`Case.service_items[]`）新增 `price_status`、`code`，保存选择时的状态，之后不会变化。
+- `0027` 投入的 8 项和回滚条件见 `DEVELOPMENT_PLAN.md` §5.14。
+
+`case_documents`（Document）：
+
+| 列 | 说明 |
+|---|---|
+| `content_label` | 资料内容（新登录时必填，最长 60；DB 默认值 `''`） |
+| `display_name` | 后端生成的「资料内容-顾客名.原扩展名」，重名时加 ` (ID n)`（DB 默认值 `''`） |
+
+- 原文件名 `file_name` 和保存名（`file`，UUID）不变。旧文件的两列都为空，下载时使用原文件名。
+
+权限：`customers.reveal_my_number`（Customer 的 Meta permissions）。My Number 的列和加密方式没有变化。

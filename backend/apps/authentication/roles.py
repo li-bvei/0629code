@@ -21,6 +21,7 @@ ROLE_PERMISSIONS = {
         'cases.case_change_all',
         'cases.manage_case_settings',
         'customers.view_sensitive_identity',
+        'customers.reveal_my_number',  # P6：既定はシステム管理者のみ（他は grant_business_permission で個別付与）
         'customers.customer_link_all',
         'customers.company_link_all',
         'documents.document_download_all',
@@ -37,6 +38,10 @@ ROLE_PERMISSIONS = {
         'real_estate.close_legal_ledger_year',
         'real_estate.import_real_estate',
         'office.manage_office_settings',
+        # P4 サービス価格マスタ・委託底価（2026-10-06 決定：会計管理者とシステム管理者）
+        'accounting.use_service_item',
+        'accounting.manage_service_item',
+        'accounting.view_service_floor_price',
     ],
     ACCOUNTING_ADMIN: [
         'real_estate.manage_profit_distribution',
@@ -54,12 +59,16 @@ ROLE_PERMISSIONS = {
         'accounting.use_visa',
         'accounting.use_tax_renewal',
         'accounting.use_seifu',
+        'accounting.use_service_item',
+        'accounting.manage_service_item',
+        'accounting.view_service_floor_price',
     ],
     BUSINESS_ADMIN: [
         'cases.use_cases',
         'cases.case_view_all',
         'customers.customer_view_all',
         'documents.document_view_all',
+        'accounting.use_service_item',  # P4：新規受付でサービス項目（参考）を選ぶ。底価は見られない
         'real_estate.use_real_estate',
         'real_estate.view_real_estate',
         'real_estate.create_real_estate',
@@ -72,6 +81,7 @@ ROLE_PERMISSIONS = {
     STAFF: [
         'cases.use_cases',
         'accounting.use_expense',
+        'accounting.use_service_item',  # P4：新規受付でサービス項目（参考）を選ぶ。底価は見られない
         'real_estate.use_real_estate',
         'real_estate.view_real_estate',
         'real_estate.create_real_estate',

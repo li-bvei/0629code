@@ -1,7 +1,6 @@
 """P2 文件管理：アップロード検査・メタデータ・分類・Checklist 関連・アーカイブ/復元・差し替え履歴・受保護ダウンロード維持。"""
 import hashlib
 import os
-import shutil
 import tempfile
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -16,6 +15,7 @@ from apps.customers.models import Customer
 from apps.documents.models import Document, DocumentReplacement
 from apps.employees.models import Employee
 from apps.timelines.models import Timeline
+from apps.common.test_isolation import safe_rmtree
 
 PDF = b'%PDF-1.4 test document'
 
@@ -23,7 +23,7 @@ PDF = b'%PDF-1.4 test document'
 class DocumentManagementTests(TestCase):
     def setUp(self):
         self.media = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.media, True)
+        self.addCleanup(safe_rmtree, self.media)
         override = override_settings(MEDIA_ROOT=self.media, PROTECTED_MEDIA_X_ACCEL=False)
         override.enable()
         self.addCleanup(override.disable)
@@ -42,7 +42,7 @@ class DocumentManagementTests(TestCase):
 
     def upload(self, user, name='在留カード.pdf', content=PDF, **extra):
         self.client.force_login(user)
-        body = {'case': self.case_a.id, 'title': '在留カード', 'category': 'residence',
+        body = {'case': self.case_a.id, 'title': '在留カード', 'category': 'residence', 'content_label': '在留カード',
                 'file': SimpleUploadedFile(name, content, content_type='application/x-evil'), **extra}
         return self.client.post('/api/documents/', body)
 

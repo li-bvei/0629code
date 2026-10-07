@@ -5,7 +5,7 @@ from django.db import IntegrityError
 from django.db.models import Count, Max, Q
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -78,7 +78,7 @@ class ReceptionCreateView(BusinessAccessMixin, APIView):
         """案件を作る受付では担当者を必ず決める（未指定なら本人、他人指定は case_change_all のみ）。"""
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         case_data = data.get('case')
-        if isinstance(case_data, dict) and case_data.get('case_type_master') and case_data.get('application_category'):
+        if isinstance(case_data, dict) and case_data.get('case_type_master'):
             case_data = dict(case_data)
             try:
                 case_data['responsible_employee'] = self.access_rule.resolve_create_responsible_id(
@@ -115,6 +115,16 @@ class ReceptionCreateView(BusinessAccessMixin, APIView):
         if existing_company_id not in (None, ''):
             COMPANY_RULE.check_link(policy, companies.filter(pk=existing_company_id).first(),
                                     via='reception.existing_company_id')
+        case_data = data.get('case')
+        if isinstance(case_data, dict):
+            # P4：関連元の案件は閲覧できる案件だけ（範囲外は存在を明かさない）
+            parent_id = case_data.get('parent_case')
+            if parent_id not in (None, ''):
+                if not policy.queryset('case', 'view').filter(pk=parent_id).exists():
+                    raise ValidationError({'case': {'parent_case': '関連元の案件が見つかりません。'}})
+            # P4：サービス項目（参考）を選ぶにはサービス項目の閲覧権限が必要
+            if case_data.get('service_items') and not policy.has('accounting.use_service_item'):
+                raise PermissionDenied('サービス項目を選ぶ権限がありません。')
 
     def post(self, request):
         request_id = (request.data.get('request_id') or '').strip()

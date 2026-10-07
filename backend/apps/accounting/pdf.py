@@ -322,7 +322,13 @@ def get_line_item_name(item):
 
 
 def get_line_item_note(item):
-    return str(item.get('note') or item.get('remarks') or '')
+    return str(item.get('note') or item.get('remarks') or '').strip()
+
+
+def get_line_quantity_text(item):
+    quantity = plain_number(item.get('quantity'))
+    unit = str(item.get('unit') or '').strip()
+    return f'{quantity}{unit}' if quantity and unit else quantity
 
 
 def parse_bank_info(bank_info):
@@ -599,9 +605,10 @@ def build_billing_style_pdf(voucher, *, with_seal, title, heading, greeting, sec
         detail_rows.append([
             {'text': str(item.get('item_name') or ''), 'align': 'left'},
             {'text': yen(item.get('unit_price')) if item.get('unit_price') not in (None, '') else '', 'align': 'right'},
-            {'text': plain_number(item.get('quantity')), 'align': 'center'},
+            # 単位は数量と一緒に常に印字する（例：2件）。明細の備考は入力があるときだけ印字する（顧客に見える）
+            {'text': get_line_quantity_text(item), 'align': 'center'},
             {'text': yen(get_line_total(item)) if item.get('item_name') or item.get('line_total') not in (None, '') else '', 'align': 'right'},
-            {'text': '', 'align': 'left'},
+            {'text': get_line_item_note(item), 'align': 'left'},
         ])
 
     while len(detail_rows) < 6:

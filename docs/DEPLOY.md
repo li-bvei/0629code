@@ -464,3 +464,121 @@ sha256sum backups/db_$STAMP.sql backups/media_$STAMP.tgz > backups/checksums_$ST
 - 删除（DELETE）会物理删除文件，只在确有必要时执行；批量删除必须先预览并获得批准。
 - 替换历史和替换前的文件不会自动删除。需要清理时，另行设计并获得批准。
 - 没有接入杀毒软件，只做扩展名白名单和文件头签名检查。如果要接入外部扫描，另行评估。
+
+## P6 部署与生产数据整理（D5、D11、费用负责人回填）
+
+> **状态（2026-10-07）：没有执行。** AI 没有服务器访问权限，生产操作由用户在服务器终端执行。以下步骤必须在 P6 代码验收和部署之后、按顺序执行。任何一步出现异常都要**立即停止并报告**，不要继续写入。整个过程不修改任何密码。
+
+### P6 部署要点
+
+- 新 migration：`accounting/0025～0027`（服务项目价格状态；投入 8 项暂定价格项目）、`customers/0011`（My Number 表示权限）、`documents/0006～0007`（资料内容、显示名）。都是新增，旧代码仍可运行。
+- 新依赖：`jpholiday==1.0.3`（已在 `requirements.txt` 中，构建镜像时安装，运行时不需要外网）。
+- migrate 后执行 `setup_access_roles`：先 dry-run 确认只有 `system_admin` 增加 `customers.reveal_my_number`，再加 `--apply --yes`。
+- 需要个别授权时：`$RUN grant_business_permission --username <账号> --permission customers.reveal_my_number`，dry-run 确认后加 `--apply --yes`；收回时加 `--revoke`。
+- 不新增 `FIELD_ENCRYPTION_KEY`，My Number 不重新加密。
+
+### 变量
+
+```bash
+cd /www/wwwroot/0629code
+mkdir -p p6_ops
+EXEC="docker compose --env-file .env.prod exec -T backend python manage.py"
+STAMP=$(date +%Y%m%d_%H%M)
+```
+
+### 1. 只读确认（结果写入 `p6_ops/readonly_$STAMP.txt`，交用户确认）
+
+```bash
+{
+git rev-parse HEAD; git status --short | head
+docker compose --env-file .env.prod ps
+$EXEC showmigrations --plan | grep '\[ \]' || echo "no pending migrations"
+$EXEC check_access_config
+$EXEC shell -c "
+from django.contrib.auth.models import User
+from django.db.models import Count, Min, Max, Sum
+from apps.authentication.models import ProtectedAccount
+from apps.employees.models import Employee
+from apps.accounting.models import Expense
+print('protected', list(ProtectedAccount.objects.values_list('user__username', flat=True)))
+for u in User.objects.order_by('id'):
+    print('user', u.id, u.username, 'active', u.is_active, 'staff', u.is_staff, 'superuser', u.is_superuser,
+          sorted(u.groups.values_list('name', flat=True)), 'employee', getattr(getattr(u, 'employee', None), 'id', None))
+print('employees', list(Employee.objects.values_list('id', 'name', 'is_active')))
+q = Expense.objects.filter(owner__isnull=True)
+print('null_owner', q.aggregate(n=Count('id'), min_id=Min('id'), max_id=Max('id'), min_date=Min('expense_date'),
+      max_date=Max('expense_date'), min_amount=Min('amount'), max_amount=Max('amount'), total=Sum('amount')))
+"
+df -h / /var/lib/docker
+ls -lh backups p0_ops p6_ops 2>/dev/null | tail -20
+} 2>&1 | tee p6_ops/readonly_$STAMP.txt
+```
+
+确认要点（任何一项不符都停止）：
+
+- 提交和容器与已部署的 P6 一致，没有未执行的 migration。
+- 受保护账号只有 `zbry6947@gmail.com`（李）。
+- 李：`system_admin, accounting_admin, business_admin`，关联 Employee「李」。
+- 周（`zywwind@gmail.com`）、焦（`jiao`）：`business_admin, expense_viewer`，各自关联 Employee。如果 Group 不符，就停止（D11 不负责补 Group）。
+- NAING：截至 2026-10-03 只有担当者记录、没有账号。如果已建账号，必须是普通用户（staff、superuser 都是 False，没有管理 Group），否则停止并报告，不要修改。
+- `null_owner` 的件数、ID 范围、日期范围、金额范围都记录下来。件数以本次实测为准，不使用历史值 1335。
+- 磁盘剩余空间足够容纳数据库和媒体备份（至少是上一次备份大小的 2 倍）。
+
+### 2. 备份与完整性确认
+
+```bash
+docker compose --env-file .env.prod exec -T db sh -c 'mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --single-transaction "$MYSQL_DATABASE"' > p6_ops/db_before_p6data_$STAMP.sql
+docker run --rm -v 0629code_media_volume:/m:ro -v "$PWD/p6_ops":/b alpine tar czf /b/media_before_p6data_$STAMP.tgz -C /m .
+tail -1 p6_ops/db_before_p6data_$STAMP.sql | grep -q 'Dump completed' && echo "sql complete"
+gzip -t p6_ops/media_before_p6data_$STAMP.tgz && echo "tgz ok"
+tar tzf p6_ops/media_before_p6data_$STAMP.tgz | wc -l
+sha256sum p6_ops/db_before_p6data_$STAMP.sql p6_ops/media_before_p6data_$STAMP.tgz | tee p6_ops/checksums_$STAMP.txt
+$EXEC export_access_snapshot --output /tmp/access_snapshot_before_p6data.json && docker compose --env-file .env.prod cp backend:/tmp/access_snapshot_before_p6data.json p6_ops/
+```
+
+没有出现 `sql complete` 和 `tgz ok`、文件数与第 1 步明显不一致，或者快照没有生成时，都要停止。
+
+### 3. dry-run（不写入）
+
+```bash
+# D5：只确认，不修改。保护账号为空或有问题时 check_access_config 会失败
+$EXEC check_access_config | tee p6_ops/d5_check_$STAMP.txt
+# D11：确认降级对象只有焦、周，并且他们已经有业务角色
+$EXEC shell -c "
+from django.contrib.auth.models import User
+for u in User.objects.filter(username__in=['jiao', 'zywwind@gmail.com']):
+    print(u.username, 'staff', u.is_staff, 'superuser', u.is_superuser, sorted(u.groups.values_list('name', flat=True)))
+" | tee p6_ops/d11_dryrun_$STAMP.txt
+# 费用负责人回填（dry-run）：记下输出的件数 N，必须与第 1 步的 null_owner 一致
+$EXEC backfill_expense_owner --username zbry6947@gmail.com | tee p6_ops/backfill_dryrun_$STAMP.txt
+```
+
+### 4. 向用户报告并取得批准
+
+报告第 1～3 步的结果（账号关系、件数 N、ID、日期和金额范围、备份文件与校验值），得到明确批准后再进入第 5 步。
+
+### 5. 执行（只在第 1～4 步都一致时）
+
+```bash
+# D5：开启 Admin 只允许受保护账号
+# .env.prod：DJANGO_PROTECTED_ADMIN_ENFORCEMENT=True
+docker compose --env-file .env.prod up -d backend
+$EXEC check_access_config
+# D11：焦、周去掉 superuser 和 staff，保留业务角色（不改密码）
+$EXEC shell -c "from django.contrib.auth.models import User; print(User.objects.filter(username__in=['jiao','zywwind@gmail.com']).update(is_superuser=False, is_staff=False))"   # 期望输出 2
+# 回填：N 使用第 3 步的实际值
+docker compose --env-file .env.prod run --rm --no-deps -v $PWD/p6_ops:/ops backend python manage.py backfill_expense_owner --username zbry6947@gmail.com --apply --yes --expect-count N --output-dir /ops
+```
+
+### 6. 验证
+
+- 再次执行第 1 步的 shell：
+  - 焦、周的 staff 和 superuser 都是 False，Group 不变；
+  - 李不变，NAING 不变；
+  - `null_owner` 为 0；
+  - 生成了回填 CSV。
+- 李能进入 Admin；焦、周登录后业务范围不变，但不能进入 Admin 和账号管理。
+- 回滚：
+  - 权限用 `restore_access_snapshot /ops/access_snapshot_before_p6data.json`（先看差异，再加 `--apply --yes`）；
+  - 回填用 `backfill_expense_owner --rollback /ops/<csv>`；
+  - D5 改回 `DJANGO_PROTECTED_ADMIN_ENFORCEMENT=False` 后执行 `up -d backend`。

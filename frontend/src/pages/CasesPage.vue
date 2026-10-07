@@ -10,11 +10,11 @@ import RemoteCompanySelect from '../components/RemoteCompanySelect.vue'
 import RemoteStaffSelect from '../components/RemoteStaffSelect.vue'
 import type { Case, CaseApplicationCategory, CasePayload, CaseTypeMaster } from '../types/api'
 import {
-  getCaseDisplayStatus,
   getCaseDisplayStatusTagType,
   getCaseRegistrationStatusLabel,
   getCaseRegistrationStatusTagType,
 } from '../utils/caseStatus'
+import { caseProgressLabel, needsApplicationCategory } from '../utils/caseWorkflow'
 
 const router = useRouter()
 const loading = ref(false)
@@ -62,11 +62,17 @@ const caseForm = ref<CasePayload>({
   completed_at: null,
 })
 
-const rules: FormRules<CasePayload> = {
+// P4：入管以外の種別（業務フローを持つ種別）は申請区分なしで作成できる
+const caseFormNeedsCategory = computed(() => needsApplicationCategory(
+  caseTypes.value.find((caseType) => caseType.id === caseForm.value.case_type_master) ?? null,
+))
+const rules = computed<FormRules<CasePayload>>(() => ({
   case_type_master: [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
-  application_category: [{ required: true, message: '申請区分を選択してください。', trigger: 'change' }],
+  application_category: caseFormNeedsCategory.value
+    ? [{ required: true, message: '申請区分を選択してください。', trigger: 'change' }]
+    : [],
   customer: [{ required: true, message: '顧客を選択してください。', trigger: 'change' }],
-}
+}))
 
 const caseWorkViewOptions = [
   { label: '未完了', value: 'incomplete' },
@@ -276,7 +282,7 @@ const confirmDeleteCase = async (caseItem: Case) => {
         <el-table-column label="現在の進捗" width="140">
           <template #default="{ row }">
             <el-tag :type="getCaseDisplayStatusTagType(row.status)">
-              {{ getCaseDisplayStatus(row.status) }}
+              {{ caseProgressLabel(row) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -378,7 +384,7 @@ const confirmDeleteCase = async (caseItem: Case) => {
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="申請区分" prop="application_category">
+          <el-form-item :label="caseFormNeedsCategory ? '申請区分' : '申請区分（この種別では不要）'" prop="application_category">
             <el-select
               v-model="caseForm.application_category"
               filterable

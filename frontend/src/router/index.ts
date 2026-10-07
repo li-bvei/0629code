@@ -39,7 +39,9 @@ const RealEstateDetailPage = () => import('../pages/real-estate/RealEstateDetail
 const RealEstateImportPage = () => import('../pages/real-estate/RealEstateImportPage.vue')
 const RealEstateListPage = () => import('../pages/real-estate/RealEstateListPage.vue')
 const EstimatesPage = () => import('../pages/vouchers/EstimatesPage.vue')
-const TodayWorkbenchPage = () => import('../pages/TodayWorkbenchPage.vue')
+const ServiceItemsPage = () => import('../pages/vouchers/ServiceItemsPage.vue')
+const DailyPlanPage = () => import('../pages/DailyPlanPage.vue')
+const DailyReportsPage = () => import('../pages/DailyReportsPage.vue')
 import { landingPath, requiredPermissionFor } from '../utils/access'
 import { useAuthStore } from '../stores/auth'
 import { handleChunkLoadError } from './chunkError'
@@ -64,9 +66,19 @@ const router = createRouter({
           component: DashboardPage,
         },
         {
+          // 旧「今日の作業台」は毎日の計画に統合（P3）。古いブックマークは毎日の計画へ
           path: 'workbench',
-          name: 'workbench',
-          component: TodayWorkbenchPage,
+          redirect: '/daily-plan',
+        },
+        {
+          path: 'daily-plan',
+          name: 'daily-plan',
+          component: DailyPlanPage,
+        },
+        {
+          path: 'daily-reports',
+          name: 'daily-reports',
+          component: DailyReportsPage,
         },
         {
           path: 'reception/new',
@@ -257,6 +269,11 @@ const router = createRouter({
           path: 'vouchers/contracts',
           name: 'voucher-contracts',
           component: ContractsPage,
+        },
+        {
+          path: 'vouchers/service-items',
+          name: 'voucher-service-items',
+          component: ServiceItemsPage,
         },
         {
           path: 'vouchers/certificates',

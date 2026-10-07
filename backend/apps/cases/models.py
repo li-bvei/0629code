@@ -3,12 +3,54 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 
 
+class WorkflowTemplate(models.Model):
+    """案件の業務フロー（P4）。案件種別に結び付け、案件作成時にその案件へ固定する。
+
+    フローを持たない案件（workflow_template が空）は従来の 13 段階の進捗（入管申請）のまま。
+    既存案件は移行・回填しない。
+    """
+
+    FAMILY_IMMIGRATION = 'immigration'
+    FAMILY_PROFESSIONAL = 'professional'
+    FAMILY_EMPLOYEE_PROCEDURE = 'employee_procedure'
+    FAMILY_GENERAL = 'general'
+    FAMILY_CHOICES = [
+        (FAMILY_IMMIGRATION, '入管申請'),
+        (FAMILY_PROFESSIONAL, '専門家委託'),
+        (FAMILY_EMPLOYEE_PROCEDURE, '従業員・社会保険手続'),
+        (FAMILY_GENERAL, '汎用'),
+    ]
+
+    code = models.SlugField('コード', max_length=80, unique=True)
+    name = models.CharField('名称', max_length=100)
+    family = models.CharField('フローの系統', max_length=30, choices=FAMILY_CHOICES)
+    description = models.TextField('説明', blank=True)
+    is_active = models.BooleanField('有効', default=True)
+    sort_order = models.PositiveIntegerField('並び順', default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'case_workflow_templates'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
 class CaseTypeMaster(models.Model):
     name = models.CharField(max_length=100, unique=True)
     code = models.SlugField(max_length=80, unique=True)
     number_abbreviation = models.CharField(max_length=20, blank=True)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    # P4：案件種別ごとの業務フロー（空なら従来の 13 段階）。変更しても既存案件のフローは変わらない。
+    workflow_template = models.ForeignKey(
+        WorkflowTemplate, verbose_name='業務フロー', on_delete=models.PROTECT, related_name='case_types',
+        null=True, blank=True,
+    )
+    # P4：申請区分が必要な種別か（入管申請以外の種別は申請区分なしで作成できる）
+    requires_application_category = models.BooleanField('申請区分が必要', default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -247,6 +289,23 @@ class Case(models.Model):
     waiting_note = models.TextField('待機メモ', blank=True)
     waiting_since = models.DateField('待機開始日', blank=True, null=True)
     waiting_until = models.DateField('待機予定終了日', blank=True, null=True)
+    # --- 業務フロー（P4）。作成時に案件種別のフローを固定する。空なら従来の 13 段階（status）で管理する。
+    # フローを持つ案件では status は段階の base_status（一覧・期限などの既存処理用）に合わせて変わる。
+    workflow_template = models.ForeignKey(
+        WorkflowTemplate, verbose_name='業務フロー', on_delete=models.PROTECT, related_name='cases',
+        null=True, blank=True,
+    )
+    workflow_stage = models.ForeignKey(
+        'cases.WorkflowStage', verbose_name='現在の段階', on_delete=models.PROTECT, related_name='cases',
+        null=True, blank=True,
+    )
+    # 関連元の案件（例：経営管理→就労変更後の年金手続・入社手続を元の在留案件に結び付ける）。任意。
+    parent_case = models.ForeignKey(
+        'self', verbose_name='関連元の案件', on_delete=models.SET_NULL, related_name='child_cases',
+        null=True, blank=True,
+    )
+    # 新規受付で選んだサービス項目（参考）のスナップショット。底価は含めない。マスタを変えても変わらない。
+    service_items = models.JSONField('サービス項目（参考）', default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -282,8 +341,11 @@ class Case(models.Model):
         for attempt in range(3):
             if self.case_type_master and not self.case_type:
                 self.case_type = self.case_type_master.name
-            if not self.case_type_master or not self.application_category:
+            if not self.case_type_master:
                 raise ValidationError('案件種別と申請区分を選択してください。')
+            if self.case_type_master.requires_application_category and not self.application_category:
+                raise ValidationError('案件種別と申請区分を選択してください。')
+            self._assign_initial_workflow()
             self.case_number = self.generate_case_number(
                 case_type_master=self.case_type_master,
                 application_category=self.application_category,
@@ -297,6 +359,51 @@ class Case(models.Model):
                 self.case_number = ''
                 if attempt == 2:
                     raise
+
+
+    def _assign_initial_workflow(self):
+        """新しい案件に案件種別の業務フローと最初の段階を固定する（P4）。既存案件には呼ばない。"""
+        if self.workflow_template_id or self.case_type_master is None:
+            return
+        template = self.case_type_master.workflow_template
+        if template is None or not template.is_active:
+            return
+        stage = template.stages.filter(is_active=True).exclude(
+            base_status=Case.STATUS_WITHDRAWN,
+        ).order_by('sort_order', 'id').first()
+        if stage is None:
+            raise ValidationError('業務フローに有効な段階がありません。案件設定を確認してください。')
+        self.workflow_template = template
+        self.workflow_stage = stage
+        self.status = stage.base_status
+
+
+class WorkflowStage(models.Model):
+    """業務フローの段階（P4）。base_status は既存処理（一覧の完了判定・期限・並び順）用の対応先。"""
+
+    template = models.ForeignKey(WorkflowTemplate, verbose_name='業務フロー', on_delete=models.CASCADE,
+                                 related_name='stages')
+    code = models.SlugField('コード', max_length=40)
+    name = models.CharField('段階名', max_length=80)
+    base_status = models.CharField('対応する進捗', max_length=30, choices=Case.STATUS_CHOICES)
+    sort_order = models.PositiveIntegerField('並び順', default=0)
+    is_active = models.BooleanField('有効', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'case_workflow_stages'
+        ordering = ['template_id', 'sort_order', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['template', 'code'], name='uniq_workflow_stage_code'),
+        ]
+
+    def __str__(self):
+        return f'{self.template.name}：{self.name}'
+
+    @property
+    def is_withdrawn(self):
+        return self.base_status == Case.STATUS_WITHDRAWN
 
 
 class CaseChecklistTemplate(models.Model):

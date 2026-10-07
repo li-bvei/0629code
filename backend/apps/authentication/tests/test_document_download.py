@@ -1,7 +1,6 @@
 """受保護ダウンロード・プレビュー：権限（担当／他人／業務管理者／李）、監査、Range、
 ファイル名エンコード、パストラバーサル、X-Accel-Redirect、公開 /media/ の不在。"""
 import os
-import shutil
 import tempfile
 
 from django.core.files.base import ContentFile
@@ -14,6 +13,7 @@ from apps.cases.models import Case, CaseApplicationCategory, CaseTypeMaster
 from apps.customers.models import Customer
 from apps.documents.models import Document
 from apps.employees.models import Employee
+from apps.common.test_isolation import safe_rmtree
 
 
 class DocumentFixtureMixin:
@@ -37,7 +37,7 @@ class DocumentFixtureMixin:
 
     def tearDown(self):
         self.override.disable()
-        shutil.rmtree(self.media, ignore_errors=True)
+        safe_rmtree(self.media)
 
     def _document(self, name, content):
         doc = Document(case=self.case_a, title=name, file_name=name, file_size=len(content), file_path='')
@@ -137,12 +137,12 @@ class DocumentDownloadTests(DocumentFixtureMixin, TestCase):
 
         self.client.force_login(self.staff_b)
         response = self.client.post('/api/documents/', {
-            'case': self.case_a.id, 'title': 'x', 'file': SimpleUploadedFile('x.txt', b'x'),
+            'case': self.case_a.id, 'title': 'x', 'content_label': '合成資料', 'file': SimpleUploadedFile('x.txt', b'x'),
         })
         self.assertEqual(response.status_code, 403)
         self.client.force_login(self.staff_a)
         response = self.client.post('/api/documents/', {
-            'case': self.case_a.id, 'title': 'x', 'file': SimpleUploadedFile('x.txt', b'x'),
+            'case': self.case_a.id, 'title': 'x', 'content_label': '合成資料', 'file': SimpleUploadedFile('x.txt', b'x'),
         })
         self.assertEqual(response.status_code, 201, response.content)
         doc_id = response.json()['id']

@@ -1,11 +1,15 @@
 <script setup lang="ts">
-// 今日の作業台：自分の次の対応・待機案件・担当案件。全体表示は case_view_all（後端で判定）。
+// 案件の作業（旧「今日の作業台」の内容）：自分の次の対応・待機案件・担当案件。全体表示は case_view_all（後端で判定）。
+// P3 で「毎日の計画」画面へ統合した。次の対応はボタンで計画の項目として追加できる（add-to-plan）。
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { completeCaseNextAction, endCaseWaiting, getTodayWorkbench } from '../api/cases'
-import { useAuthStore } from '../stores/auth'
-import { formatDate } from '../utils/date'
-import type { TodayWorkbench, WorkbenchCaseRow } from '../types/api'
+import { completeCaseNextAction, endCaseWaiting, getTodayWorkbench } from '../../api/cases'
+import { useAuthStore } from '../../stores/auth'
+import { formatDate } from '../../utils/date'
+import type { TodayWorkbench, WorkbenchCaseRow } from '../../types/api'
+
+const props = defineProps<{ canAddToPlan?: boolean }>()
+const emit = defineEmits<{ (e: 'add-to-plan', row: WorkbenchCaseRow): void }>()
 
 const auth = useAuthStore()
 const scope = ref<'mine' | 'all'>('mine')
@@ -73,26 +77,27 @@ const endWaiting = async (row: WorkbenchCaseRow) => {
 }
 
 onMounted(load)
+defineExpose({ load })
 </script>
 
 <template>
-  <section class="page workbench-page">
-    <div class="page-header">
-      <h1>今日の作業台</h1>
+  <section class="case-work-panel">
+    <div class="panel-header">
+      <h2>案件の作業</h2>
       <el-radio-group v-if="canViewAll" :model-value="scope" @change="(v: string | number | boolean | undefined) => changeScope(v as 'mine' | 'all')">
         <el-radio-button value="mine">自分</el-radio-button>
         <el-radio-button value="all">全体</el-radio-button>
       </el-radio-group>
     </div>
 
-    <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="page-alert" />
+    <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon class="panel-alert" />
     <el-alert
       v-if="data && !data.employee_linked && scope === 'mine'"
       title="このアカウントは担当者に関連付いていないため、自分の案件を表示できません。管理者に確認してください。"
       type="warning"
       show-icon
       :closable="false"
-      class="page-alert"
+      class="panel-alert"
     />
 
     <div v-if="data" class="workbench-summary">
@@ -138,8 +143,9 @@ onMounted(load)
             <el-table-column v-if="scope === 'all'" label="担当" width="120">
               <template #default="{ row }">{{ row.next_action_assignee_name || row.responsible_employee_name || '未割当' }}</template>
             </el-table-column>
-            <el-table-column width="110">
+            <el-table-column width="170">
               <template #default="{ row }">
+                <el-button v-if="props.canAddToPlan" size="small" type="primary" text @click="emit('add-to-plan', row)">計画に追加</el-button>
                 <el-button size="small" type="success" text @click="completeAction(row)">完了</el-button>
               </template>
             </el-table-column>
@@ -195,12 +201,18 @@ onMounted(load)
 </template>
 
 <style scoped>
-.page-header {
+.panel-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 16px;
 }
 
 .workbench-summary {
@@ -244,6 +256,10 @@ onMounted(load)
 .workbench-tile:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
+}
+
+.panel-alert {
+  margin-bottom: 12px;
 }
 
 .sub {

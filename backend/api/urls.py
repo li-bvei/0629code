@@ -14,6 +14,8 @@ from apps.cases.views import (
     CaseChecklistTemplateViewSet,
     CaseStatusSettingViewSet,
     CaseTypeMasterViewSet,
+    WorkflowStageViewSet,
+    WorkflowTemplateViewSet,
     CaseViewSet,
     ChecklistItemPresetViewSet,
     ResponsiblePartyPresetViewSet,
@@ -26,7 +28,7 @@ from apps.customers.views import CustomerViewSet, FamilyMemberViewSet, Residence
 from apps.documents.views import DocumentViewSet
 from apps.employees.views import EmployeeViewSet
 from apps.reminders.views import DismissedDeadlineViewSet, ReminderViewSet
-from apps.tasks.views import TaskViewSet
+from apps.tasks.views import DailyWorkReportViewSet, TaskViewSet
 from apps.timelines.views import TimelineViewSet
 from .health import health, readiness
 from .workbench import TodayWorkbenchView
@@ -42,6 +44,8 @@ router.register('company-staff', CompanyStaffViewSet, basename='company-staff')
 router.register('employees', EmployeeViewSet, basename='employee')
 router.register('cases', CaseViewSet, basename='case')
 router.register('case-type-masters', CaseTypeMasterViewSet, basename='case-type-master')
+router.register('workflow-templates', WorkflowTemplateViewSet, basename='workflow-template')
+router.register('workflow-stages', WorkflowStageViewSet, basename='workflow-stage')
 router.register('case-application-categories', CaseApplicationCategoryViewSet, basename='case-application-category')
 router.register('case-status-settings', CaseStatusSettingViewSet, basename='case-status-setting')
 router.register('case-acquisition-place-presets', AcquisitionPlacePresetViewSet, basename='case-acquisition-place-preset')
@@ -51,6 +55,7 @@ router.register('case-checklist-templates', CaseChecklistTemplateViewSet, basena
 router.register('case-checklist-template-items', CaseChecklistTemplateItemViewSet, basename='case-checklist-template-item')
 router.register('case-checklist-items', CaseChecklistItemViewSet, basename='case-checklist-item')
 router.register('tasks', TaskViewSet, basename='task')
+router.register('daily-reports', DailyWorkReportViewSet, basename='daily-report')
 router.register('reminders', ReminderViewSet, basename='reminder')
 router.register('dismissed-deadlines', DismissedDeadlineViewSet, basename='dismissed-deadline')
 router.register('timelines', TimelineViewSet, basename='timeline')

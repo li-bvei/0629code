@@ -4,12 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Briefcase,
+  Calendar,
   Coin,
   DataAnalysis,
   Document,
   EditPen,
   Expand,
   Fold,
+  FolderOpened,
   Files,
   List,
   Menu,
@@ -19,11 +21,11 @@ import {
   Reading,
   Setting,
   Tickets,
-  Upload,
   User,
   Van,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { NAVIGATION, filterNavigation, isGroup, type NavIcon, type NavItem } from '../utils/navigation'
 import GlobalSearch from '../components/GlobalSearch.vue'
 
 const route = useRoute()
@@ -33,6 +35,11 @@ const isSidebarOpen = ref(false)
 const isSidebarCollapsed = ref(localStorage.getItem('sidebarCollapsed') === '1')
 
 const activeMenu = computed(() => route.path)
+const navigation = computed(() => filterNavigation(NAVIGATION, auth.can))
+const icons: Record<NavIcon, unknown> = {
+  Calendar, Notebook, DataAnalysis, Briefcase, Tickets, EditPen, User, OfficeBuilding, FolderOpened, Coin, Money, List,
+  Van, Files, Document, Reading, Setting,
+}
 
 const closeSidebar = () => {
   isSidebarOpen.value = false
@@ -73,138 +80,29 @@ const handleLogout = async () => {
         router
         @select="closeSidebar"
       >
-        <el-sub-menu v-if="auth.can('cases.use_cases')" index="cases">
+        <!-- 構成は utils/navigation.ts（権限で絞り込み済み）。同じ画面への入口は 1 つだけ -->
+        <el-sub-menu v-for="group in navigation" :key="group.key" :index="group.key">
           <template #title>
-            <el-icon><Briefcase /></el-icon>
-            <span>案件業務</span>
+            <el-icon><component :is="icons[group.icon]" /></el-icon>
+            <span>{{ group.label }}</span>
           </template>
-          <el-menu-item index="/dashboard">
-            <el-icon><DataAnalysis /></el-icon>
-            <span>ダッシュボード</span>
-          </el-menu-item>
-          <el-menu-item index="/workbench">
-            <el-icon><List /></el-icon>
-            <span>今日の作業台</span>
-          </el-menu-item>
-          <el-menu-item index="/reception/new">
-            <el-icon><EditPen /></el-icon>
-            <span>新規受付</span>
-          </el-menu-item>
-          <el-menu-item index="/cases">
-            <el-icon><Tickets /></el-icon>
-            <span>案件一覧</span>
-          </el-menu-item>
-          <el-menu-item index="/customers">
-            <el-icon><User /></el-icon>
-            <span>顧客管理</span>
-          </el-menu-item>
-          <el-menu-item index="/companies">
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>会社管理</span>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu v-if="auth.can('accounting.use_expense')" index="accounting">
-          <template #title>
-            <el-icon><Coin /></el-icon>
-            <span>会計管理</span>
+          <template v-for="entry in group.children" :key="isGroup(entry) ? entry.key : entry.path">
+            <el-sub-menu v-if="isGroup(entry)" :index="entry.key">
+              <template #title>
+                <el-icon><component :is="icons[entry.icon]" /></el-icon>
+                <span>{{ entry.label }}</span>
+              </template>
+              <el-menu-item v-for="item in entry.children as NavItem[]" :key="item.path" :index="item.path">
+                <el-icon><component :is="icons[item.icon]" /></el-icon>
+                <span>{{ item.label }}</span>
+              </el-menu-item>
+            </el-sub-menu>
+            <el-menu-item v-else :index="entry.path">
+              <el-icon><component :is="icons[entry.icon]" /></el-icon>
+              <span>{{ entry.label }}</span>
+              <el-tag v-if="entry.tag" size="small" type="info">{{ entry.tag }}</el-tag>
+            </el-menu-item>
           </template>
-          <el-menu-item index="/accounting">
-            <el-icon><DataAnalysis /></el-icon>
-            <span>会計ダッシュボード</span>
-          </el-menu-item>
-          <el-menu-item index="/accounting/expenses">
-            <el-icon><Money /></el-icon>
-            <span>支出記録</span>
-          </el-menu-item>
-          <el-menu-item index="/accounting/expense-categories">
-            <el-icon><List /></el-icon>
-            <span>支出カテゴリ</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_income')" index="/accounting/income-sources">
-            <el-icon><Coin /></el-icon>
-            <span>収入元</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_vehicle')" index="/accounting/vehicle-usages">
-            <el-icon><Van /></el-icon>
-            <span>車両使用記録</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_project')" index="/accounting/projects">
-            <el-icon><Notebook /></el-icon>
-            <span>プロジェクト収支表</span>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu v-if="auth.canAny('accounting.use_voucher', 'accounting.use_estimate', 'accounting.use_contract', 'accounting.use_visa', 'accounting.use_tax_renewal', 'accounting.use_seifu')" index="vouchers">
-          <template #title>
-            <el-icon><Document /></el-icon>
-            <span>帳票管理</span>
-          </template>
-          <el-menu-item v-if="auth.can('accounting.use_voucher')" index="/vouchers/invoices">
-            <el-icon><Document /></el-icon>
-            <span>請求書・領収書</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_visa')" index="/vouchers/visa-return">
-            <el-icon><Files /></el-icon>
-            <span>返签 visa 表</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_tax_renewal')" index="/vouchers/tax-renewal">
-            <el-icon><Reading /></el-icon>
-            <span>税务证明更新用</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_seifu')" index="/vouchers/seifu-notice">
-            <el-icon><Document /></el-icon>
-            <span>清風合格通知書</span>
-            <el-tag size="small" type="info">暂停</el-tag>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_estimate')" index="/vouchers/estimates">
-            <el-icon><Document /></el-icon>
-            <span>見積書</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_contract')" index="/vouchers/contracts">
-            <el-icon><Document /></el-icon>
-            <span>契約書</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_voucher')" index="/vouchers/certificates">
-            <el-icon><Document /></el-icon>
-            <span>証明書</span>
-            <el-tag size="small" type="info">準備中</el-tag>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('accounting.use_voucher')" index="/vouchers/others">
-            <el-icon><Document /></el-icon>
-            <span>その他帳票</span>
-            <el-tag size="small" type="info">準備中</el-tag>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu v-if="auth.can('real_estate.use_real_estate')" index="real-estate">
-          <template #title>
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>不動産</span>
-          </template>
-          <el-menu-item index="/real-estate">
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>取引一覧</span>
-          </el-menu-item>
-          <el-menu-item v-if="auth.can('real_estate.import_real_estate')" index="/real-estate/import">
-            <el-icon><Upload /></el-icon>
-            <span>LIST 取込（dry-run）</span>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="system">
-          <template #title>
-            <el-icon><Setting /></el-icon>
-            <span>システム</span>
-          </template>
-          <el-menu-item v-if="auth.can('cases.use_cases')" index="/case-checklists">
-            <el-icon><List /></el-icon>
-            <span>案件・担当設定管理</span>
-          </el-menu-item>
-          <el-menu-item index="/settings">
-            <el-icon><Setting /></el-icon>
-            <span>設定</span>
-          </el-menu-item>
         </el-sub-menu>
       </el-menu>
     </aside>

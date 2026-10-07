@@ -9,16 +9,17 @@ import {
   listCompanies,
   updateCompany,
 } from '../api/companies'
-import { listCustomers } from '../api/customers'
+import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
 import { bankAccountTypeOptions, fiscalMonthOptions } from '../constants/options'
-import type { Company, CreateCompanyPayload, Customer } from '../types/api'
+import type { Company, CreateCompanyPayload } from '../types/api'
 import { formatDateTime } from '../utils/date'
 
 const loading = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
 const companies = ref<Company[]>([])
-const customers = ref<Customer[]>([])
+// 編集時に現在の代表者を表示する（検索結果のページに無くても、閲覧範囲外でも消さない）
+const representativeInitialOption = ref<{ value: number, label: string } | null>(null)
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 20
@@ -73,22 +74,13 @@ const fetchCompanies = async (page = currentPage.value) => {
   }
 }
 
-const fetchCustomers = async () => {
-  try {
-    const data = await listCustomers()
-    customers.value = data.results
-  } catch {
-    ElMessage.error('顧客一覧の取得に失敗しました。')
-  }
-}
-
 onMounted(() => {
   fetchCompanies()
-  fetchCustomers()
 })
 
 const resetForm = () => {
   editingCompanyId.value = null
+  representativeInitialOption.value = null
   companyForm.value = {
     name: '',
     name_kana: '',
@@ -120,6 +112,9 @@ const openCreateDialog = () => {
 
 const openEditDialog = (company: Company) => {
   editingCompanyId.value = company.id
+  representativeInitialOption.value = company.representative_customer
+    ? { value: company.representative_customer, label: company.representative_customer_name || company.representative_name || `顧客 #${company.representative_customer}` }
+    : null
   companyForm.value = {
     name: company.name,
     name_kana: company.name_kana,
@@ -261,19 +256,14 @@ const confirmDeleteCompany = async (company: Company) => {
           <el-input v-model="companyForm.name" />
         </el-form-item>
         <el-form-item label="代表者顧客" prop="representative_customer">
-          <el-select
+          <!-- 候補は後端で検索（先頭ページだけの固定候補にしない）。関連付けできる顧客だけを出し、編集時は現在の代表者を表示 -->
+          <RemoteCustomerSelect
             v-model="companyForm.representative_customer"
+            linkable-only
             clearable
-            placeholder="未設定"
-            class="form-control"
-          >
-            <el-option
-              v-for="customer in customers"
-              :key="customer.id"
-              :label="customer.name"
-              :value="customer.id"
-            />
-          </el-select>
+            :initial-option="representativeInitialOption"
+            placeholder="未設定（氏名・カナ・電話・案件番号で検索）"
+          />
         </el-form-item>
         <el-form-item label="代表者フリガナ" prop="representative_name_kana">
           <el-input v-model="companyForm.representative_name_kana" />

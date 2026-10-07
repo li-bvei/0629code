@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 書類管理：本システム内のファイルだけを扱う（Google Drive とは連携しない）。
 // 閲覧・操作の範囲は後端が案件の権限で決める。ダウンロード・プレビューは受保護 API のみ。
-import { onMounted, reactive, ref } from 'vue'
+// 案件を選ぶと、案件詳細と同じ部品で複数ファイルの登録・ZIP 一括ダウンロードができる（案件をまたがない）。
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { archiveDocument, getDocumentHistory, listDocuments, restoreDocument, updateDocument } from '../api/documents'
 import http from '../services/http'
@@ -9,6 +10,9 @@ import { DOCUMENT_CATEGORY_OPTIONS } from '../types/api'
 import type { Document, DocumentReplacement } from '../types/api'
 import { formatDateTime } from '../utils/date'
 import TableRowActions from '../components/layout/TableRowActions.vue'
+import RemoteCaseSelect from '../components/RemoteCaseSelect.vue'
+import DocumentUploadQueue from '../components/documents/DocumentUploadQueue.vue'
+import DocumentZipActions from '../components/documents/DocumentZipActions.vue'
 import type { ActionItem } from '../components/layout/actions'
 
 const apiBase = (http.defaults.baseURL || '/api/').replace(/\/$/, '')
@@ -21,7 +25,16 @@ const documents = ref<Document[]>([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = 20
-const filters = reactive({ category: '', archived: '' })
+const filters = reactive({ category: '', archived: '', case: null as number | null })
+const selectedIds = ref<number[]>([])
+const caseSelected = computed(() => Boolean(filters.case))
+const onSelection = (rows: Document[]) => {
+  selectedIds.value = rows.map((row) => row.id)
+}
+const onCaseChange = () => {
+  selectedIds.value = []
+  fetchDocuments(1)
+}
 
 const errorText = (error: unknown, fallback: string) => {
   const response = (error as { response?: { status?: number; data?: Record<string, unknown> } })?.response
@@ -38,6 +51,7 @@ const fetchDocuments = async (page = currentPage.value) => {
   try {
     const data = await listDocuments({
       page,
+      case: filters.case || undefined,
       category: filters.category || undefined,
       archived: filters.archived || undefined,
     })
@@ -154,6 +168,9 @@ const rowActions = (doc: Document): ActionItem[] => [
 
     <el-card shadow="never">
       <div class="document-filters">
+        <div class="document-filter-case">
+          <RemoteCaseSelect v-model="filters.case" clearable placeholder="案件で絞り込む（まとめて登録・ZIP は案件を選択）" @change="onCaseChange" />
+        </div>
         <el-select v-model="filters.category" clearable placeholder="分類" class="document-filter" @change="fetchDocuments(1)">
           <el-option v-for="option in DOCUMENT_CATEGORY_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
@@ -163,7 +180,13 @@ const rowActions = (doc: Document): ActionItem[] => [
           <el-option label="すべて" value="all" />
         </el-select>
       </div>
-      <el-table v-loading="loading" :data="documents" stripe>
+      <div v-if="caseSelected" class="document-batch">
+        <DocumentUploadQueue :case-id="filters.case" @uploaded="fetchDocuments(1)" />
+        <DocumentZipActions :case-id="filters.case" :selected-ids="selectedIds" />
+      </div>
+      <p v-else class="sub document-batch-hint">案件を選ぶと、複数ファイルの登録と ZIP 一括ダウンロードができます。</p>
+      <el-table v-loading="loading" :data="documents" stripe row-key="id" @selection-change="onSelection">
+        <el-table-column v-if="caseSelected" type="selection" width="40" />
         <el-table-column label="案件番号" min-width="150">
           <template #default="{ row }"><router-link class="text-link" :to="`/cases/${row.case}`">{{ row.case_number }}</router-link></template>
         </el-table-column>
@@ -175,7 +198,12 @@ const rowActions = (doc: Document): ActionItem[] => [
           </template>
         </el-table-column>
         <el-table-column prop="category_display" label="分類" width="120" />
-        <el-table-column prop="file_name" label="元のファイル名" min-width="180" show-overflow-tooltip />
+        <el-table-column label="ファイル名（ダウンロード名）" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.download_name || row.file_name }}
+            <div v-if="row.display_name && row.file_name !== row.display_name" class="sub">元のファイル名：{{ row.file_name }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="サイズ" width="90">
           <template #default="{ row }">{{ formatSize(row.file_size) }}</template>
         </el-table-column>
@@ -250,8 +278,26 @@ const rowActions = (doc: Document): ActionItem[] => [
   width: 180px;
 }
 
+.document-filter-case {
+  width: 320px;
+  max-width: 100%;
+}
+
+.document-batch {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.document-batch-hint {
+  margin: 0 0 12px;
+}
+
 @media (max-width: 639px) {
-  .document-filter {
+  .document-filter,
+  .document-filter-case {
     width: 100%;
   }
 }

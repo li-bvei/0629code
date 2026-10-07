@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T extends { id: number }">
 import { onMounted, watch } from 'vue'
-import { createRemoteSearch } from './remoteSearch'
+import { createRemoteSearch, type RemoteFetchResult } from './remoteSearch'
 
 interface OptionRow {
   value: number
@@ -10,8 +10,8 @@ interface OptionRow {
 
 const props = defineProps<{
   modelValue: number | null | undefined
-  /** 検索キーワードを受け取り、候補一覧を返す。サーバー側で検索・件数制限を行うこと。 */
-  fetcher: (search: string) => Promise<T[]>
+  /** 検索キーワードを受け取り、候補一覧（または {results, count}）を返す。サーバー側で検索・件数制限を行うこと。 */
+  fetcher: (search: string) => Promise<RemoteFetchResult<T>>
   /** 1件を id から取得（既存の選択値を初期表示するため）。無ければ resolveByList を使う。 */
   fetchOne?: (id: number) => Promise<T | null>
   toOption: (row: T) => OptionRow
@@ -27,7 +27,7 @@ const emit = defineEmits<{
   (e: 'change', row: T | null): void
 }>()
 
-const { options, loading, error, rowCache, runSearch, ensureInitial } = createRemoteSearch<T>({
+const { options, loading, error, rowCache, runSearch, ensureInitial, hiddenCount } = createRemoteSearch<T>({
   fetcher: (search) => props.fetcher(search),
   fetchOne: props.fetchOne ? (id) => props.fetchOne!(id) : undefined,
   toOption: (row) => props.toOption(row),
@@ -78,6 +78,11 @@ onMounted(async () => {
         {{ option.sublabel }}
       </span>
     </el-option>
+    <!-- 取得失敗は候補が残っていても（選択中の値を残している場合も）ここで知らせる -->
+    <template v-if="(error && options.length) || hiddenCount() > 0" #footer>
+      <p v-if="error && options.length" class="remote-select-more is-error" role="alert">{{ error }}</p>
+      <p v-else class="remote-select-more">ほかに {{ hiddenCount() }} 件あります。名前などを入力して絞り込んでください。</p>
+    </template>
   </el-select>
 </template>
 
@@ -89,6 +94,13 @@ onMounted(async () => {
   color: var(--el-text-color-secondary);
 }
 
+.remote-select-more {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.remote-select-more.is-error,
 .remote-select-empty.is-error {
   color: var(--el-color-danger);
 }

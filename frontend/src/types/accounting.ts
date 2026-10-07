@@ -289,13 +289,100 @@ export type AccountingVoucherPriceType = 'tax_included' | 'tax_excluded'
 export interface AccountingVoucherLineItem {
   item_name: string
   quantity: number | string
+  /** 単位（件・時間・通 など。任意） */
+  unit?: string
   unit_price: number | string
+  /** 行ごとの備考（任意） */
+  note?: string
   line_total?: number | string
   tax_category?: AccountingVoucherTaxCategory
   tax_category_label?: string
   price_type?: AccountingVoucherPriceType
   tax_excluded_amount?: number | string
   tax_amount?: number | string
+  /** P4：行の識別子（後端が作る。保存済みの行を送り返すときにそのまま返す） */
+  line_key?: string
+  /** P4：選んだサービス項目（手入力の行には無い） */
+  service_item_id?: number | null
+  /** P4：選んだ時点のサービス項目の内容（後端が作る。底価は含まない） */
+  service?: ServiceItemLineSnapshot | null
+}
+
+export type ServiceProfessionalType = '' | 'gyousei' | 'tax_accountant' | 'judicial_scrivener' | 'labor_consultant' | 'other'
+
+export type ServicePriceStatus = 'provisional' | 'confirmed'
+
+export interface ServiceItemLineSnapshot {
+  id: number
+  category: string
+  name: string
+  default_price: number | null
+  price_type: AccountingVoucherPriceType
+  tax_category: AccountingVoucherTaxCategory
+  unit: string
+  professional_type: ServiceProfessionalType
+  professional_type_display: string
+  selected_at?: string
+  /** P6：選んだ時点の価格状態（暫定価格から作った行は provisional のまま残る） */
+  price_status?: ServicePriceStatus
+  code?: string | null
+}
+
+/** 委託底価（社内）。底価権限者への応答にだけ含まれる */
+export interface InternalLineCost {
+  line_key: string
+  service_item_id: number
+  floor_price: number | null
+  professional_type: ServiceProfessionalType
+  captured_at: string
+}
+
+export interface ServiceItem {
+  id: number
+  category: string
+  name: string
+  default_price: string | null
+  price_type: AccountingVoucherPriceType
+  price_type_display: string
+  /** 底価権限者だけに返る */
+  floor_price?: string | null
+  professional_type: ServiceProfessionalType
+  professional_type_display: string
+  tax_category: AccountingVoucherTaxCategory
+  tax_category_display: string
+  unit: string
+  is_active: boolean
+  note: string
+  sort_order: number
+  is_used: boolean
+  /** P6：基本項目の固定コード（初期データ）。手で作った項目は null */
+  code: string | null
+  price_status: ServicePriceStatus
+  price_status_display: string
+  price_confirmed_at: string | null
+  price_confirmed_by_name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ServiceItemPayload {
+  category?: string
+  name?: string
+  default_price?: number | string | null
+  price_type?: AccountingVoucherPriceType
+  floor_price?: number | string | null
+  professional_type?: ServiceProfessionalType
+  tax_category?: AccountingVoucherTaxCategory
+  unit?: string
+  is_active?: boolean
+  note?: string
+  sort_order?: number
+  version?: string
+}
+
+export interface InternalCostsResponse {
+  current: InternalLineCost[]
+  issued_versions: { version: number; document_number: string; line_costs: InternalLineCost[]; created_at: string }[]
 }
 
 export interface AccountingVoucherTaxSummary {
@@ -375,6 +462,9 @@ export interface BusinessDocumentCommon {
   customer_name: string
   company_name: string
   updated_by?: number | null
+  updated_at?: string
+  /** P4：底価権限者への応答にだけ含まれる */
+  internal_line_costs?: InternalLineCost[]
 }
 
 interface BusinessDocumentBase extends BusinessDocumentCommon {
@@ -440,6 +530,8 @@ export interface BusinessDocumentPayload {
   end_date?: string | null
   payment_terms?: string
   body?: string
+  /** P4：画面で見ていた版（updated_at）。他の人の保存と衝突したら 409 */
+  version?: string
 }
 
 export interface VoucherLinkRow {
@@ -486,6 +578,8 @@ export interface AccountingVoucherPayload {
   case?: number | null
   customer?: number | null
   company?: number | null
+  /** P4：画面で見ていた版（updated_at） */
+  version?: string
 }
 
 export interface VoucherItemTemplate {
@@ -585,6 +679,14 @@ export interface SeifuNoticePageInfo {
 }
 
 export interface SeifuNoticeTemplateInfo {
+  template_key: string
+  template_name: string
+  course_years: string
+  enrollment_period: string
+  notice_number_suffix?: string
+  recipient_name_max_length?: number
+  template_version?: string
+  font_version?: string
   page_count: number
   pages: SeifuNoticePageInfo[]
   font_available: boolean
@@ -592,30 +694,46 @@ export interface SeifuNoticeTemplateInfo {
   template_error?: string | null
 }
 
-export interface SeifuNoticeTextItem {
-  id?: string | number
-  page: number
-  text: string
-  x: number
-  y: number
-  font_size?: number
-  font_weight?: 'normal' | 'bold'
-  color?: string
-  font_family?: 'adobe_heiti'
-}
-
-export interface SeifuNoticeGeneratePayload {
-  items: SeifuNoticeTextItem[]
-}
-
 export type SeifuNoticeRecordStatus = 'draft' | 'completed'
+
+/** P5：PDF の生成記録（成功のみ）。ダウンロードは download/ から */
+export interface SeifuNoticeGeneration {
+  id: number
+  record: number | null
+  status: 'success'
+  recipient_name: string
+  permit_number: string
+  notice_number: string
+  issue_date: string
+  template_key: string
+  template_version: string
+  font_version: string
+  method: string
+  file_sha256: string
+  file_size: number
+  created_by: number | null
+  created_by_username: string
+  created_at: string
+  /** 同じ操作の再送で、既存の生成結果を返したとき */
+  replayed?: boolean
+}
 
 export interface SeifuNoticePdfRecord {
   id: number
   title: string
   status: SeifuNoticeRecordStatus
-  text_items: SeifuNoticeTextItem[]
+  recipient_name: string | null
+  permit_number: string | null
+  notice_number: string
+  issue_date: string | null
+  template_key: string | null
+  template_name: string
+  /** P5 以前の任意文字の記録（読み取り専用。新しい生成には使わない） */
+  text_items: unknown[]
   text_count: number
+  is_legacy: boolean
+  latest_generation: SeifuNoticeGeneration | null
+  generation_count: number
   note: string
   created_by?: number | null
   created_by_username?: string
@@ -626,7 +744,9 @@ export interface SeifuNoticePdfRecord {
 export interface SeifuNoticeRecordPayload {
   title: string
   status?: SeifuNoticeRecordStatus
-  text_items: SeifuNoticeTextItem[]
+  recipient_name: string
+  permit_number: string
+  issue_date: string
   note?: string
 }
 
@@ -849,6 +969,9 @@ export interface VisaReturnApplication {
   guarantor_relationship: string
   guarantor_occupation: string
   guarantor_snapshot: Record<string, unknown>
+  /** 主流程で選んだ在日担保人テンプレート（スナップショットは後端が作る） */
+  guarantor_template?: number | null
+  guarantor_template_name?: string
   form_data: Partial<VisaReturnFormData> & Record<string, unknown>
   note: string
   created_by?: number | null
@@ -878,6 +1001,7 @@ export interface VisaReturnApplicationPayload {
   guarantor_snapshot?: Record<string, unknown>
   form_data?: Partial<VisaReturnFormData> & Record<string, unknown>
   note?: string
+  guarantor_template?: number | null
 }
 
 export type AccountingPaginatedResponse<T> = PaginatedResponse<T>
@@ -930,4 +1054,57 @@ export interface CaseAccountingSummary {
   income: { visible: boolean; count?: number; total?: number
     recent?: Array<{ id: number; source_date: string; source_target: string; amount: number }> }
   tax_renewal: { visible: boolean; count?: number; recent?: Array<{ id: number; title: string; status: string }> }
+}
+
+// --- 2026-10 P1：請求書・領収書の状態履歴、返签 visa 表の生成記録 ---
+export interface VoucherStatusHistoryRow {
+  id: number
+  document_kind: 'invoice' | 'receipt'
+  voucher_number: string
+  from_status: string
+  from_status_display: string
+  to_status: string
+  to_status_display: string
+  version: number
+  reason: string
+  snapshot: Record<string, unknown> & { total_amount?: number; line_items?: AccountingVoucherLineItem[] }
+  changed_by_name: string
+  changed_at: string
+}
+
+export interface VisaCheckField {
+  key: string
+  label: string
+  value: string
+  source: 'applicant' | 'template' | 'manual' | ''
+}
+
+export interface VisaCheckResult {
+  ready: boolean
+  missing: { field: string; label: string }[]
+  fields: VisaCheckField[]
+  pdf_template: { method: string; available: boolean }
+  guarantor_template: { id: number | null; name: string; version: string; is_active: boolean; updated_since_selected: boolean }
+}
+
+export interface VisaPdfGeneration {
+  id: number
+  application: number
+  status: 'success' | 'failed'
+  status_display: string
+  method: string
+  method_display: string
+  template_name: string
+  template_version: string
+  guarantor_template: number | null
+  guarantor_template_name: string
+  guarantor_template_version: string
+  file_sha256: string
+  file_size: number | null
+  error_code: string
+  error_message: string
+  created_by_name: string
+  created_at: string
+  /** 成功しファイルが実在するときだけ値がある */
+  download_url: string | null
 }

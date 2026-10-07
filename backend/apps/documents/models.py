@@ -64,7 +64,11 @@ class Document(models.Model):
         null=True, blank=True, related_name='archived_documents',
     )
     archive_reason = models.CharField('アーカイブ理由', max_length=255, blank=True)
-    file_name = models.CharField(max_length=255)
+    file_name = models.CharField(max_length=255)  # アップロード時の元のファイル名
+    # P6：登録者が入力する「資料内容」（例：住民票）と、後端が作る表示用ファイル名「資料内容-顧客名.拡張子」。
+    # 実際の保存名は file（UUID）のまま。旧データは空（ダウンロード名は従来どおり元のファイル名）。
+    content_label = models.CharField('資料内容', max_length=60, blank=True, default='')
+    display_name = models.CharField('表示ファイル名', max_length=255, blank=True, default='')
     file_path = models.CharField(max_length=500)
     file_size = models.PositiveIntegerField(blank=True, null=True)
     content_type = models.CharField(max_length=100, blank=True)

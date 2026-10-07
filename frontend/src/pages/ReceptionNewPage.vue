@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 新規受付：業務情報を直接入力して確認・作成する（既存顧客の照合ステップは無い）。
-import { computed, nextTick, onMounted, ref } from 'vue'
+// P4：案件種別ごとの業務フロー（入管以外は申請区分なし）、関連元の案件（任意）、サービス項目（参考・任意・複数）。
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
@@ -8,8 +9,13 @@ import { useRouter } from 'vue-router'
 import { listCaseApplicationCategories, listCaseTypeMasters } from '../api/cases'
 import { listResidenceStatusMasters } from '../api/customers'
 import { createReception } from '../api/receptions'
+import RemoteCaseSelect from '../components/RemoteCaseSelect.vue'
 import RemoteCompanySelect from '../components/RemoteCompanySelect.vue'
 import RemoteStaffSelect from '../components/RemoteStaffSelect.vue'
+import ServiceItemPicker from '../components/services/ServiceItemPicker.vue'
+import type { ServiceItem } from '../types/accounting'
+import { needsApplicationCategory } from '../utils/caseWorkflow'
+import { serviceSummary } from '../utils/serviceItems'
 import { bankAccountTypeOptions, fiscalMonthOptions } from '../constants/options'
 import type {
   CaseApplicationCategory,
@@ -88,6 +94,26 @@ const canAssignOthers = auth.can('cases.case_change_all')
 const selectedCaseType = computed(() =>
   caseTypes.value.find((t) => t.id === form.value.case.case_type_master) ?? null,
 )
+// P4：入管以外の種別（税理士委託・会社解散・手続など）は申請区分なし。種別の業務フローの段階だけが作られる
+const requiresCategory = computed(() => needsApplicationCategory(selectedCaseType.value))
+watch(requiresCategory, (required) => {
+  if (!required) form.value.case.application_category = null
+})
+
+// P4：関連元の案件（任意）とサービス項目（参考・任意・複数）
+const parentCaseLabel = ref('')
+const canPickServices = auth.can('accounting.use_service_item')
+interface ServiceSelection { item: ServiceItem; quantity: number }
+const serviceSelections = ref<ServiceSelection[]>([])
+const addService = (item: ServiceItem) => {
+  const existing = serviceSelections.value.find((row) => row.item.id === item.id)
+  if (existing) existing.quantity += 1
+  else serviceSelections.value.push({ item, quantity: 1 })
+}
+const removeService = (index: number) => serviceSelections.value.splice(index, 1)
+const serviceText = (item: ServiceItem) => serviceSummary({
+  default_price: item.default_price === null ? null : Number(item.default_price), price_type: item.price_type, unit: item.unit,
+})
 // 案件種別コードから、在留関連フィールドを出すか判定する簡易ルール。
 const needsResidenceFields = computed(() => {
   const code = (selectedCaseType.value?.code || '').toLowerCase()
@@ -101,7 +127,9 @@ const rules = computed<FormRules>(() => ({
   'customer.name': [{ required: true, whitespace: true, message: '氏名を入力してください。', trigger: 'blur' }],
   'customer.birth_date': [{ required: true, message: '生年月日を入力してください。', trigger: 'change' }],
   'case.case_type_master': [{ required: true, message: '案件種別を選択してください。', trigger: 'change' }],
-  'case.application_category': [{ required: true, message: '申請区分を選択してください。', trigger: 'change' }],
+  'case.application_category': requiresCategory.value
+    ? [{ required: true, message: '申請区分を選択してください。', trigger: 'change' }]
+    : [],
   'case.responsible_employee': hasOwnEmployee.value
     ? []
     : [{ required: true, message: '担当者を選択してください。', trigger: 'change' }],
@@ -148,7 +176,12 @@ const confirmSummaryLines = computed(() => {
   lines.push(`顧客：${form.value.customer.name}（生年月日 ${form.value.customer.birth_date || '-'}）を新規登録`)
   const ct = selectedCaseType.value?.name ?? '-'
   const cat = applicationCategories.value.find((c) => c.id === form.value.case.application_category)?.name ?? '-'
-  lines.push(`案件：${ct} / ${cat}`)
+  lines.push(requiresCategory.value ? `案件：${ct} / ${cat}` : `案件：${ct}`)
+  if (selectedCaseType.value?.workflow_template_name) lines.push(`業務フロー：${selectedCaseType.value.workflow_template_name}`)
+  if (form.value.case.parent_case) lines.push(`関連元の案件：${parentCaseLabel.value || `#${form.value.case.parent_case}`}`)
+  if (serviceSelections.value.length) {
+    lines.push(`サービス項目（参考）：${serviceSelections.value.map((row) => `${row.item.name}×${row.quantity}`).join('、')}`)
+  }
   lines.push(`担当者：${form.value.case.responsible_employee ? (responsibleName.value || '選択した担当者') : '自分（ログイン中の担当者）'}`)
   if (form.value.case.accepted_at) lines.push(`受任日：${form.value.case.accepted_at}`)
   if (companyMode.value === 'new') lines.push(`会社：新規登録（${form.value.company.name}）`)
@@ -173,6 +206,8 @@ const submitReception = async () => {
   try {
     const result = await createReception(buildReceptionPayload(form.value, {
       requestId: receptionRequestId, companyMode: companyMode.value, existingCompanyId: existingCompanyId.value,
+      requiresCategory: requiresCategory.value,
+      serviceItems: serviceSelections.value.map((row) => ({ service_item: row.item.id, quantity: row.quantity })),
     }))
     if (result.case) {
       ElMessage.success({
@@ -309,10 +344,15 @@ onMounted(async () => {
                 <el-option v-for="caseType in caseTypes" :key="caseType.id" :label="caseType.name" :value="caseType.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="申請区分" prop="case.application_category" :error="fieldErrors['case.application_category']">
+            <el-form-item v-if="requiresCategory" label="申請区分" prop="case.application_category" :error="fieldErrors['case.application_category']">
               <el-select v-model="form.case.application_category" filterable placeholder="選択してください" class="form-control">
                 <el-option v-for="c in applicationCategories" :key="c.id" :label="c.name" :value="c.id" />
               </el-select>
+            </el-form-item>
+            <el-form-item v-else label="業務フロー">
+              <div class="field-hint">
+                {{ selectedCaseType?.workflow_template_name || '—' }}（申請区分は不要。入管の 13 段階ではなく、この種別の段階と必要資料だけを作成します）
+              </div>
             </el-form-item>
             <el-form-item label="担当者" prop="case.responsible_employee" :error="fieldErrors['case.responsible_employee']">
               <RemoteStaffSelect v-model="form.case.responsible_employee" class="form-control"
@@ -328,7 +368,35 @@ onMounted(async () => {
                 placeholder="YYYY-MM-DD" class="form-control"
               />
             </el-form-item>
+            <el-form-item label="関連元の案件（任意）" :error="fieldErrors['case.parent_case']">
+              <RemoteCaseSelect v-model="form.case.parent_case" clearable placeholder="例：経営管理→就労変更の元の在留案件"
+                                class="form-control" @change="(row) => { parentCaseLabel = row?.case_number ?? '' }" />
+              <div class="field-hint">年金・入社手続などを元の案件と結び付けます。元の案件の進捗・履歴は変わりません。</div>
+            </el-form-item>
           </div>
+        </el-card>
+
+        <el-card v-if="canPickServices" shadow="never">
+          <template #header>サービス項目（参考・任意）</template>
+          <p class="field-hint">標準価格は参考です。実際の金額は見積書・請求書で決めます。選んだ時点の内容を案件に記録し、後でマスタを変えても変わりません。</p>
+          <ServiceItemPicker @pick="addService" />
+          <el-table v-if="serviceSelections.length" :data="serviceSelections" size="small" class="service-table">
+            <el-table-column label="項目" min-width="200">
+              <template #default="{ row }">{{ row.item.name }}<span class="service-category">{{ row.item.category }}</span></template>
+            </el-table-column>
+            <el-table-column label="標準価格（参考）" min-width="200">
+              <template #default="{ row }">{{ serviceText(row.item) }}
+                <el-tag v-if="row.item.price_status === 'provisional'" size="small" type="warning" effect="plain">暫定価格</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="数量" width="130">
+              <template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" :max="999" size="small" /></template>
+            </el-table-column>
+            <el-table-column width="80">
+              <template #default="{ $index }"><el-button link type="danger" @click="removeService($index)">外す</el-button></template>
+            </el-table-column>
+          </el-table>
+          <div v-if="fieldErrors['case.service_items']" class="field-error">{{ fieldErrors['case.service_items'] }}</div>
         </el-card>
 
         <el-card shadow="never">
@@ -445,5 +513,21 @@ onMounted(async () => {
   margin: 0;
   padding-left: 18px;
   line-height: 1.9;
+}
+
+.service-table {
+  margin-top: 8px;
+}
+
+.service-category {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.field-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-color-danger);
 }
 </style>

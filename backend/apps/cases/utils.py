@@ -37,9 +37,12 @@ def _get_number_abbreviation(obj, label):
 
 def build_case_number_prefix(case_type_master, application_category, customer, created_at=None):
     case_type_abbreviation = _get_number_abbreviation(case_type_master, '案件種別')
-    application_abbreviation = _get_number_abbreviation(application_category, '申請区分')
     month = get_case_number_month(created_at)
     customer_name = sanitize_case_number_name(get_case_customer_name(customer))
+    if application_category is None and case_type_master is not None and not case_type_master.requires_application_category:
+        # P4：申請区分の無い種別（税理士委託など）は「種別-年月-氏名-連番」
+        return f'{case_type_abbreviation}-{month}-{customer_name}-'
+    application_abbreviation = _get_number_abbreviation(application_category, '申請区分')
     return f'{case_type_abbreviation}-{application_abbreviation}-{month}-{customer_name}-'
 
 
@@ -149,15 +152,18 @@ def auto_apply_default_checklist_template(case):
     """
     from .models import CaseChecklistTemplate
 
-    if not case.case_type_master_id or not case.application_category_id:
+    if not case.case_type_master_id:
         return []
-
-    template = CaseChecklistTemplate.objects.filter(
-        case_type_master_id=case.case_type_master_id,
-        application_category_id=case.application_category_id,
-        is_active=True,
-        deleted_at__isnull=True,
-    ).order_by('sort_order', 'id').first()
+    templates = CaseChecklistTemplate.objects.filter(
+        case_type_master_id=case.case_type_master_id, is_active=True, deleted_at__isnull=True,
+    ).order_by('sort_order', 'id')
+    if case.application_category_id:
+        template = templates.filter(application_category_id=case.application_category_id).first()
+    elif not case.case_type_master.requires_application_category:
+        # P4：申請区分の無い種別は、種別だけに結び付いたテンプレート（申請区分が空）を使う
+        template = templates.filter(application_category__isnull=True).first()
+    else:
+        return []
     if not template:
         return []
 

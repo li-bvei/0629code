@@ -1,14 +1,16 @@
+import hashlib
 import io
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from urllib.parse import quote
 
 import fitz
+
+from .pdf_fonts import FontSubsetError, subset_pdf_fonts
 from django.conf import settings
-from django.http import HttpResponse
 from django.utils import timezone
 
 
@@ -35,6 +37,164 @@ PARENT_XREF_RE = re.compile(r'/Parent\s+(\d+)\s+0\s+R')
 
 if FONT_PATH.name == 'YuMincho.ttf':
     logger.warning('Using YuMincho.ttf for visa PDF. Some simplified Chinese glyphs may be missing.')
+
+
+class VisaPdfError(Exception):
+    """PDF を作れなかった理由。code は画面・記録用の種別、fields は該当する項目。
+
+    これまでのように例外を握りつぶして別の方式で「成功」を返すことはしない。
+    """
+
+    def __init__(self, code, message, fields=None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.fields = list(fields or [])
+
+
+@dataclass
+class VisaPdfResult:
+    content: bytes
+    method: str                 # form / coordinates
+    template_name: str
+    template_version: str       # 使ったテンプレート一式の SHA-256（先頭 16 桁）
+    stats: dict = field(default_factory=dict)
+
+
+def _sha256_files(paths):
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(path.name.encode('utf-8'))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def form_assets_available():
+    return VISA_FORM_TEMPLATE_PATH.exists() and FORM_FIELD_MAPPING_PATH.exists()
+
+
+def coordinate_assets_available():
+    return VISA_1_PATH.exists() and VISA_2_PATH.exists() and POSITIONS_PATH.exists()
+
+
+def _open_template(path):
+    try:
+        doc = fitz.open(str(path))
+    except Exception as exc:  # 壊れたファイル・PDF でないファイル
+        raise VisaPdfError('template_broken', f'PDF テンプレート「{path.name}」を開けません（破損している可能性があります）。') from exc
+    if doc.page_count < 1:
+        doc.close()
+        raise VisaPdfError('template_broken', f'PDF テンプレート「{path.name}」にページがありません。')
+    return doc
+
+
+def _verify_output(content):
+    if not content or not content.startswith(b'%PDF'):
+        raise VisaPdfError('output_invalid', '生成した PDF が正しい形式ではありません。')
+    try:
+        check = fitz.open(stream=content, filetype='pdf')
+        pages = check.page_count
+        check.close()
+    except Exception as exc:
+        raise VisaPdfError('output_invalid', '生成した PDF を読み直せませんでした。') from exc
+    if pages < 1:
+        raise VisaPdfError('output_invalid', '生成した PDF にページがありません。')
+
+
+# --- 担保人：テンプレートの値と手入力の値をまとめる ---------------------------------------
+
+# 担保人の項目 → (申請の列, 表単データの鍵, テンプレートスナップショットの鍵)
+GUARANTOR_FIELDS = {
+    'guarantor_name_jp': ('guarantor_name', 'guarantor_name_jp', 'guarantor_name'),
+    'guarantor_name_en': (None, 'guarantor_name_en', 'guarantor_name_en'),
+    'guarantor_phone': ('guarantor_phone', 'guarantor_phone', 'guarantor_phone'),
+    'guarantor_address_jp': ('guarantor_address', 'guarantor_address_jp', 'guarantor_address'),
+    'guarantor_address_en': (None, 'guarantor_address_en', 'guarantor_address_en'),
+    'guarantor_birth_date': (None, 'guarantor_birth_date', 'guarantor_birth_date'),
+    'guarantor_nationality': (None, 'guarantor_nationality', 'guarantor_nationality'),
+    'guarantor_visa_status': (None, 'guarantor_visa_status', 'guarantor_visa_status'),
+    'guarantor_job': ('guarantor_occupation', 'guarantor_job', 'guarantor_occupation'),
+    'relation_to_applicant': ('guarantor_relationship', 'relation_to_applicant', 'guarantor_relationship'),
+}
+
+
+def _blank(value):
+    return value in (None, '')
+
+
+def resolve_guarantor(application):
+    """担保人の各項目の値と出所を返す。{項目: (値, 'manual' | 'template' | '')}。
+
+    手入力（申請の列・表単データ）があればそれを使い、無ければ選択した担保人テンプレートの
+    スナップショットの値を使う。手入力がテンプレートと同じ値なら出所は template とする。
+    """
+    form_data = get_form_data(application)
+    snapshot = get_snapshot(application)
+    resolved = {}
+    for name, (attr, form_key, snapshot_key) in GUARANTOR_FIELDS.items():
+        manual = form_data.get(form_key)
+        if _blank(manual) and attr:
+            manual = getattr(application, attr, '')
+        template_value = snapshot.get(snapshot_key)
+        if not _blank(manual):
+            same = not _blank(template_value) and str(manual) == str(template_value)
+            resolved[name] = (manual, 'template' if same else 'manual')
+        elif not _blank(template_value):
+            resolved[name] = (template_value, 'template')
+        else:
+            resolved[name] = ('', '')
+    return resolved
+
+
+# 生成前に必須とする項目：(項目, 表示名, 値を取り出す関数)
+def _applicant_name(app):
+    return first_value(app.applicant_name, get_form_data(app).get('pinyin_name1'), get_form_data(app).get('chinese_name1'))
+
+
+def _printed_name(app):
+    # 様式の氏名欄に入るのは英文姓・中文姓（申請人氏名そのものは様式に印字されない）
+    form_data = get_form_data(app)
+    return first_value(form_data.get('pinyin_name1'), form_data.get('chinese_name1'))
+
+
+REQUIRED_FIELDS = (
+    ('applicant_name', '申請人氏名', _applicant_name),
+    ('printed_name', 'PDF に印字する氏名（英文姓 または 中文姓）', _printed_name),
+    ('birth_date', '申請人の生年月日', lambda app: first_value(app.birth_date, get_form_data(app).get('birth_date'))),
+    ('nationality', '申請人の国籍', lambda app: field_value(app, 'nationality', 'nationality')),
+    ('passport_number', '旅券番号', lambda app: field_value(app, 'passport_id', 'passport_number')),
+    ('passport_expiry_date', '旅券の有効期限', lambda app: first_value(get_form_data(app).get('passport_date2'), app.passport_expiry_date)),
+    ('guarantor_name_jp', '担保人氏名', lambda app: resolve_guarantor(app)['guarantor_name_jp'][0]),
+    ('guarantor_address_jp', '担保人住所', lambda app: resolve_guarantor(app)['guarantor_address_jp'][0]),
+    ('guarantor_phone', '担保人電話番号', lambda app: resolve_guarantor(app)['guarantor_phone'][0]),
+)
+
+
+def _is_date(value):
+    if isinstance(value, (date, datetime)):
+        return True
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d'):
+        try:
+            datetime.strptime(str(value), fmt)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+DATE_REQUIRED_FIELDS = {'birth_date', 'passport_expiry_date'}
+
+
+def missing_required_fields(application):
+    """生成前に足りない・解釈できない必須項目（[{field, label}]）。空なら生成できる。"""
+    missing = []
+    for key, label, getter in REQUIRED_FIELDS:
+        value = getter(application)
+        if _blank(value):
+            missing.append({'field': key, 'label': label})
+        elif key in DATE_REQUIRED_FIELDS and not _is_date(value):
+            missing.append({'field': key, 'label': f'{label}（日付の形式が正しくありません）'})
+    return missing
 
 
 def format_home_address(data):
@@ -108,8 +268,19 @@ def get_form_application_variables(application):
         'guarantor_occupation': getattr(application, 'guarantor_occupation', ''),
         'guarantor_relationship': getattr(application, 'guarantor_relationship', ''),
     }
-    variables.update({key: value for key, value in form_data.items() if value not in (None, '')})
     variables.update({key: value for key, value in snapshot.items() if value not in (None, '')})
+    variables.update({key: value for key, value in form_data.items() if value not in (None, '')})
+    # 担保人は resolve_guarantor の結果（手入力 → テンプレート）で統一する
+    guarantor = {name: value for name, (value, _) in resolve_guarantor(application).items()}
+    variables.update({
+        'guarantor_name': guarantor['guarantor_name_jp'], 'guarantor_name_jp': guarantor['guarantor_name_jp'],
+        'guarantor_name_en': guarantor['guarantor_name_en'], 'guarantor_phone': guarantor['guarantor_phone'],
+        'guarantor_address': guarantor['guarantor_address_jp'], 'guarantor_address_jp': guarantor['guarantor_address_jp'],
+        'guarantor_address_en': guarantor['guarantor_address_en'], 'guarantor_birth_date': guarantor['guarantor_birth_date'],
+        'guarantor_nationality': guarantor['guarantor_nationality'], 'guarantor_visa_status': guarantor['guarantor_visa_status'],
+        'guarantor_occupation': guarantor['guarantor_job'], 'guarantor_job': guarantor['guarantor_job'],
+        'guarantor_relationship': guarantor['relation_to_applicant'], 'relation_to_applicant': guarantor['relation_to_applicant'],
+    })
     variables['home_address2'] = format_home_address(variables)
     guarantor_nationality = first_value(variables.get('guarantor_nationality'), default='')
     guarantor_visa_status = first_value(variables.get('guarantor_visa_status'), default='')
@@ -214,8 +385,10 @@ def widget_on_values(widget):
 
 
 def set_pdf_radio_group_value(doc, field_name, selected_value):
+    """単一選択の項目を選ぶ。選んだ値を持つ選択肢が無い・書き込みに失敗したときは False（成功扱いにしない）。"""
     selected_value = str(selected_value)
-    found = False
+    matched = False
+    failed = False
     parent_xrefs = set()
     for page in doc:
         widgets = page.widgets()
@@ -224,7 +397,6 @@ def set_pdf_radio_group_value(doc, field_name, selected_value):
         for widget in widgets:
             if widget.field_name != field_name:
                 continue
-            found = True
             on_values = widget_on_values(widget)
             next_value = selected_value if selected_value in on_values else 'Off'
             try:
@@ -234,12 +406,16 @@ def set_pdf_radio_group_value(doc, field_name, selected_value):
                     parent_xrefs.add(int(parent_match.group(1)))
             except Exception as exc:
                 logger.warning('Failed to update visa PDF radio field %s: %s', field_name, exc)
+                failed = True
+                continue
+            matched = matched or next_value == selected_value
     for parent_xref in parent_xrefs:
         try:
             doc.xref_set_key(parent_xref, 'V', f'/{selected_value}')
         except Exception as exc:
             logger.warning('Failed to update visa PDF radio parent %s: %s', field_name, exc)
-    return found
+            failed = True
+    return matched and not failed
 
 
 def fill_text_mapping(doc, pdf_field, value):
@@ -333,6 +509,10 @@ def flatten_form_fields(doc):
                 page.delete_widget(widget)
             except Exception as exc:
                 logger.warning('Failed to remove visa PDF form field %s: %s', widget.field_name, exc)
+        remaining = [widget.field_name for widget in (page.widgets() or [])]
+        if remaining:
+            # 入力欄が残ると、印字と入力欄の値が二重になったり後から書き換えられたりする
+            raise RuntimeError(f'form fields remain after flattening: {remaining[:5]}')
 
     return flattened
 
@@ -421,22 +601,20 @@ def build_visa_page2_data(application):
     form_data = get_form_data(application)
     gender = form_data.get('gender2')
 
+    guarantor = {name: value for name, (value, _) in resolve_guarantor(application).items()}
     data = {
         'job_title2': field_value(application, 'job_title2'),
-        'guarantor_name_en': snapshot_value(application, 'guarantor_name_en'),
-        'guarantor_name_jp': snapshot_value(application, 'guarantor_name_jp', getattr(application, 'guarantor_name', '')),
-        'guarantor_phone': snapshot_value(application, 'guarantor_phone', getattr(application, 'guarantor_phone', '')),
-        'guarantor_address_en': snapshot_value(application, 'guarantor_address_en'),
-        'guarantor_address_jp': snapshot_value(application, 'guarantor_address_jp', getattr(application, 'guarantor_address', '')),
-        'guarantor_birth_date': format_date(snapshot_value(application, 'guarantor_birth_date')),
-        'relation_to_applicant': snapshot_value(
-            application,
-            'relation_to_applicant',
-            getattr(application, 'guarantor_relationship', ''),
-        ),
-        'guarantor_job': snapshot_value(application, 'guarantor_job', getattr(application, 'guarantor_occupation', '')),
-        'guarantor_nationality': snapshot_value(application, 'guarantor_nationality'),
-        'guarantor_visa_status': snapshot_value(application, 'guarantor_visa_status'),
+        # 担保人は手入力 → 選択した担保人テンプレートの順で決める（テンプレートを迂回しない）
+        'guarantor_name_en': guarantor['guarantor_name_en'],
+        'guarantor_name_jp': guarantor['guarantor_name_jp'],
+        'guarantor_phone': guarantor['guarantor_phone'],
+        'guarantor_address_en': guarantor['guarantor_address_en'],
+        'guarantor_address_jp': guarantor['guarantor_address_jp'],
+        'guarantor_birth_date': format_date(guarantor['guarantor_birth_date']),
+        'relation_to_applicant': guarantor['relation_to_applicant'],
+        'guarantor_job': guarantor['guarantor_job'],
+        'guarantor_nationality': guarantor['guarantor_nationality'],
+        'guarantor_visa_status': guarantor['guarantor_visa_status'],
         'same': field_value(application, 'same', default='同上'),
         'xx': checked_if(gender == 'male'),
         'xy': checked_if(gender == 'female'),
@@ -481,11 +659,15 @@ def insert_text(page, x, y, text, font_size=10):
 
 def fill_pdf_template(template_path, positions, data):
     if not FONT_PATH.exists():
-        raise FileNotFoundError(f'Visa PDF font is required: {FONT_PATH}')
+        raise VisaPdfError('font_missing', f'PDF 用のフォント「{FONT_PATH.name}」がサーバーにありません。')
 
-    doc = fitz.open(str(template_path))
+    doc = _open_template(template_path)
     page = doc[0]
-    page.insert_font(fontname=FONT_NAME, fontfile=str(FONT_PATH))
+    try:
+        page.insert_font(fontname=FONT_NAME, fontfile=str(FONT_PATH))
+    except Exception as exc:
+        doc.close()
+        raise VisaPdfError('font_missing', f'PDF 用のフォント「{FONT_PATH.name}」を読み込めません。') from exc
 
     for field_name, config in positions.items():
         field_type = config.get('type', 'text')
@@ -514,7 +696,7 @@ def fill_pdf_template(template_path, positions, data):
     return output
 
 
-def merge_pdfs(visa_1_bytes, visa_2_bytes):
+def merge_pdfs(visa_1_bytes, visa_2_bytes):  # noqa: D401（座標方式の 2 ページを結合）
     combined = fitz.open()
     doc1 = fitz.open(stream=visa_1_bytes, filetype='pdf')
     doc2 = fitz.open(stream=visa_2_bytes, filetype='pdf')
@@ -532,7 +714,13 @@ def merge_pdfs(visa_1_bytes, visa_2_bytes):
 
 
 def generate_visa_return_pdf_by_coordinates(application):
-    positions = load_positions()
+    try:
+        positions = load_positions()
+    except (OSError, ValueError) as exc:
+        raise VisaPdfError('template_broken', '座標設定（field_positions.json）を読み込めません。') from exc
+    missing = [name for name in ('visa_1', 'visa_2') if not isinstance(positions.get(name), dict)]
+    if missing:
+        raise VisaPdfError('template_field_mismatch', '座標設定にページの定義がありません：' + '、'.join(missing), missing)
     page1_data = build_visa_page1_data(application)
     page2_data = build_visa_page2_data(application)
     visa_1_bytes = fill_pdf_template(VISA_1_PATH, positions['visa_1'], page1_data)
@@ -540,34 +728,63 @@ def generate_visa_return_pdf_by_coordinates(application):
     return merge_pdfs(visa_1_bytes, visa_2_bytes)
 
 
-def fill_form_pdf(application):
-    if not VISA_FORM_TEMPLATE_PATH.exists():
-        raise FileNotFoundError(f'visa_tem.pdf not found: {VISA_FORM_TEMPLATE_PATH}')
+def _template_field_names(doc):
+    return {widget.field_name for page in doc for widget in (page.widgets() or [])}
 
-    mapping = load_form_field_mapping()
+
+def _mapping_pdf_fields(mappings):
+    fields = []
+    for variable_name, config in mappings.items():
+        if config.get('type') == 'choice':
+            fields += [(variable_name, rule.get('pdf_field')) for rule in (config.get('rules') or {}).values()
+                       if rule.get('pdf_field')]
+        elif config.get('pdf_field'):
+            fields.append((variable_name, config['pdf_field']))
+    return fields
+
+
+def fill_form_pdf(application, stats=None):
+    """フォーム項目付きテンプレートへ入力して平坦化する。どの段階の失敗も VisaPdfError にする（握りつぶさない）。"""
+    stats = stats if stats is not None else {}
+    try:
+        mapping = load_form_field_mapping()
+    except (OSError, ValueError) as exc:
+        raise VisaPdfError('template_broken', '項目対応表（form_field_mapping.json）を読み込めません。') from exc
     mappings = mapping.get('mappings') or {}
     if not mappings:
-        raise ValueError('form_field_mapping.json has no mappings.')
+        raise VisaPdfError('template_broken', '項目対応表（form_field_mapping.json）に項目がありません。')
 
     variables = get_form_application_variables(application)
-    doc = fitz.open(str(VISA_FORM_TEMPLATE_PATH))
+    doc = _open_template(VISA_FORM_TEMPLATE_PATH)
+    names = _template_field_names(doc)
+    mismatched = [f'{variable}→{pdf_field}' for variable, pdf_field in _mapping_pdf_fields(mappings) if pdf_field not in names]
+    if mismatched:
+        doc.close()
+        raise VisaPdfError(
+            'template_field_mismatch',
+            f'PDF テンプレートに対応表の項目がありません（{len(mismatched)} 件）。テンプレートと対応表の版を確認してください。',
+            mismatched,
+        )
     filled_count = 0
     warning_count = 0
+    drawn = []
+    failed = []
     try:
         for variable_name, config in mappings.items():
             config_type = config.get('type', 'text')
             if config_type == 'choice':
                 value = variables.get(variable_name, config.get('default', ''))
+                if value in (None, ''):
+                    continue  # 未選択：選ぶ値が無いだけ
                 rule = (config.get('rules') or {}).get(str(value))
-                if not rule:
-                    continue
-                pdf_field = rule.get('pdf_field')
-                selected_value = rule.get('value', rule.get('checked_value', 'Yes'))
-                if pdf_field:
-                    if fill_choice_mapping(doc, pdf_field, selected_value):
-                        filled_count += 1
-                    else:
-                        warning_count += 1
+                pdf_field = (rule or {}).get('pdf_field')
+                selected_value = (rule or {}).get('value', (rule or {}).get('checked_value', 'Yes'))
+                # 対応表に無い値・選択肢が選べない場合は、選択が抜けた PDF を成功として返さない
+                if pdf_field and fill_choice_mapping(doc, pdf_field, selected_value):
+                    filled_count += 1
+                else:
+                    warning_count += 1
+                    failed.append(f'{config.get("label") or variable_name}（{value}）')
                 continue
 
             pdf_field = config.get('pdf_field')
@@ -586,69 +803,91 @@ def fill_form_pdf(application):
             else:
                 mapped_value = mapped_form_value(value, config)
                 filled = fill_text_mapping(doc, pdf_field, mapped_value)
-                if not filled:
+                if not filled and mapped_value:
+                    # 項目は存在するが値を設定できない（選択肢の定義が壊れている等）：同じ位置に文字として描く。
+                    # 描けなければ失敗として扱う（値が抜けた PDF を成功として返さない）。
                     filled = draw_value_on_field(doc, pdf_field, mapped_value)
+                    if filled:
+                        drawn.append(variable_name)
+                elif not mapped_value:
+                    filled = True  # 空欄の項目は書く値が無いだけ
             if filled:
                 filled_count += 1
             else:
                 warning_count += 1
+                failed.append(variable_name)
 
+        if failed:
+            raise VisaPdfError('field_write_failed', 'PDF の次の項目に値を書き込めませんでした：' + '、'.join(failed), failed)
         try:
             doc.need_appearances(True)
         except Exception:
-            pass
+            pass  # 表示更新の指定だけ。値は平坦化で描画する
         filled_bytes = doc.tobytes(garbage=4, deflate=True)
     finally:
         doc.close()
 
-    flattened = False
     try:
         flattened_bytes, flattened_count = flatten_form_pdf_bytes(filled_bytes)
-        flattened = True
-        logger.info(
-            'visa form filling branch used: mapped=%s filled=%s warnings=%s flattened=%s flattened_fields=%s',
-            len(mappings),
-            filled_count,
-            warning_count,
-            flattened,
-            flattened_count,
-        )
-        return flattened_bytes
     except Exception as exc:
-        logger.warning('Failed to flatten visa PDF form fields: %s', exc)
-        logger.info(
-            'visa form filling branch used: mapped=%s filled=%s warnings=%s flattened=%s',
-            len(mappings),
-            filled_count,
-            warning_count,
-            flattened,
-        )
-        return filled_bytes
+        raise VisaPdfError('flatten_failed', 'PDF の入力欄を確定（平坦化）できませんでした。') from exc
+    stats.update({'mapped': len(mappings), 'filled': filled_count, 'drawn_fallback': drawn,
+                  'flattened_fields': flattened_count})
+    logger.info('visa form filled: mapped=%s filled=%s drawn=%s flattened=%s', len(mappings), filled_count, len(drawn),
+                flattened_count)
+    return flattened_bytes
 
 
 def generate_visa_return_pdf_by_form(application):
     return fill_form_pdf(application)
 
 
-def generate_visa_return_pdf(application):
-    if VISA_FORM_TEMPLATE_PATH.exists() and FORM_FIELD_MAPPING_PATH.exists():
-        try:
-            return generate_visa_return_pdf_by_form(application)
-        except Exception:
-            pass
-    return generate_visa_return_pdf_by_coordinates(application)
+def render_visa_return_pdf(application):
+    """PDF を作る。方式はテンプレート一式の有無で明示的に決め、失敗したら VisaPdfError を投げる。
+
+    フォーム用テンプレート（visa_tem.pdf ＋ 対応表）があればフォーム方式。無い環境だけ座標方式。
+    フォーム方式で失敗したときに座標方式へ黙って切り替えることはしない（失敗の原因が隠れるため）。
+    想定外の例外も握りつぶさず、ログに詳細を残したうえで generation_failed として返す。
+    """
+    try:
+        return _render_visa_return_pdf(application)
+    except VisaPdfError:
+        raise
+    except Exception as exc:
+        logger.exception('visa PDF generation failed unexpectedly (application=%s)', getattr(application, 'pk', None))
+        raise VisaPdfError(
+            'generation_failed', f'PDF の作成中に想定外のエラーが発生しました（{type(exc).__name__}）。管理者に連絡してください。',
+        ) from exc
+
+
+def _render_visa_return_pdf(application):
+    stats = {}
+    if form_assets_available():
+        method, template_name = 'form', VISA_FORM_TEMPLATE_PATH.name
+        version = _sha256_files([VISA_FORM_TEMPLATE_PATH, FORM_FIELD_MAPPING_PATH])
+        content = fill_form_pdf(application, stats)
+    elif coordinate_assets_available():
+        method, template_name = 'coordinates', f'{VISA_1_PATH.name}+{VISA_2_PATH.name}'
+        version = _sha256_files([VISA_1_PATH, VISA_2_PATH, POSITIONS_PATH])
+        content = generate_visa_return_pdf_by_coordinates(application)
+    else:
+        raise VisaPdfError('template_missing', 'サーバーに返签 visa 表の PDF テンプレートがありません。')
+    _verify_output(content)  # 壊れた出力は従来どおり output_invalid
+    # P6：埋め込み字体を使用文字だけに絞る（単票・一括 ZIP・旧/新 API の共通経路。内容・座標・ページは不変）
+    original_size = len(content)
+    try:
+        content = subset_pdf_fonts(content)
+    except FontSubsetError as exc:
+        logger.exception('visa PDF font subsetting failed (application=%s)', getattr(application, 'pk', None))
+        raise VisaPdfError('font_subset_failed', f'PDF の字体の最適化に失敗しました（{exc}）。管理者に連絡してください。') from exc
+    stats['size_before_subset'] = original_size
+    stats['size_after_subset'] = len(content)
+    _verify_output(content)
+    return VisaPdfResult(content=content, method=method, template_name=template_name, template_version=version,
+                         stats=stats)
 
 
 def build_visa_return_pdf_filename(application):
     name = (application.applicant_name or get_form_data(application).get('pinyin_name1') or '申請人').strip()
     today = timezone.localdate().strftime('%Y%m%d')
     return f'返签visa表_{name}_{today}.pdf'
-
-
-def visa_return_pdf_response(application):
-    filename = build_visa_return_pdf_filename(application)
-    response = HttpResponse(generate_visa_return_pdf(application), content_type='application/pdf')
-    response['Content-Disposition'] = (
-        f'attachment; filename="visa_return.pdf"; filename*=UTF-8\'\'{quote(filename)}'
-    )
-    return response

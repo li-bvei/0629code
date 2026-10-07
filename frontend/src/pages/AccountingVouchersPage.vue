@@ -7,6 +7,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createVoucherItemTemplate,
   createAccountingVoucher,
+  transitionBusinessDocument,
   deleteAccountingVoucher,
   deleteVoucherItemTemplate,
   downloadAccountingVoucherPdf,
@@ -19,7 +20,6 @@ import type {
   AccountingVoucher,
   AccountingVoucherLineItem,
   AccountingVoucherPayload,
-  AccountingVoucherPriceType,
   AccountingVoucherTaxCategory,
   AccountingVoucherType,
   VoucherItemTemplate,
@@ -27,13 +27,28 @@ import type {
 import { formatDate } from '../utils/date'
 import RemoteCaseSelect from '../components/RemoteCaseSelect.vue'
 import VoucherStatusActions from '../components/vouchers/VoucherStatusActions.vue'
+import VoucherLinesTable from '../components/vouchers/VoucherLinesTable.vue'
+import VoucherHistoryDialog from '../components/vouchers/VoucherHistoryDialog.vue'
+import { apiErrorText } from '../components/vouchers/voucherErrors'
 import { useDocumentList } from '../components/vouchers/useDocumentList'
+import { summarizeLines } from '../utils/voucherCalc'
+import {
+  createLine, keyForSavedRow, toPayloadLines, validateLines, withKeys, type VoucherLine,
+} from '../utils/voucherLines'
 import './accounting/accounting.css'
 
-// P2-C11：請求書と領収書は状態を共有しない（invoice_status / receipt_status）。発行後は内容を変更できない。
+// P2-C11：請求書と領収書は状態を共有しない（invoice_status / receipt_status）。
+// 2026-10 P1：状態は自由に切り替えられる。内容は下書きのときだけ編集でき、発行後に直すときは下書きに戻す。
 const route = useRoute()
 const documentActions = useDocumentList<AccountingVoucher>('vouchers', '請求書', listAccountingVouchers)
 const editingLocked = ref(false)
+const editingVoucher = ref<AccountingVoucher | null>(null)
+// 明細（連続入力の行）。行ごとの誤りは key ごとに持ち、他の行は消さない
+const lines = ref<VoucherLine[]>([createLine()])
+const lineErrors = ref<Record<number, string>>({})
+const historyVisible = ref(false)
+const historyTarget = ref<AccountingVoucher | null>(null)
+const revertingToDraft = ref(false)
 const editingCaseOption = ref<{ value: number; label: string } | null>(null)
 const INVOICE_STATUS_OPTIONS = [
   { value: 'draft', label: '下書き' }, { value: 'issued', label: '発行済み' }, { value: 'sent', label: '送付済み' },
@@ -112,10 +127,6 @@ const taxCategoryOptions: { label: string; value: AccountingVoucherTaxCategory }
   { label: '8％', value: 'tax_8' },
   { label: '非課税', value: 'non_taxable' },
 ]
-const priceTypeOptions: { label: string; value: AccountingVoucherPriceType }[] = [
-  { label: '税込', value: 'tax_included' },
-  { label: '税抜', value: 'tax_excluded' },
-]
 
 const getTodayDate = () => {
   const date = new Date()
@@ -170,58 +181,7 @@ const getTaxCategoryLabel = (item: AccountingVoucherLineItem) => {
   return taxCategoryOptions.find((option) => option.value === getTaxCategory(item))?.label || '10％'
 }
 
-const getPriceType = (item: AccountingVoucherLineItem): AccountingVoucherPriceType => {
-  return priceTypeOptions.some((option) => option.value === item.price_type)
-    ? item.price_type as AccountingVoucherPriceType
-    : 'tax_included'
-}
-
-const getRawAmount = (item: AccountingVoucherLineItem) => {
-  return Math.round(Number(item.quantity || 0) * Number(item.unit_price || 0))
-}
-
-// 税抜入力の場合：入力金額＝税抜金額として税額を上乗せする。
-// 税込入力（従来通り）の場合：入力金額＝税込金額として税額を割り戻す。
-// 非課税の場合：入力方式に関わらず入力金額をそのまま使う（税額は常に0）。
-const getTaxExcludedAmount = (item: AccountingVoucherLineItem) => {
-  const raw = getRawAmount(item)
-  const taxCategory = getTaxCategory(item)
-  if (taxCategory === 'non_taxable') return raw
-  if (getPriceType(item) === 'tax_excluded') return raw
-  return Math.round(raw / (taxCategory === 'tax_8' ? 1.08 : 1.1))
-}
-
-const getLineTaxAmount = (item: AccountingVoucherLineItem) => {
-  const taxCategory = getTaxCategory(item)
-  if (taxCategory === 'non_taxable') return 0
-  const taxExcluded = getTaxExcludedAmount(item)
-  if (getPriceType(item) === 'tax_excluded') {
-    return Math.round(taxExcluded * (taxCategory === 'tax_8' ? 0.08 : 0.10))
-  }
-  return getRawAmount(item) - taxExcluded
-}
-
-const getLineTotal = (item: AccountingVoucherLineItem) => {
-  const taxCategory = getTaxCategory(item)
-  if (taxCategory === 'non_taxable') return getRawAmount(item)
-  if (getPriceType(item) === 'tax_excluded') return getTaxExcludedAmount(item) + getLineTaxAmount(item)
-  return getRawAmount(item)
-}
-
-const taxSummary = computed(() => {
-  return (voucherForm.value.line_items || []).reduce(
-    (result, item) => {
-      const lineTotal = getLineTotal(item)
-      const taxExcluded = getTaxExcludedAmount(item)
-      result.subtotal += taxExcluded
-      result.tax_total += lineTotal - taxExcluded
-      result.total += lineTotal
-      return result
-    },
-    { subtotal: 0, tax_total: 0, total: 0 },
-  )
-})
-const totalAmount = computed(() => taxSummary.value.total)
+const taxSummary = computed(() => summarizeLines(lines.value))
 const taxExcludedAmount = computed(() => taxSummary.value.subtotal)
 const taxAmount = computed(() => taxSummary.value.tax_total)
 const filteredManagedItemTemplates = computed(() => {
@@ -389,6 +349,9 @@ const resetForm = () => {
     case: null,
   }
   editingLocked.value = false
+  editingVoucher.value = null
+  lines.value = [createLine()]
+  lineErrors.value = {}
   editingCaseOption.value = null
   selectedBankInfo.value = ''
   showRecipientDetail.value = false
@@ -435,6 +398,9 @@ const openEditDialog = (voucher: AccountingVoucher) => {
     case: voucher.case,
   }
   editingLocked.value = !voucher.is_editable
+  editingVoucher.value = voucher
+  lines.value = withKeys(voucherForm.value.line_items || [])
+  lineErrors.value = {}
   editingCaseOption.value = voucher.case ? { value: voucher.case, label: voucher.case_number } : null
   selectedBankInfo.value = ''
   showRecipientDetail.value = Boolean(voucher.recipient_postal_code || voucher.recipient_address)
@@ -447,29 +413,6 @@ const handleBankInfoSelect = (value: string) => {
   if (selected && selected.value !== 'manual') {
     voucherForm.value.bank_info = selected.text
   }
-}
-
-const findVoucherItemTemplate = (name: string) => {
-  return voucherItemTemplates.value.find((template) => template.name === name)
-}
-
-const isNewVoucherItemName = (name?: string) => {
-  const normalized = (name || '').trim()
-  return Boolean(normalized) && !findVoucherItemTemplate(normalized)
-}
-
-const handleLineItemNameChange = (item: AccountingVoucherLineItem) => {
-  const selected = findVoucherItemTemplate(item.item_name)
-  if (!selected?.default_unit_price) return
-  if (!Number(item.unit_price || 0)) {
-    item.unit_price = selected.default_unit_price
-  }
-}
-
-const applyVoucherItemTemplate = (item: AccountingVoucherLineItem, name: string) => {
-  if (!name) return
-  item.item_name = name
-  handleLineItemNameChange(item)
 }
 
 const saveVoucherItemTemplate = async (item: AccountingVoucherLineItem) => {
@@ -560,36 +503,14 @@ const confirmDeleteItemTemplate = async (item: VoucherItemTemplate) => {
   }
 }
 
-const addLineItem = () => {
-  voucherForm.value.line_items = [...(voucherForm.value.line_items || []), createLineItem()]
-}
-
-const removeLineItem = (index: number) => {
-  const items = [...(voucherForm.value.line_items || [])]
-  items.splice(index, 1)
-  voucherForm.value.line_items = items.length ? items : [createLineItem()]
-}
-
-const normalizeLineItems = () => {
-  return (voucherForm.value.line_items || [])
-    .filter((item) => item.item_name || item.quantity || item.unit_price)
-    .map((item) => ({
-      item_name: item.item_name || '',
-      quantity: Number(item.quantity || 0),
-      unit_price: Number(item.unit_price || 0),
-      line_total: getLineTotal(item),
-      tax_category: getTaxCategory(item),
-      price_type: getPriceType(item),
-      tax_excluded_amount: getTaxExcludedAmount(item),
-      tax_amount: getLineTaxAmount(item),
-    }))
-}
-
 const buildPayload = () => {
-  if (editingLocked.value) return { note: voucherForm.value.note, case: voucherForm.value.case }
-  const lineItems = normalizeLineItems()
+  // P4：画面で見ていた版を送る（他の人が先に保存していれば 409 で保存しない）
+  const version = editingVoucher.value?.updated_at
+  if (editingLocked.value) return { note: voucherForm.value.note, case: voucherForm.value.case, version }
+  const lineItems = toPayloadLines(lines.value)
   const payload = {
     ...voucherForm.value,
+    version: editingVoucherId.value ? version : undefined,
     line_items: lineItems,
     details: lineItems.map((item) => item.item_name).filter(Boolean).join('\n'),
     amount: taxExcludedAmount.value,
@@ -609,10 +530,18 @@ const submitVoucher = async () => {
 
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
-  const lineItems = normalizeLineItems()
-  if (!editingLocked.value && (!lineItems.length || lineItems.some((item) => !item.item_name))) {
-    ElMessage.error('明細の項目名を入力してください。')
-    return
+  if (!editingLocked.value) {
+    // 誤りのある行にだけ印を付ける（入力済みの他の行はそのまま）
+    lineErrors.value = validateLines(lines.value)
+    const errorCount = Object.keys(lineErrors.value).length
+    if (errorCount) {
+      ElMessage.error(`${errorCount} 行の明細に誤りがあります。赤く表示された行を確認してください。`)
+      return
+    }
+    if (!toPayloadLines(lines.value).length) {
+      ElMessage.error('明細を 1 行以上入力してください。')
+      return
+    }
   }
 
   submitting.value = true
@@ -626,11 +555,60 @@ const submitVoucher = async () => {
     }
     dialogVisible.value = false
     await fetchVouchers(editingVoucherId.value ? currentPage.value : 1)
-  } catch {
-    ElMessage.error(editingVoucherId.value ? '帳票の更新に失敗しました。' : '帳票の作成に失敗しました。')
+  } catch (error) {
+    const response = (error as { response?: { status?: number; data?: Record<string, unknown> } })?.response
+    const row = Number((response?.data?.line_item_row as unknown[] | undefined)?.[0] ?? response?.data?.line_item_row)
+    if (row) {
+      const key = keyForSavedRow(lines.value, row)
+      const message = String((response?.data?.line_items as unknown[] | undefined)?.[0] ?? response?.data?.line_items ?? '')
+      if (key !== null) lineErrors.value = { ...lineErrors.value, [key]: message.replace(/^\d+ 行目：/, '') }
+    }
+    if (response?.status === 409) {
+      // 他の操作で発行された、または他の人が先に保存した：内容は保存していない（入力はそのまま残す）
+      await fetchVouchers(currentPage.value)
+      const latest = vouchers.value.find((row) => row.id === editingVoucherId.value)
+      if (!latest || !latest.is_editable) editingLocked.value = true
+    }
+    const fallback = editingVoucherId.value ? '帳票の更新に失敗しました。' : '帳票の作成に失敗しました。'
+    ElMessage.error({ message: apiErrorText(error, fallback), duration: 6000 })
   } finally {
     submitting.value = false
   }
+}
+
+// 発行済み・取消などの帳票を下書きに戻し、その場で編集できるようにする（履歴に残る）
+const revertToDraft = async () => {
+  const voucher = editingVoucher.value
+  if (!voucher || revertingToDraft.value) return
+  let reason = ''
+  try {
+    const result = await ElMessageBox.prompt(
+      '下書きに戻すと内容を編集できます。再発行すると新しい版として履歴に残ります。理由・メモ（任意）', '下書きに戻す',
+      { confirmButtonText: '下書きに戻す', cancelButtonText: 'キャンセル' },
+    )
+    reason = result.value || ''
+  } catch {
+    return
+  }
+  revertingToDraft.value = true
+  try {
+    const updated = await transitionBusinessDocument('vouchers', voucher.id, {
+      status: 'draft', reason, expected_status: voucher.status_value,
+    }) as AccountingVoucher
+    editingVoucher.value = updated
+    editingLocked.value = !updated.is_editable
+    ElMessage.success('下書きに戻しました。内容を編集できます。')
+    await fetchVouchers(currentPage.value)
+  } catch (error) {
+    ElMessage.error({ message: apiErrorText(error, '下書きに戻せませんでした。もう一度お試しください。'), duration: 6000 })
+  } finally {
+    revertingToDraft.value = false
+  }
+}
+
+const openHistory = (voucher: AccountingVoucher) => {
+  historyTarget.value = voucher
+  historyVisible.value = true
 }
 
 const confirmDeleteVoucher = async (voucher: AccountingVoucher) => {
@@ -681,6 +659,10 @@ const handleVoucherActionCommand = (voucher: AccountingVoucher, command: string)
   }
   if (command === 'pdf-seal') {
     downloadPdf(voucher, true)
+    return
+  }
+  if (command === 'history') {
+    openHistory(voucher)
     return
   }
   if (command === 'receipt') {
@@ -850,6 +832,7 @@ onMounted(() => {
                   <el-dropdown-item command="edit">{{ row.is_editable ? '編集' : '表示・備考' }}</el-dropdown-item>
                   <el-dropdown-item command="pdf-no-seal">PDF（印章なし）</el-dropdown-item>
                   <el-dropdown-item command="pdf-seal">PDF（印章あり）</el-dropdown-item>
+                  <el-dropdown-item command="history">状態履歴</el-dropdown-item>
                   <el-dropdown-item v-if="row.voucher_type === 'invoice'" command="receipt" divided>領収書を作成</el-dropdown-item>
                   <el-dropdown-item v-if="row.is_editable" command="delete" divided class="danger-item">削除</el-dropdown-item>
                 </el-dropdown-menu>
@@ -872,8 +855,10 @@ onMounted(() => {
     <el-dialog
       v-model="dialogVisible"
       :title="editingVoucherId ? '帳票を編集' : '帳票を作成'"
-      width="760px"
-      class="accounting-expense-dialog"
+      width="min(1200px, 96vw)"
+      class="accounting-expense-dialog voucher-edit-dialog"
+      :close-on-press-escape="false"
+      :close-on-click-modal="false"
       @closed="resetForm"
     >
       <el-alert
@@ -882,8 +867,12 @@ onMounted(() => {
         show-icon
         :closable="false"
         class="voucher-locked-alert"
-        title="発行後の帳票です。宛先・金額などは変更できません（備考と関連案件のみ変更できます）。"
-      />
+        :title="`「${editingVoucher?.status_display || '下書き以外'}」の帳票です。内容を変更するには下書きに戻してください（備考と関連案件はこのまま変更できます）。`"
+      >
+        <el-button v-if="editingVoucher" size="small" type="primary" plain :loading="revertingToDraft" @click="revertToDraft">
+          下書きに戻して編集
+        </el-button>
+      </el-alert>
       <el-form ref="formRef" :model="voucherForm" :rules="rules" :disabled="editingLocked" label-position="top">
         <div class="accounting-dialog-form">
           <el-form-item label="帳票種別" prop="voucher_type">
@@ -933,108 +922,16 @@ onMounted(() => {
             <el-input v-model="voucherForm.title" />
           </el-form-item>
           <div class="voucher-line-section accounting-dialog-full">
-            <div class="voucher-line-header">
-              <div>
-                <div class="form-section-title">明細</div>
-                <p>項目名、数量、単価を入力すると金額を自動計算します。</p>
-              </div>
-              <el-button type="primary" plain @click="addLineItem">明細追加</el-button>
-            </div>
-            <div class="voucher-line-list">
-              <div
-                v-for="(item, index) in voucherForm.line_items"
-                :key="index"
-                class="voucher-line-row"
-              >
-                <el-form-item label="項目名">
-                  <div class="voucher-item-name-control">
-                    <el-input
-                      v-model="item.item_name"
-                      type="textarea"
-                      :autosize="{ minRows: 1, maxRows: 6 }"
-                      placeholder="項目名を入力（複数行可）"
-                      class="form-control"
-                    />
-                    <div class="voucher-item-name-actions">
-                      <el-select
-                        :model-value="null"
-                        placeholder="よく使う項目から選択"
-                        size="small"
-                        filterable
-                        class="voucher-item-preset-select"
-                        @change="(name: string) => applyVoucherItemTemplate(item, name)"
-                      >
-                        <el-option
-                          v-for="template in voucherItemTemplates"
-                          :key="template.id"
-                          :label="template.name"
-                          :value="template.name"
-                        />
-                      </el-select>
-                      <el-button
-                        v-if="isNewVoucherItemName(item.item_name)"
-                        size="small"
-                        plain
-                        @click="saveVoucherItemTemplate(item)"
-                      >
-                        保存为常用項目
-                      </el-button>
-                    </div>
-                  </div>
-                </el-form-item>
-                <el-form-item label="数量">
-                  <el-input v-model="item.quantity" inputmode="decimal" />
-                </el-form-item>
-                <el-form-item label="単価" class="voucher-nowrap-form-item">
-                  <div class="voucher-unit-price-control">
-                    <el-input v-model="item.unit_price" inputmode="numeric" />
-                    <el-select
-                      v-if="getTaxCategory(item) !== 'non_taxable'"
-                      v-model="item.price_type"
-                      size="small"
-                      class="voucher-price-type-select"
-                    >
-                      <el-option
-                        v-for="option in priceTypeOptions"
-                        :key="option.value"
-                        :label="option.label"
-                        :value="option.value"
-                      />
-                    </el-select>
-                  </div>
-                </el-form-item>
-                <el-form-item label="税区分">
-                  <el-select v-model="item.tax_category" class="form-control">
-                    <el-option
-                      v-for="option in taxCategoryOptions"
-                      :key="option.value"
-                      :label="option.label"
-                      :value="option.value"
-                    />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="金額（税込）" class="voucher-nowrap-form-item">
-                  <el-input :model-value="formatMoney(getLineTotal(item))" disabled />
-                </el-form-item>
-                <el-button text type="danger" class="voucher-line-delete" @click="removeLineItem(index)">
-                  削除
-                </el-button>
-              </div>
-            </div>
-            <div class="voucher-total-box">
-              <div>
-                <span>小計</span>
-                <strong>{{ formatMoney(taxExcludedAmount) }}</strong>
-              </div>
-              <div>
-                <span>消費税</span>
-                <strong>{{ formatMoney(taxAmount) }}</strong>
-              </div>
-              <div class="is-total">
-                <span>合計</span>
-                <strong>{{ formatMoney(totalAmount) }}</strong>
-              </div>
-            </div>
+            <div class="form-section-title">明細</div>
+            <VoucherLinesTable
+              v-model="lines"
+              :disabled="editingLocked"
+              :templates="voucherItemTemplates"
+              :errors="lineErrors"
+              :allow-service-items="voucherForm.voucher_type === 'invoice'"
+              :internal-costs="editingVoucher?.internal_line_costs"
+              @save-template="saveVoucherItemTemplate"
+            />
           </div>
           <el-form-item label="備考" prop="note" class="accounting-dialog-full">
             <el-input v-model="voucherForm.note" type="textarea" :rows="3" :disabled="false" />
@@ -1120,6 +1017,8 @@ onMounted(() => {
         </el-button>
       </template>
     </el-dialog>
+
+    <VoucherHistoryDialog v-model:visible="historyVisible" :voucher-id="historyTarget?.id ?? null" :number="historyTarget?.voucher_number" />
 
     <el-dialog
       v-model="itemManagerVisible"

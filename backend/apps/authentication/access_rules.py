@@ -377,6 +377,105 @@ class CaseChildRule(Rule):
         return {}
 
 
+class TaskRule(CaseChildRule):
+    """案件タスク＋毎日の計画の項目（P3）。
+
+    - 計画の項目（work_date あり）：本人（responsible_employee）だけが変更できる。全件閲覧権限
+      （case_view_all／case_change_all）を持つ人は閲覧だけ（変更は 403）。それ以外の人には見えない（404）。
+      案件を関連付けるときは、その案件の変更権限が必要（従来の案件タスクと同じ規則）。
+    - 従来の案件タスク（work_date なし）：これまでどおり CaseChildRule（親の案件の権限）に従う。
+    """
+
+    OWN_ONLY_MESSAGE = '他の人の計画は変更できません。'
+
+    @staticmethod
+    def _own_q(policy):
+        if policy.employee_id is None:
+            return _none_q()
+        return Q(responsible_employee_id=policy.employee_id)
+
+    @staticmethod
+    def _is_own(policy, obj):
+        return policy.employee_id is not None and obj.responsible_employee_id == policy.employee_id
+
+    def scope(self, policy, queryset, action):
+        plan = Q(work_date__isnull=False)
+        if action in READ_ACTIONS:
+            if self.can_view_all(policy):
+                return queryset
+            legacy = CASE_RULE.assigned_q(policy, prefix='case__')
+        else:
+            legacy = Q() if policy.has(CaseRule.CHANGE_ALL) else CASE_RULE.assigned_q(policy, prefix='case__')
+        return queryset.filter((~plan & legacy) | (plan & self._own_q(policy)))
+
+    def object_decision(self, policy, obj, action):
+        if obj.work_date is None:
+            return super().object_decision(policy, obj, action)
+        own = self._is_own(policy, obj)
+        if not (own or self.can_view_all(policy)):
+            return NOT_FOUND
+        if action in READ_ACTIONS or own:
+            return ALLOW
+        return FORBIDDEN
+
+    def prepare_create(self, policy, data):
+        if data.get('work_date') is None:
+            return super().prepare_create(policy, data)
+        if policy.employee_id is None:
+            raise PermissionDenied('担当者に関連付いていないアカウントは計画を作成できません。管理者に確認してください。')
+        if data.get('case') is not None:
+            self._check_parent_writable(policy, data['case'])
+        from apps.employees.models import Employee
+
+        # 計画は必ず本人のもの（画面から担当者を指定しても使わない）
+        return {'responsible_employee': Employee.objects.get(pk=policy.employee_id), 'created_by': policy.user}
+
+    def prepare_update(self, policy, instance, data):
+        if instance.work_date is None:
+            if data.get('work_date') is not None:
+                raise ValidationError({'work_date': ['案件タスクを計画の項目に変えることはできません。']})
+            return super().prepare_update(policy, instance, data)
+        if 'work_date' in data and data['work_date'] is None:
+            raise ValidationError({'work_date': ['計画の項目には作業日が必要です。']})
+        if 'responsible_employee' in data and getattr(data['responsible_employee'], 'pk', None) != instance.responsible_employee_id:
+            raise ValidationError({'responsible_employee': ['計画の担当者は変更できません。']})
+        if 'case' in data and data['case'] is not None and data['case'].pk != instance.case_id:
+            self._check_parent_writable(policy, data['case'])
+        return {}
+
+    def via_permission(self, policy, action, obj=None):
+        if obj is not None and obj.work_date is not None:
+            return 'own' if self._is_own(policy, obj) else CaseRule.VIEW_ALL
+        return super().via_permission(policy, action, obj)
+
+
+class DailyReportRule(Rule):
+    """業務報告（P3）：本人だけが作成・編集。全件閲覧権限を持つ人は閲覧だけ。"""
+
+    view_code = 'cases.use_cases'
+    model_label = 'tasks.DailyWorkReport'
+
+    def scope(self, policy, queryset, action):
+        if action in READ_ACTIONS and CASE_RULE.can_view_all(policy):
+            return queryset
+        if policy.employee_id is None:
+            return queryset.none()
+        return queryset.filter(employee_id=policy.employee_id)
+
+    def object_decision(self, policy, obj, action):
+        own = policy.employee_id is not None and obj.employee_id == policy.employee_id
+        if own:
+            return ALLOW
+        if CASE_RULE.can_view_all(policy):
+            return ALLOW if action in READ_ACTIONS else FORBIDDEN
+        return NOT_FOUND
+
+    def via_permission(self, policy, action, obj=None):
+        if obj is not None and policy.employee_id is not None and obj.employee_id == policy.employee_id:
+            return 'own'
+        return CaseRule.VIEW_ALL
+
+
 class DocumentRule(CaseChildRule):
     VIEW_ALL = 'documents.document_view_all'
     DOWNLOAD_ALL = 'documents.document_download_all'
@@ -458,16 +557,33 @@ class PartyRule(Rule):
     LINK_ALL = None  # 他担当の進行中案件がある対象を関連付けるための明示権限
     LINK_DENIED_MESSAGE = ''
 
-    def foreign_active_case_exists(self, policy, obj):
-        """他の担当者（または未割当）の進行中案件が紐付いているか。"""
+    def _foreign_active_cases(self, policy, target):
+        """他の担当者（または未割当）の進行中案件。target は対象（または OuterRef）。"""
         Case = self._case_model()
         qs = Case.objects.filter(
-            **{self.case_fk: obj}, registration_status=Case.REGISTRATION_STATUS_ACTIVE,
+            **{self.case_fk: target}, registration_status=Case.REGISTRATION_STATUS_ACTIVE,
         ).exclude(status__in=[Case.STATUS_COMPLETED, Case.STATUS_WITHDRAWN, Case.STATUS_REJECTED])
         # 未割当（responsible_employee が NULL）の進行中案件も「他担当」として扱う（明示的に判定）。
         if policy.employee_id is not None:
             qs = qs.filter(Q(responsible_employee__isnull=True) | ~Q(responsible_employee_id=policy.employee_id))
-        return qs.exists()
+        return qs
+
+    def foreign_active_case_exists(self, policy, obj):
+        """他の担当者（または未割当）の進行中案件が紐付いているか。"""
+        return self._foreign_active_cases(policy, obj).exists()
+
+    def linkable(self, policy, queryset):
+        """check_link と同じ条件で、関連付けできる対象だけに絞る（選択候補の一覧用）。
+
+        queryset は scope() を通したもの（_access_assigned 注釈付き）であること。最終判定は保存時の
+        check_link が送られた実 ID で行う（候補一覧に依存しない）。
+        """
+        if self.LINK_ALL and policy.has(self.LINK_ALL):
+            return queryset
+        foreign = Exists(self._foreign_active_cases(policy, OuterRef('pk')))
+        return queryset.annotate(_access_foreign_active=foreign).filter(
+            Q(_access_assigned=True) | Q(_access_foreign_active=False),
+        )
 
     def check_link(self, policy, obj, *, via=''):
         """既存の顧客・会社を案件・受付・家族・職員・代表者として関連付けてよいか（受控関連規則）。
@@ -841,6 +957,10 @@ RULES = {
     'project': ModuleRule('accounting.use_project'),
     'voucher': BusinessDocumentRule('accounting.use_voucher', model_label='accounting.AccountingVoucher'),
     'voucher_item_template': AnyBusinessDocumentRule('accounting.use_voucher', model_label='accounting.VoucherItemTemplate'),
+    # P4 サービス価格マスタ：閲覧（受付・帳票で選ぶ）と管理は別の明示権限。委託底価は serializer が
+    # accounting.view_service_floor_price で項目ごと出し分ける。
+    'service_item': ModuleRule('accounting.use_service_item', 'accounting.manage_service_item',
+                               model_label='accounting.ServiceItem'),
     'voucher_links': AnyBusinessDocumentRule('accounting.use_voucher'),
     'estimate': BusinessDocumentRule('accounting.use_estimate', model_label='accounting.Estimate'),
     'contract': BusinessDocumentRule('accounting.use_contract', model_label='accounting.Contract'),
@@ -851,7 +971,8 @@ RULES = {
     'case': CASE_RULE,
     'case_checklist_item': CaseChildRule('case'),
     'timeline': CaseChildRule('case'),
-    'task': CaseChildRule('case'),
+    'task': TaskRule('case', model_label='tasks.Task'),
+    'daily_report': DailyReportRule(),
     'reminder': CaseChildRule('case'),
     'document': DocumentRule('case', model_label='documents.Document'),
     'case_settings': CASE_SETTINGS_RULE,

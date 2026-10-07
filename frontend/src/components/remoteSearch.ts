@@ -8,8 +8,12 @@ export interface RemoteOption {
   sublabel?: string
 }
 
+// fetcher は候補の配列、または一覧 API の形（results と全件数 count）を返す。count があれば
+// 「ほかにも候補がある（検索で絞り込む）」ことを画面に出せる。
+export type RemoteFetchResult<T> = T[] | { results: T[]; count: number }
+
 export interface RemoteSearchConfig<T extends { id: number }> {
-  fetcher: (search: string) => Promise<T[]>
+  fetcher: (search: string) => Promise<RemoteFetchResult<T>>
   fetchOne?: (id: number) => Promise<T | null>
   toOption: (row: T) => RemoteOption
   getModelValue: () => number | null | undefined
@@ -27,6 +31,9 @@ export const createRemoteSearch = <T extends { id: number }>(config: RemoteSearc
   const options = ref<RemoteOption[]>([])
   const loading = ref(false)
   const error = ref('')
+  // 検索条件に合う全件数（一覧 API の count）。候補に出ていない分があるかの表示に使う。
+  const total = ref<number | null>(null)
+  const returned = ref(0)  // 最後の検索で返ってきた件数
   const rowCache = new Map<number, T>()
   // 連続入力で古い応答が新しい結果を上書きしないよう、最後に出したリクエストだけを反映する。
   let latestRequest = 0
@@ -45,13 +52,17 @@ export const createRemoteSearch = <T extends { id: number }>(config: RemoteSearc
     loading.value = true
     error.value = ''
     try {
-      const rows = await config.fetcher(search.trim())
+      const result = await config.fetcher(search.trim())
       if (requestId !== latestRequest) return
+      const rows = Array.isArray(result) ? result : result.results
+      total.value = Array.isArray(result) ? null : result.count
+      returned.value = rows.length
       rows.forEach((row) => rowCache.set(row.id, row))
       options.value = keepSelected(rows.map((row) => config.toOption(row)))
     } catch (err) {
       if (requestId !== latestRequest) return
       error.value = remoteErrorMessage(err)
+      total.value = null
       // 失敗しても選択中の値のラベルは残す。
       options.value = keepSelected([])
     } finally {
@@ -81,5 +92,8 @@ export const createRemoteSearch = <T extends { id: number }>(config: RemoteSearc
     }
   }
 
-  return { options, loading, error, rowCache, runSearch, ensureInitial }
+  // 検索結果に出ていない候補の数（count が分かる場合だけ）。選択中の値の補完分は数えない。
+  const hiddenCount = () => (total.value === null ? 0 : Math.max(total.value - returned.value, 0))
+
+  return { options, loading, error, total, rowCache, runSearch, ensureInitial, hiddenCount }
 }

@@ -1,0 +1,12 @@
+# 画像に入れないもの（P5）：アップロード済みファイル・参考 PSD・実データの見本 PDF・認可前の字体は media/ にある。
+# 本番の media はボリュームで渡し、MS Mincho は SEIFU_MS_MINCHO_FONT_PATH で指定する。
+media/
+.venv/
+**/__pycache__/
+**/*.pyc
+*.sqlite3
+.env
+.env.*
+!.env.example
+!.env.prod.example
+staticfiles/

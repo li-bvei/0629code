@@ -1,6 +1,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
+from apps.accounting.service_lines import ServiceLineError, case_service_items, mark_used
 from apps.cases.models import Case, CaseApplicationCategory, CaseTypeMaster
 from apps.companies.models import Company
 from apps.cases.utils import auto_apply_default_checklist_template
@@ -117,6 +118,14 @@ class ReceptionCompanySerializer(serializers.Serializer):
         return attrs
 
 
+class ReceptionServiceItemSerializer(serializers.Serializer):
+    """新規受付で選ぶサービス項目（参考。任意・複数可）。価格はマスタから後端が写す。"""
+
+    service_item = serializers.IntegerField()
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, default=1,
+                                        min_value=0)
+
+
 class ReceptionCaseSerializer(serializers.Serializer):
     case_type_master = serializers.PrimaryKeyRelatedField(
         queryset=CaseTypeMaster.objects.filter(is_active=True),
@@ -130,6 +139,9 @@ class ReceptionCaseSerializer(serializers.Serializer):
     )
     responsible_employee = serializers.IntegerField(required=False, allow_null=True)
     accepted_at = serializers.DateField(required=False, allow_null=True)
+    # P4：関連元の案件（任意。閲覧できる案件だけ。受付 API が範囲を確認する）とサービス項目（参考）
+    parent_case = serializers.IntegerField(required=False, allow_null=True)
+    service_items = ReceptionServiceItemSerializer(many=True, required=False)
 
     def to_internal_value(self, data):
         data = data.copy()
@@ -138,9 +150,13 @@ class ReceptionCaseSerializer(serializers.Serializer):
         return super().to_internal_value(data)
 
     def validate(self, attrs):
-        has_case_type = bool(attrs.get('case_type_master'))
+        case_type = attrs.get('case_type_master')
         has_application_category = bool(attrs.get('application_category'))
-        if has_case_type != has_application_category:
+        if case_type is None:
+            if has_application_category or attrs.get('service_items') or attrs.get('parent_case'):
+                raise serializers.ValidationError('案件を作成する場合は案件種別を選択してください。')
+            return attrs
+        if case_type.requires_application_category and not has_application_category:
             raise serializers.ValidationError('案件を作成する場合は案件種別と申請区分の両方を選択してください。')
         return attrs
 
@@ -254,16 +270,25 @@ class ReceptionSerializer(serializers.Serializer):
 
             case = None
             checklist_items = []
-            if case_data.get('case_type_master') and case_data.get('application_category'):
+            if case_data.get('case_type_master'):
                 actor = getattr(self.context.get('request'), 'user', None)
+                service_items, used_service_ids = [], set()
+                if case_data.get('service_items'):
+                    try:
+                        service_items, used_service_ids = case_service_items(case_data['service_items'])
+                    except ServiceLineError as exc:
+                        raise serializers.ValidationError({'case': {'service_items': str(exc)}})
                 case = Case.objects.create(
                     case_type_master=case_data['case_type_master'],
-                    application_category=case_data['application_category'],
+                    application_category=case_data.get('application_category'),
                     customer=customer,
                     company=company,
                     responsible_employee_id=case_data.get('responsible_employee'),
                     accepted_at=case_data.get('accepted_at'),
+                    parent_case_id=case_data.get('parent_case'),
+                    service_items=service_items,
                 )
+                mark_used(used_service_ids)
                 record_case_event(
                     case,
                     Timeline.EVENT_CASE_CREATED,
@@ -277,6 +302,8 @@ class ReceptionSerializer(serializers.Serializer):
                         'customer_reused': customer_reused,
                         'customer_id': customer.id,
                         'source': 'reception',
+                        'parent_case_id': case.parent_case_id,
+                        'service_item_ids': [item['id'] for item in service_items],
                     },
                 )
                 checklist_items = auto_apply_default_checklist_template(case) or []

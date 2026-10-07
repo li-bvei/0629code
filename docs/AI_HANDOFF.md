@@ -90,6 +90,31 @@ docs/                          当前文档与历史记录
 - 生产操作由用户在服务器终端执行，AI 无服务器访问权限。
 - 2026-10-03 修正（本地已提交，是否已部署以服务器当前提交为准）：①案件「進捗を更新」在申请之后的进度都可填写申請日；②进度变更不再强制输入理由（归档理由不变）；④案件详情页的各区块都放进正文栏与右列并排（消除基本信息卡片下方的留白）；③顾客页面的家族编辑可直接修改已关联人物的生日・在留信息等（`PATCH /api/family-members/{id}/` 的 `person`，受控于 `PartyChildRule`）。详见 `CHANGELOG_2026-10-03_case_progress_family_fixes.md`。
 
+2026-10-05 缺陷修复（本地未提交；无模型变化、无 migration）：公司的「従業員追加・編集」和「新規会社・会社編集」中选择「既存の顧客」（从业员和代表者）时，候选只显示固定的少数几人。
+- **原因**：前端在页面打开时调用一次 `listCustomers()`（不带参数，默认分页只有第 1 页 20 人），然后只在这 20 人里本地筛选。代表者下拉框连搜索都不能用。编辑时，若已关联的人不在这 20 人里，只会显示 ID。
+- **修正**：
+  - 改为复用 `RemoteCustomerSelect`：由服务器端搜索，打开时显示前 20 人，并提示「ほかに N 件」。
+  - 新增 `linkable-only` 选项，对应 API 参数 `/api/customers/?linkable=1`，复用 `PartyRule.linkable`，条件与保存时的 `check_link` 相同，候选中只出现可以关联的顾客。
+  - 编辑时用记录里的 `customer_name`／`representative_customer_name` 作为初始选项，即使该人不在本页结果或不在用户的查看范围内，也能正常显示。
+  - `RemoteSelect` 在已有候选时也显示错误提示。
+- **说明**：在会社画面中「従業員」指的是作为顾客登记的人物（`CompanyStaff.customer`）；会社和内部担当者（Employee）之间没有关联。Customer 没有「停用」状态，所以没有做停用相关的处理。
+- **测试**：`authentication/tests/test_company_staff_candidates.py`（6 项），前端 `tests/remoteSearch.test.ts` 新增 4 项。
+
+2026-10-03 P1「单据与 Visa」（同一分支，**本地工作区未提交、未推送、未部署**；P2～P5 未开始）：
+
+- 新 migration `accounting/0021_voucher_history_visa_generations`：
+  - 单据状态履历表；
+  - Visa PDF 生成记录表；
+  - Visa 申请的 `guarantor_template` 可空 FK。
+  - 只新增表和可空列。生产部署时需要 `migrate`，无需数据回填。
+- 请求书／领受书：
+  - 在有效状态间任意切换，只有下書き可编辑；
+  - 状态切换按 `expected_status` 加锁比对，冲突时返回 409；
+  - 每次切换都写履历（含快照与发行版本）。
+- 明细输入：全宽表格（窄屏为行卡片），支持 Enter 连续录入、复制、排序、删除确认，并逐行显示错误。
+- Visa：单一五步流程，担保人模板由服务器快照。生成前校验必填项（含 PDF 氏名栏）。异常按错误码返回，不再静默回退。只有真实生成的文件才给下载链接，每次生成都有记录。
+- 详见 §16.5 和 `DEVELOPMENT_PLAN.md` §5.9。
+
 2026-10-02 批量变更・类别联想・受付简化（同一分支 `codex/p3-real-estate-collaborative-ledger`，已提交 `9b81b77` 并于 2026-10-02 推送到 `origin/codex/p3-real-estate-collaborative-ledger`；未合并到 `main`、未部署；生产 D1～D12 未执行）：
 
 - Git 状态：远程此前只有 `main`（`de95411`）。该分支建立在 P0～P3、发布硬化、UI 布局等本地提交之上，所以这次推送把这些此前从未推送的提交一并带到了远程的这个功能分支；`main` 未变。以下各节中更早日期写的「未推送」描述的是当时状态。
@@ -233,6 +258,30 @@ Case
 | `GET /api/auth/me/` | 2026-09-28 修订：`permissions`/`business_permissions` 只返回显式业务权限（不再是 superuser 的全部权限），新增 `employee_id`、`employee_name`、`is_protected`、`dev_tools_enabled` |
 | 所有业务 API | 2026-09-28：统一经 BusinessAccessPolicy 限定范围。范围外 404、可见但不可写 403；顾客/公司列表与搜索对范围外只返回最小识别字段（`access_level`）；Expense summary/dashboard 无全体会计权限时余额为 `null`（`balance_visible`、`expense_scope`） |
 | `POST /api/receptions/`、`POST /api/cases/` | 2026-09-28：未指定担当则设为本人；账号未关联 Employee 返回 400；无 `case_change_all` 不能以他人为担当 |
+| `POST /api/accounting/{vouchers\|estimates\|contracts}/{id}/transition/` | 2026-10-03（本地，P1）：<br>- 新增可选 `expected_status`：与当前状态不一致时返回 409，什么都不改。<br>- 请求书／领受书可在有效状态间任意切换（`draft/issued/sent/paid/cancelled`，领受书为 `draft/issued/voided`），只有 `draft` 可编辑或删除，且两者状态互相独立。<br>- 见积书和契约书的规则不变。 |
+| `PUT/PATCH /api/accounting/vouchers/{id}/` | 2026-10-03（本地，P1）：<br>- 保存时加行锁。打开表单后单据已被发行或作废时返回 409。<br>- 明细错误时，400 响应新增 `line_item_row`（出错的行号）。<br>- 明细可保存 `unit`、`note`（JSON 内字段，无 migration）。 |
+| `GET /api/accounting/vouchers/{id}/status-history/` | 2026-10-03 新增（本地，P1）：<br>- 返回状态履历，最多 200 条：变更前后状态、操作者、时间、理由、发行版本和完整快照。<br>- 权限同单据查看。 |
+| `GET /api/accounting/visa-return-applications/{id}/check/` | 2026-10-03 新增（本地，P1）：生成前确认，返回：<br>- `ready` 和 `missing`（含 `printed_name`：PDF 氏名栏）；<br>- 各字段的值和来源（`applicant`/`template`/`manual`）；<br>- PDF 模板方式；<br>- 担保人模板版本，以及选择后模板是否被修改过。 |
+| `POST /api/accounting/visa-return-applications/{id}/generate-pdf/` | 2026-10-03 新增（本地，P1）。**单票生成 Visa PDF 的唯一入口**（处理本体是 `visa_pdf_generation.generate_and_record`，批量 ZIP 也使用它）：<br>- 缺必填项时返回 400 `missing_fields`，不建记录。<br>- 生成失败时返回 422 `{code, detail, fields, generation}`，并记录失败和审计。错误码包括：意外异常 `generation_failed`、保存失败 `storage_failed`、保存后找不到文件 `output_missing`。<br>- 成功时保存文件，确认文件存在后返回 201；记录生成方式、模板版本和担保人模板版本。<br>- 失败时不会退回另一种生成方式。 |
+| `GET .../visa-return-applications/{id}/pdf-generations/`、`.../pdf-generations/{gid}/download/` | 2026-10-03 新增（本地，P1）：<br>- 列出生成记录；只有成功且文件确实存在的记录才给出 `download_url`。<br>- 下载时文件不存在或无法读取，返回 404 `file_missing`；否则返回文件并写审计。 |
+| `GET /api/accounting/visa-return-applications/{id}/pdf/`（旧，**已废止**） | 2026-10-04（P1）：<br>- 保留路由，但只返回 **410 Gone** `{"code": "legacy_pdf_endpoint_disabled", "detail": "旧版の PDF 作成用 API は廃止しました。…"}`。<br>- 不校验、不调用任何生成函数，不生成文件，也不建生成记录。<br>- 权限和范围检查不变（无权限返回 403）。<br>- 每次访问写审计 `visa_pdf_legacy_endpoint_called`，用于查找仍在调用的外部客户端。<br>- 前端已删除 `downloadVisaReturnApplicationPdf()`。 |
+| `POST /api/accounting/visa-imports/{id}/pdf-zip/` | 2026-10-04（P1）：<br>- 改为对每个申请调用 `generate_and_record(source='batch_zip')`，成功的 PDF 与单票一样建生成记录并保存文件；ZIP 中放的就是这份已保存的文件。<br>- 缺必填项或生成失败的申请不生成 PDF，原因写进 `結果.txt`。<br>- 与以前不同：现在也会校验必填项，而且每份成功的 PDF 都会保存在 media 中。 |
+| `POST/PATCH /api/accounting/visa-return-applications/` | 2026-10-03（P1）：<br>- 新增 `guarantor_template`。<br>- `guarantor_snapshot` 为只读，送来的值一律忽略，由服务器决定：选择或更换模板时按模板重建（含 `guarantor_template_id`、`template_name`、`template_version`）；模板不变时保留原快照；取消模板时清空快照；没有模板的旧数据保持原样。<br>- 新选择已停用的模板时返回 400。 |
+| `GET/POST/PATCH/DELETE /api/tasks/` | 2026-10-05（本地，P3）：任务也承担每日计划的项目。<br>- 新增字段：`work_date`、`priority`、`result_note`；只读字段 `carried_from`、`carried_from_date`、`carried_to`、`status_display`、`priority_display`、`case_customer_name`。<br>- **默认的一览只返回原有案件任务（`work_date` 为空）**；加 `plan=1` 才返回计划项。详情、修改等按 ID 访问的操作不受此限制。<br>- 一览新增参数：`plan=1`、`work_date`、`work_date_from/to`、`employee`（`me` 或 ID）、`page_size`（最多 200）。<br>- 有 `work_date` 的项目是计划项：负责人强制为本人，案件可选（关联时需要该案件的修改权限）。<br>- 没有 `work_date` 的是原有案件任务，规则不变，仍需指定案件。<br>- PATCH 和 DELETE 可传 `version`（`updated_at`），不一致返回 409。<br>- 新增状态 `carried_over`，只能通过结转操作设置。<br>- 权限：`TaskRule`。 |
+| `POST /api/tasks/{id}/carry-over/`、`POST /api/tasks/carry-over-batch/`、`POST /api/tasks/reorder/` | 2026-10-05 新增（本地，P3）：<br>- 结转：传 `{target_date, version}`。目标日期必须晚于原作业日；只有未完成的项可以结转；会新建一项，原项变为 `carried_over`。<br>- 批量结转：传 `{target_date, items:[{id, version}]}`，逐项处理，允许部分成功，返回每一项的结果，并写批次审计。<br>- 排序：传 `{work_date, items:[{id, version}]}`，整体一个事务：有一项版本不一致就返回 409，有一项不是当天就返回 400。<br>- 只有本人可以操作。 |
+| `/api/daily-reports/`、`POST .../generate/`、`PATCH .../{id}/`、`POST .../{id}/confirm/` | 2026-10-05 新增（本地，P3）：<br>- 一览参数：`employee`、`report_date`、`date_from/to`。<br>- 生成：传 `{report_date, version?, overwrite_edits?}`；不能生成未来日期的报告；有人工编辑而未传 `overwrite_edits` 时返回 409 `edited_exists`；已确定的报告不能再生成。<br>- PATCH 只能修改 `final_text`，必须传 `version`。<br>- confirm 也传 `version`。<br>- 没有通常的 POST 创建，只能通过 generate 生成。<br>- 权限：`DailyReportRule`。只在系统内保存，不对外发送。 |
+| `/api/accounting/service-items/` | 2026-10-06 新增（本地，P4）：服务价格主数据。<br>- 查看：`accounting.use_service_item`；新建、修改、删除：`accounting.manage_service_item`。<br>- `floor_price` 只返回给有 `accounting.view_service_floor_price` 的人；其他人提交底价返回 400。<br>- PATCH 必须带 `version`，不一致返回 409。<br>- 一览参数：`active=1/0`、`search`（只查名称和分类）、`category`。<br>- 用过的项目 DELETE 返回 400，改为停用。<br>- 所有变更写审计（模块 `accounting`，含底价修改前后的值）。 |
+| `GET /api/accounting/estimates/{id}/internal-costs/`、`GET /api/accounting/vouchers/{id}/internal-costs/` | 2026-10-06 新增（本地，P4）：只有底价权限者可读（其他人 403）。<br>- 返回当前明细的委托底价 `current`，以及每次发行时的 `issued_versions`。<br>- 契約書没有这个接口（404）。 |
+| `PATCH /api/accounting/estimates/{id}/`、`contracts/{id}/`、`vouchers/{id}/` | 2026-10-06 修订（本地，P4）：<br>- 可传 `version`（`updated_at`）：保存时锁定该行，不一致返回 409；旧画面不传时仍接受。<br>- 見積書和請求書的明细行由后端生成 `line_key`；选了服务项目的行由后端生成 `service` 快照，底价写入 `internal_line_costs`（只对底价权限者返回）。<br>- 契約書和領収書会去掉服务项目相关字段。 |
+| `POST /api/receptions/` | 2026-10-06 修订（本地，P4）：`case` 中新增可选的 `parent_case` 和 `service_items:[{service_item, quantity}]`（需要 `use_service_item`，否则 403）。<br>- 种别的 `requires_application_category=false` 时可以不传 `application_category`。<br>- 选中的服务项目作为快照存进 `Case.service_items`，不含底价。 |
+| `POST /api/cases/{id}/change-stage/`、`/api/workflow-templates/`（含 `POST {id}/duplicate/`）、`/api/workflow-stages/` | 2026-10-06 新增（本地，P4）：<br>- 被案件使用的流程：名称、系统、启用状态和全部阶段都不能修改（400 `workflow_in_use`），通过 `duplicate` 复制后重新绑定。<br>- 段阶变更：传 `{stage, expected_stage?, note?}`，需要案件修改权限；`expected_stage` 不一致返回 409；写 Timeline 和审计。<br>- 对原 13 阶段案件返回 400 `legacy_workflow`；对流程案件调用 `change-status` 也返回 400。<br>- 流程和阶段：读取需要 `cases.use_cases`，修改需要 `cases.manage_case_settings`，变更都写审计。<br>- `CaseSerializer` 新增 `workflow_template`、`workflow_stage`（只读）、`workflow_stage_name`、`parent_case`（可修改，只能选看得到的案件）、`service_items`（只读）；详情另含 `workflow_stages` 和 `child_cases`（只列看得到的）。<br>- 流程案件的 `status_display` 返回阶段名。 |
+| `GET /api/customers/?linkable=1` | 2026-10-05（本地）：只返回可以关联的顾客（作为会社从业员、代表者等）。条件与保存时的 `check_link` 相同：本人负责的顾客、没有他人负责（含未分配）进行中案件的顾客；拥有 `customer_link_all` 的用户返回全部。不加该参数时一览和搜索的行为不变。 |
+| `/api/accounting/seifu-notice-records/`、`POST {id}/preview_pdf/`、`POST {id}/generate_pdf/`、`GET {id}/generations/`、`GET /api/accounting/seifu-notice-generations/`、`GET …/{id}/download/` | 2026-10-06（本地，P5 单模板，含独立审查修正）：<br>- 记录只接受宛名、許可番号、通知日；通知书编号、模板、坐标、字体由服务器决定，客户端提交这些字段返回 400。<br>- `generate_pdf` 传 `{request_id?}`：生成并检查 PDF，写入存储并确认后建立 `SeifuNoticePdfGeneration`，返回 201 和 JSON（同一 `request_id` 再次提交时返回 200 和 `replayed`）。失败时不建记录、不留文件；输入错误返回 400，模板、字体、生成或存储故障返回 422。<br>- 下载只限成功且文件存在的记录，否则返回 404 `file_missing`。<br>- `preview_pdf` 不保存。<br>- 权限：`accounting.use_seifu`，不按 `is_superuser` 放行。 |
+| `POST /api/accounting/seifu-notice-pdf/generate/`（旧，**已废止**） | 2026-10-06（P5）：保留 URL，返回 410 `legacy_seifu_endpoint_disabled`；不调用生成函数、不产生文件或记录，只写 `seifu_legacy_endpoint_called` 审计。 |
+| `GET /api/documents/upload-policy/`、`POST /api/documents/upload-check/` | 2026-10-04 新增（本地，P2）：<br>- `upload-policy` 返回上传上限和允许的扩展名。<br>- `upload-check`：`{case, files:[{name,size}]}`。检查该案件能否写入（不可见返回 404，只读或已归档返回 403）、件数、合计大小，以及每个文件的名称、种类和大小；不保存任何内容。整体超限返回 400 `errors`，个别文件的问题放在 `files[].problem`。<br>- 实际上传仍是每个文件一次 `POST /api/documents/`。 |
+| `POST /api/documents/` | 2026-10-04（P2）：新增文件名安全检查，拒绝路径分隔符、控制字符、Windows 保留名、只有点号、超过 200 字符的文件名。其余行为不变（单文件 API 仍可使用）。 |
+| `POST /api/documents/download-zip/` | 2026-10-04 新增（本地，P2）：<br>- 参数 `{case, ids:[...]}` 或 `{case, all:true}`，只限同一案件；`all` 不包含已归档文件。<br>- 每个文件单独用 `decide('document', doc, 'download')` 判断。以下情况不放入 ZIP，原因写在 `ダウンロード結果.txt`，件数在响应头 `X-Zip-Included`、`X-Zip-Skipped`：无权限（`forbidden`）、不可见（`not_found`，不写文件名）、其他案件（`other_case`）、文件实体不存在（`file_missing`）。<br>- 拒绝时返回 400：`nothing_to_download`、`zip_too_many_files`、`zip_too_large`。<br>- 审计：`document_zip_download`、`document_zip_refused`。 |
+| `POST /api/cases/{id}/checklist-batch/` | 2026-10-04 新增（本地，P2）：<br>- 参数 `{item_ids, changes:{is_completed?, received_at?, responsible_party?, acquisition_place?, note?, note_mode?}, versions?:{id: updated_at}}`。<br>- 需要案件的「变更」权限；已归档的案件返回 400。<br>- 只要有一个项目不属于该案件，整体返回 400，不做任何修改。<br>- 返回每个项目的结果 `results[{id,status,code,detail}]`，失败码为 `conflict`、`not_applicable`、`not_found`、`error`；同时返回 `progress_summary`。<br>- 审计：每个项目 `checklist_item_batch_updated`（`changes` 记录修改前后的值），整批 `checklist_batch_update`；整体被拒时 `checklist_batch_rejected`。 |
 | 开发用端点（demo seed、seed-standard、PDF 坐标/表单调试、numbered_sample） | 2026-09-28：`ENABLE_DEV_TOOLS=False`（生产）时不注册或返回 404 |
 
 ### 6.2 会计与帳票
@@ -243,7 +292,7 @@ Case
 - 請求書・領収書 PDF；
 - 返签 visa 表；
 - 税务证明记录与部分正式 PDF；
-- 清風合格通知书基础 PDF 添加文字工具，但业务继续开发暂停。
+- 清風合格通知书已由 P5 改为固定字段单模板流程；旧的任意文字／坐标工具已废止。当前等待实际打印验收和字体授权确认。
 
 税込/税抜和 10% / 8% / 非課税的计算规则记录在 `AI_CONTEXT.md`，不可在没有回归测试的情况下修改。历史帳票中已经发现过存储金额与当前重算金额可能不一致的旧数据，批量重算必须先获得业务确认。
 
@@ -411,7 +460,7 @@ Case
 - 年金 PDF 的被扶养人详细信息数据结构。
 - 真实生产数据的 family link 回填和重复 Customer 合并。
 - 8/9 件案件被归入“その他”的业务分类确认。
-- 清風合格通知书后续业务化。
+- 清風合格通知书多模板（课程年数可变 PSD 到位后）以及正式打印验收。
 - 客户 Portal、通知、邮件、日历、电子签名。
 - Google Drive 迁移、索引或集成（本阶段明确不做）。
 
@@ -847,3 +896,388 @@ Smart Summary
 3. 开始写代码前，先把本次任务对应的权限、数据所有权、migration、测试和回滚范围写成小方案。
 4. 若任务涉及需求文档 §13 的未决问题，必须先向用户确认，不得自行猜测。
 5. 每个开发批次结束必须更新本文件；交接文档未更新，不视为完成。
+
+## 16. 2026-10-03 新一轮需求确认（P1～P6 已在本地实施；P6 代码验收完成，生产 D5/D11/回填未执行）
+
+### 16.1 必读规格
+
+- 完整需求见 `docs/DEVELOPMENT_REQUIREMENTS_2026-09-26.md` 第 15 节。
+- 实施顺序和验收标准见 `docs/DEVELOPMENT_PLAN.md` 第 5 节。
+- 规划中的数据结构见 `docs/DATABASE.md` 第 11.11 节。P1 部分已由 `accounting/0021` 创建（实际结构见 11.11 的「P1 实际结构」）；其余结构尚未创建 migration。
+
+### 16.2 用户已经确认的五项决定
+
+1. 请求书／领受书状态可以随时人工切换；任何状态都可回到草稿继续修改。
+2. 不动产只在导航上与会计归入“公司内部资料管理”，后端仍独立。
+3. 案件进度／必要资料批量操作只做单个案件内部，不做跨案件批量。
+4. 没有可运行 Photoshop 的电脑，清風必须是纯服务器端方案。
+5. 每日工作报告只在系统内保存并生成可复制文本，不自动发送。
+
+### 16.3 当前代码中需要优先注意的问题
+
+- `backend/apps/accounting/voucher_infra.py` 当前限制状态迁移，并只允许草稿编辑；实现时应开放有效状态间切换，但内容修改仍通过“回到草稿”完成。
+- `frontend/src/pages/AccountingVouchersPage.vue` 的明细编辑区域字段密集，应重构为全宽连续录入布局。
+- `frontend/src/pages/VisaReturnApplicationsPage.vue` 当前存在多个创建路径和大量字段；担保人模板虽然已有能力，但没有成为清晰主流程。
+- `backend/apps/accounting/visa_return_pdf.py` 存在异常被吞掉后继续生成的路径；必须改为可诊断失败，不能用静默 fallback 掩盖模板问题。
+- `backend/apps/accounting/seifu_notice_pdf.py` 当前是在 PDF 上覆盖文字；仓库中只有清風 PDF，没有可供验证的 PSD 与准确字体，暂不能声称实现 Photoshop 同等效果。
+- `frontend/src/components/case/CaseActionBar.vue` 和 `frontend/src/pages/DocumentsPage.vue` 当前以单文件操作为主，需要统一批量组件和接口约定。
+- `frontend/src/pages/CaseDetailPage.vue` 的必要资料目前逐项更新；批量范围必须锁定当前案件。
+- `backend/apps/tasks/models.py` 的任务当前依赖案件；每日计划需要允许内部非案件任务，并增加日报快照。
+- `backend/apps/cases/models.py` 的状态语义偏向签证流程；新增案件类型前先引入工作流模板／工作流族，不能只追加类型名称。
+
+### 16.4 实现约束
+
+- 严格按 P1 → P5 分阶段实施，每阶段单独验证和汇报；不要一次性修改全部模块。
+- 不破坏现有 API 的情况下优先增加兼容字段／端点，再迁移前端调用。
+- 状态历史、批量更新、文件打包、价格快照和日报快照都必须可审计。
+- 清風阶段不得承诺服务器端与 Photoshop 逐像素一致；没有实际 PSD、字体和样例时只允许做接口与可行性设计。
+- 保留用户已有未提交修改；不要执行 destructive git 命令。
+- 不创建重复的需求或计划 Markdown，在现有文档中维护进度。
+
+### 16.5 P1 实施记录（2026-10-03～04，本地未提交；代码验收完成，部署前待真实 Visa 样本打印确认）
+
+16.3 的前四项（`voucher_infra.py`、`AccountingVouchersPage.vue`、`VisaReturnApplicationsPage.vue`、`visa_return_pdf.py`）已处理，其余各项属于 P2～P5，未动。
+
+**主要文件**
+- 后端：
+  - `accounting/models.py`：`VoucherStatusHistory`、`VisaReturnPdfGeneration`、`VisaReturnApplication.guarantor_template`。
+  - `0021` migration。
+  - `voucher_infra.py`：`Workflow.free_transitions`、`history_kind`、`DocumentConflict`（409）、加锁的 `transition()`。
+  - `voucher_views.py`：`status-history`、保存加锁。
+  - `voucher_calculations.py`：行号错误。
+  - `serializers.py`：模板快照由服务器重建；生成记录与履历的 serializer。
+  - `visa_return_pdf.py`：`VisaPdfError`/`VisaPdfResult`、`resolve_guarantor`、`REQUIRED_FIELDS`、显式选择生成方式、输出校验。
+  - `views.py`：`check`、`generate-pdf`、`pdf-generations`、download；旧 `pdf/` 返回 410。
+  - `visa_pdf_generation.py`（2026-10-04 新增）：`generate_and_record` 是生成 Visa PDF 的唯一入口（单票和批量 ZIP 共用）；`read_generated_pdf` 用于批量 ZIP 读回已保存的文件。
+  - `visa_import_views.py`：`pdf-zip` 改用 `generate_and_record`。
+  - 测试 `tests_p1_vouchers_visa.py`（22 项）。
+- 前端：
+  - `components/vouchers/VoucherLinesTable.vue`、`VoucherHistoryDialog.vue`、`voucherStatus.ts`；
+  - `VoucherStatusActions.vue`（失败必解除 loading）；
+  - `utils/voucherLines.ts`、`utils/visaFlow.ts`；
+  - 两个页面；
+  - `VisaReturnBatchDrawer.vue`（批量也送 `guarantor_template`）。
+  - 单元测试 `tests/voucherLines|voucherStatus|visaFlow.test.ts`。
+
+**行为要点**
+- 请求书／领受书的 `free_transitions=True`：从任意状态可到其他任意有效状态，无终态。见积书和契约书仍按原有迁移表。
+- 编辑只在 `''`/`draft`。从下書き以外回到下書き时，旧的 `issued_snapshot` 保留在上一条履历里，再次发行写为新版本（version = 以前的发行次数 + 1）。
+- 履历的 `voucher` 为 SET_NULL；单据删除后，履历仍保留编号和快照。
+- Visa PDF：
+  - 有 form 资产（`visa_tem.pdf` + `form_field_mapping.json`）用 form，否则用坐标模板；都没有时返回 `template_missing`。
+  - 失败时不切换到另一种方式。
+  - 字段写入失败时先尝试在该位置绘制文字（记入 `drawn_fallback`），两者都失败才返回 `field_write_failed`。
+  - 模板的 T50 字段在 PyMuPDF 下会报 “bad choice field list”，所以一直走绘制方式。
+- 模板版本 = 模板 PDF 与映射 JSON 的 SHA-256 前 16 位；担保人模板版本 = 模板 `updated_at`（选择时写入快照）。
+
+**验证**
+- 后端：全量 `Ran 395 tests — OK`（2026-10-04 旧接口废止后）；P1 测试 30 项。
+- `check`：0 issues；`makemigrations --check --dry-run`：无差异。
+- 前端：`npm run test:unit` 50 项通过；`npm run build`（含 vue-tsc）通过；`git diff --check` 通过。
+- 浏览器 QA 使用合成库 `gyoseishoshi_erp_batch_qa_20261002`（已 migrate 到 0021）：
+  - 单据：键盘连续录入、行错误、发行、他人先改导致的 409、回到下書き、修改、再发行、履历快照、窄屏卡片。
+  - Visa：五步流程、模板来源标记、手入力覆盖、PDF 生成、下载、缺项错误后修正重试。
+- QA 中发现并已修正：
+  - 数量栏不能覆盖默认值；
+  - 税区分下拉阻断 Enter；
+  - Esc 关闭对话框导致明细丢失；
+  - 生成失败后返回预览时显示旧的确认结果；
+  - 只填申请人氏名而英文姓／中文姓为空时，PDF 氏名栏为空却能生成（现在列为必填 `printed_name`）。
+
+**代码审查后的修正（2026-10-03）**
+- 模板快照：
+  - `guarantor_snapshot` 为只读，前端也不再发送；手入力的担保人信息只放在 `guarantor_*` 列和 `form_data`。
+  - 取消模板时清空快照。保存的快照属于其他模板时，按当前模板重建。
+- 单选项：
+  - `set_pdf_radio_group_value` 只在「确实选中了」且没有写入错误时返回 True。
+  - 值不在对应表中，或选项无法选中时，返回 `field_write_failed`；`fields` 例如 `性別（male）`。
+  - 已用实际模板确认：性別和婚姻状況会印出勾选标记。
+- 平坦化后若仍残留输入栏，返回 `flatten_failed`。
+- `render_visa_return_pdf` 把预料之外的异常转为 `generation_failed`，并用 `logger.exception` 记录。单票生成和批量 ZIP 都适用。
+- 生成服务中文件保存的异常转为 `storage_failed`：记录失败、写审计、删除半成品文件。
+- 下载时文件无法读取，返回 404 `file_missing`。
+- 请求书和估价单的 PDF：数量栏附带单位，明细备注填写时打印到「備考」栏。领受书的「摘要」原本就打印备注。输入栏标明「備考（PDF に表示）」。
+- 新增测试 6 项：快照无法绕过、单选失败、平坦化残留、意外异常、保存与读取失败、请求书的单位与备注。P1 测试共 28 项。
+
+**旧 Visa PDF 接口废止（2026-10-04，P1 最后一条审查意见）**
+- 旧 `GET /api/accounting/visa-return-applications/{id}/pdf/`：
+  - 仍会先经过 `get_object`，因此权限和范围检查不变；
+  - 之后只写一次审计 `visa_pdf_legacy_endpoint_called`，并返回 410 `legacy_pdf_endpoint_disabled`；
+  - 不调用任何生成函数，不生成文件，也不建记录。
+- 删除了已无引用的 `visa_return_pdf_response`、`generate_visa_return_pdf`（`views.py` 中的 `visa_error_response` 也一并删除）。删除前已用 rg 确认没有其他引用。
+- 前端删除了未使用的 `downloadVisaReturnApplicationPdf()`。用 rg 确认 `frontend/src` 和 `frontend/tests` 中已没有该函数，也没有指向 Visa `/pdf/` 的 URL。剩下两处 `/pdf/` 是請求書／見積書／契約書的 PDF。
+- 批量 ZIP 原本没有调用旧 URL，但直接调用生成函数，绕过了生成记录。现在改用 `generate_and_record`。
+- 结果：所有成功生成的 Visa PDF 都有 `VisaReturnPdfGeneration` 记录（`details.source` 为 `single` 或 `batch_zip`）。
+- 新增测试：
+  - 旧接口返回 410、code 正确、不调用生成函数、不建记录、不生成文件、写审计、权限仍为 403、新的生成和下载正常；
+  - 批量 ZIP 走正式生成服务（建立记录，ZIP 中文件的 SHA 与记录一致，缺项的申请写进 `結果.txt`）。
+- P1 测试共 30 项。`tests_visa_import.py` 改用临时 `MEDIA_ROOT`（批量 ZIP 现在会保存文件）。
+
+**未解决**
+- Visa PDF 约 20MB／份，原因是嵌入了整套字体；与改动前相同，但每份都会保存在 media 中，会占用磁盘。
+- 没有用真实数据或真实打印确认 Visa 版面。
+- 旧 Visa 记录若只有申请人氏名，现在生成时（包括批量 ZIP）会被要求补英文姓或中文姓。
+- 批量 ZIP 生成的每份 PDF 现在都会作为生成记录保存在 media 中（约 20MB／份），批量越大，占用的磁盘越多。
+
+### 16.6 P2 实施记录（2026-10-04～05，本地未提交；审查意见已修正，等待用户确认代码验收）
+
+16.3 中的 `CaseActionBar.vue`、`DocumentsPage.vue`（只能逐个处理文件）和 `CaseDetailPage.vue`（必要资料只能逐项更新）已处理。P3～P5 未开始。
+
+**主要文件**
+- 后端：
+  - `documents/upload_policy.py`：`filename_problem`、`check_batch`、上限函数、`policy_payload`。
+  - `documents/zip_export.py`（新）：安全文件名、按分类分文件夹、固定的重名规则、写入临时文件。
+  - `documents/views.py`：`upload-policy`、`upload-check`、`download-zip`。
+  - `cases/checklist_batch.py`（新）：单案件批量更新服务。
+  - `cases/views.py`：`checklist-batch` action。
+  - 测试 `documents/tests_batch.py`（15 项）、`cases/tests_checklist_batch.py`（7 项）。
+- 前端：
+  - `components/documents/DocumentUploadQueue.vue`、`DocumentZipActions.vue`（新，共用组件）。
+  - `utils/uploadQueue.ts`、`utils/checklistBatch.ts`（新）。
+  - `CaseActionBar.vue`：「ファイル」抽屉改为多文件上传队列，并加入 ZIP 下载。
+  - `DocumentsPage.vue`：增加按案件筛选；选定案件后可多文件上传、ZIP 下载和勾选。
+  - `CaseDetailPage.vue`：「まとめて操作」模式。
+  - `api/documents.ts`、`api/cases.ts`。
+  - 单元测试 `tests/uploadQueue.test.ts`、`tests/checklistBatch.test.ts`。
+
+**设计要点**
+- 不建新的文件系统：一个文件对应一条 Document 记录（已有 sha256、file_size、category、uploaded_by 等字段），权限仍由 `DocumentRule` 判断。
+- 批量上传的件数和合计大小，由 `upload-check` 和前端队列检查；每个文件的大小、种类、文件签名和文件名，在每次上传时由服务器检查。不经过 `upload-check` 直接调用单文件 API 也可以上传，但每次请求仍受单文件上限约束。
+- ZIP 在 Django 中同步生成（不使用 X-Accel），会占用一个 gunicorn worker。上限设为 100 件／200MB，是为了在默认的 30 秒超时内完成；PDF、图片等已压缩格式不再压缩，直接放入（STORED）。
+- 案件查询：用户没有案件的查看权限、但能通过 `document_view_all` 看到文件时，ZIP 也能找到该案件；没有下载权限的文件会被排除（标为 `forbidden`）。
+- 必要资料批量：每个项目一个事务（没有使用 `ATOMIC_REQUESTS`），所以失败的项目不会影响已成功的项目。比较版本时允许 1ms 的误差。
+
+**验证**
+- 后端：全量 `Ran 417 tests — OK`（2026-10-05 修正后；P2 新增 22 项）；policy guard（所有 API 都声明了 access）通过。
+- `check`：0 issues；`makemigrations --check --dry-run`：No changes detected。
+- 前端：`npm run test:unit` 61 项通过；`vue-tsc -b` 和 `npm run build` 通过。
+- 浏览器 QA 使用合成库 `gyoseishoshi_erp_batch_qa_20261002`，上传文件放在 scratchpad 的临时 MEDIA_ROOT，没有使用仓库的 `backend/media`：
+  - 4 个文件同时上传：2 个成功；1 个被服务器以签名不符拒绝，可再试行；1 个 `.exe` 在前端就被拒绝。
+  - ZIP：全部下载、选中下载，以及拒绝时的提示。
+  - 必要资料：整组全选，批量设置受領日和準備者（3 成功、1 个任务项因 `not_applicable` 失败并保持选中）；通信失败后加载状态能恢复，重试成功；书类管理按案件筛选后可批量操作；手机宽度下没有横向溢出。
+- QA 中修正的问题：服务器返回 HTML 404 时错误文本只显示「<」；确认窗口的换行丢失；确认过程中可能叠加第二个确认窗口，以及确认后才读取所选项目。
+
+**代码审查后的修正（2026-10-05）**
+- ZIP 重名规则原先只在所选文件之间比较 ID，同一个文件单独下载和与其他文件一起下载时名字不同。
+- 现在先用 `zip_export.plan_names` 对该案件中用户可见的全部文件（含已归档文件）统一命名，`plan_entries(selected, universe=...)` 再从中取出所选文件的路径。
+- 改名后若与实际存在的文件名重复，加「(ID n-2)」等后缀。
+- 新增测试：单独选择、全部、包含已归档文件、与实际文件名重复，共 2 项；原有 1 项改为验证与选择范围无关。documents 测试共 22 项。
+
+**未解决**
+- ZIP 是同步生成的，接近上限的大 ZIP 在低速磁盘上可能超过 gunicorn 的 30 秒超时。需要更大的 ZIP 时，应改为后台任务或流式生成（不在 P2 范围内）。
+- 批量上传的件数和合计上限，只能拦住正常的前端操作；直接调用单文件 API 时每次请求只受单文件上限约束。
+- 文件名检查加强后，用现有单文件 API 上传超过 200 字符或使用 Windows 保留名的文件，现在会被拒绝（以前可以上传）。
+- `DocumentsPage` 的勾选只针对当前页（每页 20 件）；要下载全部文件请用「すべて ZIP」。
+
+### 16.7 P3 实施记录（2026-10-05，本地未提交；2026-10-06 代码验收完成）
+
+16.3 中关于 `backend/apps/tasks/models.py` 的一项（任务依赖案件、日报快照）已处理。P4、P5 未开始，P1、P2 未改动。
+
+**用户确认的决定**：见 `DEVELOPMENT_PLAN.md` §5.11（可见范围、关联案件需要的权限、结转的默认日期、报告的草稿与确定）。
+
+**主要文件**
+- 后端
+  - `tasks/models.py`：Task 扩展字段，新增 `DailyWorkReport`。
+  - migration：`tasks/0003_daily_plan_and_reports`、`tasks/0004_db_defaults_for_rollback_compat`；`common/db_defaults.py` 中登记了 `case_tasks.priority` 和 `case_tasks.result_note`。
+  - `tasks/daily_plan.py`（新）：下一工作日、结转、报告快照与正文。
+  - `tasks/serializers.py`、`tasks/views.py`：版本核对、审计、结转、排序、报告相关接口。
+  - `authentication/access_rules.py`：新增 `TaskRule`（替换原来的 `'task'`）和 `DailyReportRule`（新资源 `daily_report`）。
+  - `api/urls.py`：新增 `daily-reports`。
+  - 测试：`tasks/tests_daily_plan.py`（15 项）。
+- 前端
+  - 新页面：`pages/DailyPlanPage.vue`、`pages/DailyReportsPage.vue`。
+  - `components/workbench/CaseWorkPanel.vue`：由原 `TodayWorkbenchPage.vue` 改成组件，原页面已删除。
+  - `api/dailyPlan.ts`、`utils/dailyPlan.ts`、`utils/navigation.ts`。
+  - 修改：`layouts/AdminLayout.vue`（菜单由定义数据生成）、`router/index.ts`、`utils/access.ts`、`DashboardPage.vue`、`real-estate/RealEstateListPage.vue`、`types/api.ts`。
+  - 单元测试：`tests/dailyPlan.test.ts`、`tests/navigation.test.ts`。
+
+**权限链路**
+- `TaskViewSet` 和 `DailyWorkReportViewSet` 声明 `access_resource`，由 `BusinessScopedViewSetMixin` 应用范围与对象判定。
+- 计划项（有 `work_date`）
+  - 范围：本人的项目；有全件查看权限的人可看全部，但不能修改（403）。
+  - 其他人：返回 404。
+  - 创建：负责人强制为本人；未关联担当者的账号返回 403。
+  - 关联案件：需要通过 `_check_parent_writable`（可修改的案件，且未归档）。
+- 案件任务（没有 `work_date`）：`CaseChildRule` 原有逻辑不变。
+- 不使用 `is_superuser`。会计、案件、顾客、文件、不动产的权限都没有改动。
+
+**数据兼容**
+- 只新增可空列，以及带 DB 默认值的列（`priority='normal'`、`result_note` 的表达式默认值）。
+- 旧代码不写入这些新列也能 INSERT（有测试）。
+- 已有任务的 `work_date` 为空，仍按案件任务处理，不需要回填。
+
+**验证**
+- 后端：P3 测试 16 项；全量 `Ran 439 tests — OK`（审查修正后）。
+- 前端：单元测试 72 项。
+- 浏览器 QA 使用合成库 `gyoseishoshi_erp_batch_qa_20261002`（已 migrate 到 `tasks/0004`）。
+- QA 中修正的问题：
+  - 添加表单在桌面宽度下太挤，标题改为独占一行；
+  - 防止「结果メモ」在按 Enter 和失去焦点时被重复保存（重复保存会触发 409）。
+
+**审查后的修正（2026-10-05）**
+- `GET /api/tasks/` 默认只返回原有案件任务，加 `plan=1` 才返回计划项（不在菜单中的旧 `/tasks` 页面也就不会显示计划项了）。
+- `CaseSerializer` 的 `task_total_count`、`task_completed_count`、`next_task_title`／`next_task_responsible_employee_name` 统一经由 `_case_tasks()`，不计入 `work_date` 不为空的记录。
+- 新增回归测试：创建关联案件的计划项后，默认一览中不出现、`plan=1` 能查到，案件详情和一览中的任务总数、完成数、次の対応都不受影响。原来不起作用的断言 `tasks_count` 已改为检查实际字段。P3 测试共 16 项。
+- 只读查看其他担当者的计划时，隐藏右侧「案件の作業」。
+
+**未解决**
+- 没有节假日日历，结转的默认日期只跳过周六、周日，需要时在对话框里修改。
+- 「関連案件」的候选列出的是可查看的案件；如果选了不能修改的案件，保存时返回 403。
+
+### 16.8 P4 实施记录（2026-10-06，本地未提交；2026-10-06 用户确认代码验收完成，等待正式服务项目价格和必要资料清单）
+
+用户的决定、阶段表和 migration 说明见 `DEVELOPMENT_PLAN.md` §5.12，表结构见 `DATABASE.md` §11.11「P4 实际结构」。P5 未开始。
+
+**主要文件**
+- 后端
+  - `accounting/models.py`：新增 `ServiceItem`、`IssuedLineCostSnapshot`；`AccountingVoucher`、`Estimate` 新增 `internal_line_costs`。
+  - `accounting/service_lines.py`（新）：明细行快照、`line_key`、底价、受付快照的统一处理（防止客户端伪造或调换）。
+  - `accounting/service_item_views.py`（新）：服务项目 API（版本确认、审计、禁止删除用过的项目）。
+  - `accounting/serializers.py`：
+    - 帳票序列化器改用 `exclude=('internal_line_costs',)`，底价只在 `to_representation` 里对权限者附加；
+    - 新增 `ServiceItemSerializer`。
+  - `accounting/voucher_views.py`：版本确认、`internal-costs`、复制规则。
+  - `accounting/voucher_infra.py`：`same_version`、发行时按版本记录底价 `record_issued_line_costs`。
+  - `cases/models.py`：新增 `WorkflowTemplate`、`WorkflowStage`；`CaseTypeMaster` 和 `Case` 的新列；创建案件时固定流程 `_assign_initial_workflow`。
+  - `cases/workflow_service.py`（新）：段阶变更。
+  - `cases/settings_audit.py`（新）：案件设置的变更审计。
+  - `cases/utils.py`：无申请区分时的案件编号；只按种别匹配模板。
+  - `cases/status_service.py`：流程案件不能使用 13 阶段的变更。
+  - `cases/views.py`：`change-stage`、流程和阶段 API；「案件を中止」改为取下げ阶段；审计。
+  - `api/serializers.py`、`api/views.py`：新規受付。
+  - `authentication/access_rules.py`：`service_item`。
+  - `authentication/roles.py`：三项新权限。
+  - `common/db_defaults.py`：`cases_p4` 及新的 JSON 列。
+  - migration：`accounting/0022`、`cases/0022～0024`。
+  - 测试：`accounting/tests_service_items.py`（19 项）、`cases/tests_workflows.py`（14 项）。
+- 前端
+  - 新文件：
+    - `pages/vouchers/ServiceItemsPage.vue`；
+    - `components/services/ServiceItemPicker.vue`、`ServiceLineBadge.vue`；
+    - `components/case/CaseWorkflowCard.vue`、`components/settings/WorkflowTemplatesPanel.vue`；
+    - `api/serviceItems.ts`、`utils/serviceItems.ts`、`utils/caseWorkflow.ts`。
+  - 修改：
+    - `VoucherLinesTable.vue`、`VoucherLineItemsEditor.vue`、`BusinessDocumentDialog.vue`、`AccountingVouchersPage.vue`（服务项目、版本确认）；
+    - `ReceptionNewPage.vue`、`utils/reception.ts`；
+    - `CaseDetailPage.vue`、`CasesPage.vue`、`CaseChecklistTemplatesPage.vue`；
+    - `utils/voucherLines.ts`（复制行时不带 `line_key`）；
+    - 导航、路由、访问控制、类型定义。
+  - 单元测试：`tests/serviceItems.test.ts`（新），扩充了 `reception`、`voucherLines`、`navigation`、`routeAccess` 的测试。
+
+**底价的出口检查**
+- 不会出现底价的地方（以下都只用 `line_items`，或者不涉及单据）：
+  - 发行快照、状态履历、PDF（已用 PyMuPDF 抽取文本验证）；
+  - 帳票一览和详情（无权限者）、帳票搜索（`line_items__icontains`）；
+  - 服务项目搜索、受付快照、案件 API。
+- 能看到底价的地方：
+  - 有底价权限的人：帳票 API 的 `internal_line_costs`、`internal-costs`、服务项目的 `floor_price`；
+  - 系统管理员：审计日志（授权行为）。
+
+**部署时注意**
+- 执行 migration 后，必须先 dry-run 角色同步 `setup_access_roles`，再 `--apply`（只增加三项服务项目权限，不删除任何权限）。不同步的话，职员在受付中看不到服务项目，会计管理员也不能管理。
+- 首批服务项目由用户提供正式数据后另行导入；新种别的必要资料由业务确认后在设置页补充。
+- 本轮没有在生产库或预览库执行任何操作。
+
+**审查后的修正（2026-10-06）**
+- 被案件使用的流程整体锁定：
+  - 流程的名称、系统、启用状态不能修改；
+  - 阶段不能新增、修改或删除，即使该阶段还不是任何案件的当前阶段。
+  - 实现：`serializers.workflow_in_use`、`WORKFLOW_LOCKED_MESSAGE`；阶段删除也做同样检查。
+- 新增 `POST /api/workflow-templates/{id}/duplicate/`：复制流程及其阶段并写审计；之后把种别重新绑定到新流程。设置页显示「案件で使用中」和「複製」，使用中的流程不显示编辑按钮。
+- `validate_parent_case` 改为沿关联元追溯到底：不设层数上限，用已访问集合防止死循环；遇到已有的异常循环时拒绝关联。
+- 新增测试：使用中流程不能修改、复制后重新绑定、自关联、子孙、超过 20 层的链、已有异常循环，以及不存在和看不到返回相同应答。
+
+**未解决 / 注意**
+- 受付中的服务项目只是参考，不会自动生成見積書或請求書。
+- 流程案件的「対応する進捗」（base_status）用于沿用一览、仪表盘和期限的现有统计。例如専門家委託的「結果受領」在仪表盘计入「許可 / 不許可」组。
+- 回滚 migration 会丢失流程绑定、服务项目和底价快照（已在 QA 库验证回滚与再迁移）。
+
+### 16.9 P5 单模板实施记录（2026-10-06，本地未提交；独立审查修正后代码验收完成，部署前等待真实样本打印确认及字体授权确认）
+
+详细规则见 `DEVELOPMENT_PLAN.md` §5.13，表结构见 `DATABASE.md` §11.11 F。
+
+**独立审查中发现并修正的问题**
+1. 没有生成记录和文件保存：原实现直接返回 PDF，没有摘要、大小、模板版本和操作者记录，也没有「只下载成功文件」的环节。已新增 `SeifuNoticePdfGeneration` 和 `seifu_pdf_generation.py`：内存中检查 → 写入存储 → 确认 → 建记录；失败时清理文件。
+2. 通知书编号派生规则在三处不一致：记录 API 是「A」，PDF 是「A号」，前端是「A」。已统一为 `derive_notice_number`。
+3. 修改旧记录时 serializer 会把 `text_items` 清空，已修正为保留。
+4. 输入校验不足：
+    - 没有检查零宽、双向控制等书式字符和字体缺字（缺字会印成方块）；
+    - 許可番号只要 1 个字符就能通过；
+    - 日期没有范围。
+   以上已补充，同一规则也用于保存时的事先检查。
+5. 版面与参考不一致：
+    - 先盖白「様」「号」再重画，导致位置偏移；
+    - 通知日字号 10.8pt（PSD 为 14.36pt）；
+    - 课程年数偏小，英文侧位置偏 3.8pt。
+   已按 PSD 和三份参考重新校准。
+6. 长宛名的规则只是缩到 6pt，难以阅读。改为最小 12pt，再横向压缩到最多 70%，仍放不下则拒绝。
+7. 输出检查只看页数和大小。现在还确认印字内容确实写进了 PDF。
+8. 前端：
+    - PDF 的 blob 错误响应读不出后端的错误信息；
+    - 默认日期按 UTC 计算；
+    - 生成即下载，看不出是否已保存。
+   改为：成功后显示生成记录和下载入口；失败时保留输入；用 `request_id` 防止重复提交。
+9. 旧接口 410 没有写审计，已补充。
+10. Docker：没有 `.dockerignore`，`COPY . .` 可能把 media 中的 PSD、真实样本和字体打进镜像，已新增排除规则。
+
+**验证**：P5 后端 20 项、后端全量 492 项、前端 84 项通过，`check`、migration 检查、类型检查、构建、`git diff --check` 都通过；在独立 QA 库上用合成数据完成浏览器验收。
+
+**主要文件**
+- 后端：
+  - `accounting/seifu_notice_pdf.py`（规则、排版、生成、检查）、`seifu_pdf_generation.py`（新增，保存与记录）；
+  - `models.py`、`serializers.py`、`views.py`、`urls.py`；
+  - migration `0023`、`0024`；
+  - `tests_seifu_notice.py`（20 项）；
+  - `backend/.dockerignore`、两个 env 示例文件。
+- 前端：`pages/SeifuNoticePdfTextPage.vue`、`utils/seifuNotice.ts`、`api/accounting.ts`、`types/accounting.ts`、`tests/seifuNotice.test.ts`。
+
+**后续**
+- 课程年数可变的 PSD 到位后，再增加模板版本。本轮不提供任意坐标接口。
+- 字体子集化（需要新增 `fontTools`）可把单个文件从约 3.3MB 缩小，需另行判断。
+- 上线前需要确认字体授权，并用真实值打印验收。
+
+### 16.10 P6 实施记录（2026-10-07，本地未提交；代码验收完成：后端全量 540 项 0 失败；生产操作未执行）
+
+详细规则见 `DEVELOPMENT_PLAN.md` §5.14，表结构见 `DATABASE.md` §11.11 G，部署与生产数据整理步骤见 `DEPLOY.md` 末尾「P6 部署与生产数据整理」。
+
+**新增 API**
+
+| 接口 | 权限 | 说明 |
+|---|---|---|
+| `POST /api/customers/{id}/reveal-my-number/` | `customers.reveal_my_number` ＋ 能看该顾客的详细（FULL/MASKED） | 返回明文，`no-store`；成功和拒绝都写审计 |
+| `POST /api/family-members/{id}/reveal-my-number/` | 同上（家族沿用父顾客的规则） | 关联人物的值以 `family_customer` 为准 |
+| `POST /api/company-staff/{id}/reveal-my-number/` | 同上（职员沿用父公司的规则） | 关联了顾客时返回该顾客的值，该顾客不可见时 403；未关联的旧式职员返回自身的值 |
+| `POST /api/accounting/service-items/{id}/confirm-price/` | 管理权限＋底价权限 | 必须带 `version`，旧版本 409；已确定或没有价格时 400 |
+| `POST /api/accounting/{estimates,vouchers}/{id}/transition/` | 不变 | 新增 `confirm_provisional`；含暂定价格行且未确认时 400 `provisional_price_confirmation_required` |
+| `GET /api/tasks/calendar/?date=` | 与计划一览相同 | 返回祝日名、是否营业日、下一个营业日、是否在判定范围内、提示 |
+| `GET /api/documents/upload-policy/` | 不变 | 新增 `zip_upload_max_bytes`、`content_label_max_length` |
+| `POST /api/documents/` | 不变 | 发送了 `content_label` 时必须合法（新画面）；不发送时为旧 API 兼容路径，由后端派生（审计 `content_label_source`）。响应新增 `content_label`、`display_name`、`download_name` |
+
+**新增命令**：`grant_business_permission`（只允许 `customers.reveal_my_number`，默认 dry-run，写审计）。
+
+**主要文件**
+- 后端：
+  - `customers/my_number.py`、`views.py`、`serializers.py`（`related_companies[].can_open`）；
+  - `accounting/pdf_fonts.py`、`visa_return_pdf.py`、`service_item_views.py`、`service_lines.py`、`voucher_infra.py`；
+  - `tasks/business_days.py`；
+  - `documents/naming.py`、`upload_policy.py`、`serializers.py`；
+  - migration 7 个，测试 5 个文件。
+- 前端：
+  - `components/customers/MyNumberReveal.vue`、`utils/wareki.ts`、`utils/myNumber.ts`；
+  - `pages/CustomerDetailPage.vue`、`pages/vouchers/ServiceItemsPage.vue`、`components/vouchers/VoucherStatusActions.vue`、`pages/DailyPlanPage.vue`、`components/documents/DocumentUploadQueue.vue`、`utils/uploadQueue.ts`；
+  - 测试：`tests/wareki.test.ts`、`tests/myNumber.test.ts`，并在已有的 3 个测试文件中追加了用例。
+
+**浏览器验收中发现并修正的问题**
+1. el-tab-pane 隐藏时仍然把内容留在 DOM 中，所以切换标签页后明文仍在 DOM 里（`innerText` 看不到，`textContent` 能看到）。已改为切换标签页时用 `reset-key` 清除。
+2. 后端原来只要求顾客「可见」（含 BASIC），有表示权限的人可以看到只有基本信息权限的顾客的 My Number。已改为必须能看该顾客的详细，否则返回 403 `my_number_scope_required`，并补了测试。
+
+**全量测试后的修正**（详见 `DEVELOPMENT_PLAN.md` §5.14）
+3. 不动产文件下载 500（`RealEstateFile` 没有 `display_name`）：已改为 `getattr`。
+4. 旧单文件上传 API 返回 400：已改为「新画面必填，旧 API 由后端派生」两条路径。
+5. 没有资料内容的旧文件被替换时，替换历史没有记录（缩进错误）：已修正。
+6. **`tests_p6_visa_size` 删除了开发环境的 `backend/media/`**：缺少临时 `MEDIA_ROOT`。参考资产已从本机原始来源恢复，大小、哈希和可读性都已确认，仍被 Git 忽略。
+   - 再发防止：测试运行器 `config.test_runner.IsolatedMediaTestRunner` 在整个测试期间把 `MEDIA_ROOT` 换成临时目录；测试中删除目录一律使用 `apps.common.test_isolation.safe_rmtree`（只允许临时目录下的路径）；回归测试为 `apps.common.tests_media_isolation`。
+   - **今后新写测试时不要直接用 `shutil.rmtree`。**
+7. 补齐了公司职员的 My Number 表示入口（同一权限、同一服务、同一画面组件）。
+
+**生产**：D5、D11、费用负责人回填都没有执行（AI 没有服务器权限）。必须在 P6 代码验收和部署之后，按 `DEPLOY.md` 的步骤执行：只读确认 → 备份 → dry-run → 报告 → 执行 → 验证。`--expect-count` 使用当次 dry-run 的实际件数。

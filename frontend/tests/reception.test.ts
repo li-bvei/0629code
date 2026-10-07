@@ -21,7 +21,23 @@ test('直接入力：新規顧客をそのまま送り、既存顧客の照合 I
   assert.ok(!('existing_customer_id' in payload))
   assert.ok(!('existing_company_id' in payload))
   assert.equal(payload.company.name, '')
-  assert.deepEqual(payload.case, { case_type_master: 3, application_category: 5, responsible_employee: null, accepted_at: null })
+  assert.deepEqual(payload.case, {
+    case_type_master: 3, application_category: 5, responsible_employee: null, accepted_at: null, parent_case: null, service_items: [],
+  })
+})
+
+test('P4：申請区分の要らない種別・関連元の案件・サービス項目（参考、複数、数量 0 は送らない）', () => {
+  const base = form()
+  base.case.application_category = null
+  base.case.parent_case = 12
+  const payload = buildReceptionPayload(base, {
+    requestId: 'r', companyMode: 'none', existingCompanyId: null, requiresCategory: false,
+    serviceItems: [{ service_item: 7, quantity: '2' }, { service_item: 8, quantity: 0 }, { service_item: 9, quantity: 1 }],
+  })
+  assert.equal(payload.case.application_category, null)
+  assert.equal(payload.case.parent_case, 12)
+  assert.deepEqual(payload.case.service_items, [{ service_item: 7, quantity: 2 }, { service_item: 9, quantity: 1 }])
+  assert.equal(JSON.stringify(payload).includes('floor'), false)
 })
 
 test('家族：空行は送らず、住所は顧客の値で補う', () => {

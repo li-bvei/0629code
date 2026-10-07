@@ -24,6 +24,23 @@ ROLLBACK_COMPAT_DEFAULTS = {
         ('accounting_vouchers', 'invoice_status', "''"),
         ('accounting_vouchers', 'receipt_status', "''"),
     ],
+    # P3 毎日の計画（2026-10）：旧コードはタスク作成時に priority を送らない
+    'tasks': [
+        ('case_tasks', 'priority', "'normal'"),
+    ],
+    # P4 業務フロー（2026-10）：旧コードは案件種別の作成時に requires_application_category を送らない。
+    # （cases 0021 は 'cases' の列だけを扱うため、P4 の列は別キーにする）
+    'cases_p4': [
+        ('case_type_masters', 'requires_application_category', '1'),
+    ],
+    # P6：旧コードはサービス項目の価格状態・資料内容を送らない（旧コードで作った項目は暫定扱い）
+    'accounting_p6': [
+        ('accounting_service_items', 'price_status', "'provisional'"),
+    ],
+    'documents_p6': [
+        ('case_documents', 'content_label', "''"),
+        ('case_documents', 'display_name', "''"),
+    ],
 }
 
 # Django が式既定値として残している列（MySQL 8.0.13+）。欠落していないかをテストで確認する。
@@ -31,6 +48,11 @@ EXPRESSION_DEFAULT_COLUMNS = [
     ('cases', 'waiting_note'),
     ('cases', 'next_action_blocked_reason'),
     ('accounting_vouchers', 'issued_snapshot'),
+    ('case_tasks', 'result_note'),
+    # P4：JSON 列（MySQL では Django が式既定値を残す）
+    ('accounting_vouchers', 'internal_line_costs'),
+    ('accounting_estimates', 'internal_line_costs'),
+    ('cases', 'service_items'),
 ]
 
 

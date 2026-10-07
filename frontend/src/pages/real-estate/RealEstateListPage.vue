@@ -240,6 +240,8 @@ const submit = async () => {
 const canManageLedger = auth.can('real_estate.manage_legal_ledger')
 const canCreate = auth.can('real_estate.create_real_estate')
 const canCloseYear = auth.can('real_estate.close_legal_ledger_year')
+// LIST 取込はナビゲーションの独立した入口ではなく、この画面の補助操作として出す（P3。権限は従来どおり）
+const canImport = auth.can('real_estate.import_real_estate')
 const canExport = auth.can('real_estate.export_real_estate')
 const askFiscalYear = async (title: string, message: string) => {
   const result = await ElMessageBox.prompt(message, title, {
@@ -315,6 +317,7 @@ onMounted(() => loadRows(1))
         <!-- 台帳出力は「出力」＋「台帳管理」、年度締めは「年度締め」の権限（後端の判定と同じ） -->
         <el-button v-if="canExport && canManageLedger" @click="exportYear">台帳 CSV 出力</el-button>
         <el-button v-if="canCloseYear" type="warning" plain @click="closeYear">年度締め</el-button>
+        <el-button v-if="canImport" @click="router.push('/real-estate/import')">LIST 取込（確認）</el-button>
         <el-button v-if="canCreate" type="primary" @click="openCreate">新規登録</el-button>
       </div>
     </div>

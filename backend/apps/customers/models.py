@@ -68,6 +68,8 @@ class Customer(models.Model):
             ('view_sensitive_identity', '担当外の在留カード番号・旅券番号・口座情報の閲覧'),
             ('customer_link_all', '他担当の進行中案件がある顧客の関連付け（案件・受付・家族・職員・代表者）'),
             ('company_link_all', '他担当の進行中案件がある会社の関連付け（案件・受付）'),
+            # P6：マイナンバーの表示（専用の操作でのみ。一覧・詳細・検索・出力には平文を出さない）
+            ('reveal_my_number', 'マイナンバーの表示（見られる顧客・家族に限る）'),
         ]
         ordering = ['name']
 

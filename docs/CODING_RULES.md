@@ -55,6 +55,7 @@
 - 业务逻辑不要直接写在 View 中。
 - API 返回结构保持一致
 - 不提前引入复杂分层
+- 测试不得读写或删除真实的 `backend/media`：测试运行器会把 `MEDIA_ROOT` 换成临时目录；测试中删除目录一律用 `apps.common.test_isolation.safe_rmtree`，不直接使用 `shutil.rmtree`（2026-10-07 曾因此误删参考资产）。
 
 Django app 应按业务模块划分，但 MVP 阶段避免拆得过细。
 

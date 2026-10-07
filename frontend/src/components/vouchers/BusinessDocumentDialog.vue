@@ -65,14 +65,16 @@ watch(visible, (open) => {
 const caseOption = computed(() => (props.doc?.case ? { value: props.doc.case, label: props.doc.case_number } : null))
 
 const buildPayload = (): Partial<BusinessDocumentPayload> => {
-  if (locked.value) return { note: form.note, case: form.case }
+  // P4：画面で見ていた版を送る（他の人が先に保存していれば 409 で保存しない）
+  const version = props.doc?.updated_at
+  if (locked.value) return { note: form.note, case: form.case, version }
   const common = {
     issue_date: form.issue_date, recipient_name: form.recipient_name, recipient_honorific: form.recipient_honorific,
     recipient_postal_code: form.recipient_postal_code, recipient_address: form.recipient_address, title: form.title,
     line_items: form.line_items.filter((item) => (item.item_name || '').trim()), note: form.note, case: form.case,
   }
-  if (props.kind === 'estimate') return { ...common, valid_until: form.valid_until }
-  return { ...common, start_date: form.start_date, end_date: form.end_date, payment_terms: form.payment_terms, body: form.body }
+  if (props.kind === 'estimate') return { ...common, version, valid_until: form.valid_until }
+  return { ...common, version, start_date: form.start_date, end_date: form.end_date, payment_terms: form.payment_terms, body: form.body }
 }
 
 const submit = async () => {
@@ -86,7 +88,8 @@ const submit = async () => {
     visible.value = false
     emit('saved')
   } catch (error) {
-    ElMessage.error(apiErrorText(error, `${label.value}を保存できませんでした。`))
+    // 409（他の人が先に保存・発行）でも入力は残す。最新の内容は一覧を更新して確認する
+    ElMessage.error({ message: apiErrorText(error, `${label.value}を保存できませんでした。`), duration: 6000 })
   } finally {
     saving.value = false
   }
@@ -132,7 +135,8 @@ const submit = async () => {
           <el-input v-model="form.title" :disabled="locked" />
         </el-form-item>
         <el-form-item :label="kind === 'contract' ? '報酬の明細' : '明細'" class="accounting-dialog-full">
-          <VoucherLineItemsEditor v-model="form.line_items" :disabled="locked" style="width: 100%" />
+          <VoucherLineItemsEditor v-model="form.line_items" :disabled="locked" :allow-service-items="kind === 'estimate'"
+                                  :internal-costs="doc?.internal_line_costs" style="width: 100%" />
         </el-form-item>
         <template v-if="kind === 'contract'">
           <el-form-item label="支払条件" class="accounting-dialog-full">

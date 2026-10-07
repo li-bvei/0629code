@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
@@ -14,12 +14,14 @@ import {
 } from '../api/familyMembers'
 import RemoteCustomerSelect from '../components/RemoteCustomerSelect.vue'
 import VoucherLinksCard from '../components/vouchers/VoucherLinksCard.vue'
+import MyNumberReveal from '../components/customers/MyNumberReveal.vue'
 import RecordFormLayout from '../components/layout/RecordFormLayout.vue'
 import ResponsiveActionBar from '../components/layout/ResponsiveActionBar.vue'
 import type { ActionItem } from '../components/layout/actions'
 import type { CaseApplicationCategory, CasePayload, CaseTypeMaster, CreateCustomerPayload, Customer, CustomerCaseSummary, CustomerDetail, CustomerRelatedCompany, Employee, FamilyMember, FamilyMemberPayload, ResidenceStatusMaster, UpdateCustomerPayload } from '../types/api'
 import { getCaseDisplayStatus, getCaseDisplayStatusTagType } from '../utils/caseStatus'
 import { formatDate, formatDateTime } from '../utils/date'
+import { formatBirthDateWithEra } from '../utils/wareki'
 import { describeApiErrors, responseOf } from '../utils/apiErrors'
 import { buildPersonChanges } from '../utils/familyPerson'
 
@@ -31,7 +33,11 @@ const customer = ref<CustomerDetail | null>(null)
 const cases = ref<CustomerCaseSummary[]>([])
 const relatedCompanies = ref<CustomerRelatedCompany[]>([])
 const familyMembers = ref<FamilyMember[]>([])
-const activeSection = ref<'overview' | 'cases' | 'relationships' | 'activity'>('overview')
+type CustomerSection = 'overview' | 'cases' | 'relationships' | 'activity'
+const SECTIONS: CustomerSection[] = ['overview', 'cases', 'relationships', 'activity']
+// P6：表示中のタブを URL（?tab=）に持ち、会社ページなどから戻ったときに同じタブを開く
+const initialTab = String(route.query.tab || '') as CustomerSection
+const activeSection = ref<CustomerSection>(SECTIONS.includes(initialTab) ? initialTab : 'overview')
 const customerSubmitting = ref(false)
 const customerDialogVisible = ref(false)
 const customerFormRef = ref<FormInstance>()
@@ -146,7 +152,7 @@ const summaryItems = computed(() => [
   { key: 'cases' as const, label: '進行中案件', value: customer.value?.summary.active_cases_count || 0 },
   { key: 'cases' as const, label: '履歴案件', value: customer.value?.summary.historical_cases_count || 0 },
   { key: 'relationships' as const, label: '家族', value: customer.value?.summary.family_count || 0 },
-  { key: 'relationships' as const, label: '関連会社', value: customer.value?.summary.company_count || 0 },
+  { key: 'companies' as const, label: '関連会社', value: customer.value?.summary.company_count || 0 },
   { key: 'activity' as const, label: '最近の活動', value: customer.value?.recent_activities.length || 0 },
 ])
 
@@ -580,6 +586,27 @@ const fetchResidenceStatusOptions = async () => {
   residenceStatusOptions.value = data.results
 }
 
+watch(activeSection, (tab) => {
+  if (route.query.tab === tab) return
+  router.replace({ query: { ...route.query, tab } })
+})
+
+// 概要の数字から移動する。「関連会社」は関係タブの会社一覧の位置まで送る（家族の一覧に留まらない）
+const openSummary = async (key: CustomerSection | 'companies') => {
+  if (key !== 'companies') {
+    activeSection.value = key
+    return
+  }
+  activeSection.value = 'relationships'
+  await nextTick()
+  document.getElementById('customer-related-companies')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const openCompany = (company: CustomerRelatedCompany) => {
+  if (company.can_open === false) return
+  router.push(`/companies/${company.id}`)
+}
+
 onMounted(() => {
   fetchCustomerDetail()
   fetchResidenceStatusOptions()
@@ -660,7 +687,7 @@ const headerActions = computed<ActionItem[]>(() => [
           :key="`${item.label}-${item.key}`"
           type="button"
           class="summary-tile"
-          @click="activeSection = item.key"
+          @click="openSummary(item.key)"
         >
           <strong>{{ item.value }}</strong>
           <span>{{ item.label }}</span>
@@ -675,7 +702,7 @@ const headerActions = computed<ActionItem[]>(() => [
                 <section class="info-panel">
                   <h2>基本情報</h2>
                   <dl class="field-list">
-                    <div><dt>生年月日</dt><dd>{{ formatDate(customer.birth_date) }}</dd></div>
+                    <div><dt>生年月日</dt><dd>{{ formatBirthDateWithEra(customer.birth_date) }}</dd></div>
                     <div><dt>性別</dt><dd>{{ formatGender(customer.gender) }}</dd></div>
                     <div><dt>国籍</dt><dd>{{ displayValue(customer.nationality) }}</dd></div>
                   </dl>
@@ -696,7 +723,7 @@ const headerActions = computed<ActionItem[]>(() => [
                     <div><dt>在留期限</dt><dd>{{ formatDate(customer.residence_expiry) }}</dd></div>
                     <div><dt>パスポート番号</dt><dd class="confirmable-value">{{ displayValue(customer.passport_no) }}<el-button v-if="customer.passport_no" text type="primary" size="small" @click="copyText(customer.passport_no)">コピー</el-button></dd></div>
                     <div><dt>パスポート期限</dt><dd>{{ formatDate(customer.passport_expiry) }}</dd></div>
-                    <div><dt>マイナンバー</dt><dd>{{ customer.has_my_number ? '登録済み（既定では非表示）' : '未登録' }}</dd></div>
+                    <div><dt>マイナンバー</dt><dd><MyNumberReveal kind="customer" :target-id="customer.id" :registered="customer.has_my_number" :reset-key="activeSection" /></dd></div>
                   </dl>
                 </section>
                 <section class="info-panel">
@@ -810,7 +837,7 @@ const headerActions = computed<ActionItem[]>(() => [
                     <section>
                       <h3>基本・連絡先</h3>
                       <dl class="field-list compact-field-list">
-                        <div><dt>生年月日</dt><dd>{{ formatDate(familyMember.birth_date) }}</dd></div>
+                        <div><dt>生年月日</dt><dd>{{ formatBirthDateWithEra(familyMember.birth_date) }}</dd></div>
                         <div><dt>性別</dt><dd>{{ displayValue(familyMember.gender_display || formatGender(familyMember.gender)) }}</dd></div>
                         <div><dt>国籍</dt><dd>{{ displayValue(familyMember.nationality) }}</dd></div>
                         <div><dt>電話番号</dt><dd>{{ displayValue(familyMember.phone) }}</dd></div>
@@ -826,7 +853,7 @@ const headerActions = computed<ActionItem[]>(() => [
                         <div><dt>在留期限</dt><dd>{{ formatDate(familyMember.residence_expiry) }}</dd></div>
                         <div><dt>パスポート番号</dt><dd>{{ displayValue(familyMember.passport_no) }}</dd></div>
                         <div><dt>パスポート期限</dt><dd>{{ formatDate(familyMember.passport_expiry) }}</dd></div>
-                        <div><dt>マイナンバー</dt><dd>{{ familyMember.has_my_number ? '登録済み' : '未登録' }}</dd></div>
+                        <div><dt>マイナンバー</dt><dd><MyNumberReveal kind="family_member" :target-id="familyMember.id" :registered="familyMember.has_my_number" :reset-key="activeSection" /></dd></div>
                       </dl>
                     </section>
                   </div>
@@ -835,11 +862,19 @@ const headerActions = computed<ActionItem[]>(() => [
               </div>
               <p v-else-if="familyEditTarget === null" class="empty-text">家族情報はありません。</p>
 
-              <div class="section-heading company-heading"><div><h2>関連会社</h2><p>会社の詳細情報は会社ページで管理します。</p></div></div>
+              <div id="customer-related-companies" class="section-heading company-heading"><div><h2>関連会社</h2><p>会社の詳細情報は会社ページで管理します（行を押すと会社ページを開きます）。</p></div></div>
               <div v-if="relatedCompanies.length" class="relationship-list">
-                <div v-for="company in relatedCompanies" :key="company.id" class="relationship-row">
+                <div v-for="company in relatedCompanies" :key="company.id" class="relationship-row"
+                     :class="{ 'is-clickable': company.can_open !== false }" :role="company.can_open !== false ? 'link' : undefined"
+                     :tabindex="company.can_open !== false ? 0 : undefined"
+                     @click="openCompany(company)" @keydown.enter="openCompany(company)">
                   <div class="relationship-main">
-                    <div><router-link class="text-link relationship-name" :to="`/companies/${company.id}`">{{ company.name }}</router-link><span>{{ [company.phone, company.email].filter(Boolean).join(' / ') || '連絡先未登録' }}</span></div>
+                    <div>
+                      <router-link v-if="company.can_open !== false" class="text-link relationship-name" :to="`/companies/${company.id}`" @click.stop>{{ company.name }}</router-link>
+                      <strong v-else class="relationship-name">{{ company.name }}</strong>
+                      <span v-if="company.can_open !== false">{{ [company.phone, company.email].filter(Boolean).join(' / ') || '連絡先未登録' }}</span>
+                      <span v-else>担当範囲外のため会社ページは開けません</span>
+                    </div>
                   </div>
                   <div class="company-relation-meta">
                     <el-tag v-for="label in company.relation_labels" :key="label" size="small" effect="plain">{{ label }}</el-tag>
@@ -1320,6 +1355,14 @@ const headerActions = computed<ActionItem[]>(() => [
   color: var(--sunrise-text);
   background: var(--sunrise-bg-soft, #f8fbfd);
   white-space: pre-wrap;
+}
+
+.relationship-row.is-clickable {
+  cursor: pointer;
+}
+
+.relationship-row.is-clickable:hover {
+  background: var(--el-fill-color-light);
 }
 
 .relationship-row {
